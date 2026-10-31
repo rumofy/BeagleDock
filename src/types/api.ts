@@ -112,6 +112,25 @@ export interface ExecutePromptPayload {
   permission: string;
   cancelled: boolean;
 }
+export interface NativeCommand {
+  name: string;
+  /** `app`: controle do próprio BeagleDock, mostrado quando a CLI não lista os comandos dela. */
+  kind: "command" | "skill" | "app";
+  description?: string;
+  aliases?: string[];
+  /** Só existe no terminal interativo da CLI. */
+  terminalOnly?: boolean;
+}
+export interface NativeCommandList {
+  ok: boolean;
+  providerId: string;
+  commands: NativeCommand[];
+  /** Estado informado pela própria CLI (modelo e modo de permissão atuais). */
+  state?: { model?: string; permissionMode?: string };
+  /** O que a CLI não expõe, para a interface avisar em vez de simular. */
+  limitation?: string;
+  error?: string;
+}
 export interface OpenInEditorRequest {
   /** Pasta do projeto da conversa. */
   cwd: string;
@@ -245,6 +264,10 @@ export interface BeagleAPI {
   setSessionArchived(id: string, archived: boolean): Promise<OkResult & { success?: boolean }>;
   pickDirectory(options?: { defaultPath?: string; title?: string }): Promise<PickDirectoryResult>;
   openInEditor(request: OpenInEditorRequest): Promise<OkResult>;
+  /** Abre um endereço http(s) no navegador padrão do sistema. */
+  openExternalUrl(url: string): Promise<OkResult>;
+  /** Comandos e skills lidos da própria CLI (`refresh` ignora o cache curto). */
+  listNativeCommands(request: { providerId: string; cwd: string; refresh?: boolean }): Promise<NativeCommandList>;
   getZoom(): Promise<number>;
   setZoom(factor: number): Promise<number>;
   saveAppSettings(settings: AppSettings): Promise<SaveSettingsResult>;

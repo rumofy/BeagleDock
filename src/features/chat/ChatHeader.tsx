@@ -119,6 +119,7 @@ export function ChatHeader() {
                 <select
                   value={currentModelSelection.model}
                   aria-label="Modelo"
+                  data-control="model"
                   onChange={(e) => handleModelChange(e.target.value)}
                   className="text-xs font-semibold bg-transparent text-[#2c2822] outline-none cursor-pointer"
                   disabled={isExecutingPrompt}
@@ -150,6 +151,7 @@ export function ChatHeader() {
                 <select
                   value={currentModelSelection.effort}
                   aria-label="Nível de raciocínio"
+                  data-control="effort"
                   onChange={(e) =>
                     handleReasoningChange(
                       e.target.value as ReasoningEffortLevel,
@@ -184,6 +186,7 @@ export function ChatHeader() {
               >
                 <ShieldCheck size={13} />
                 <select
+                  data-control="permission"
                   value={currentSession.permission || "inherit"}
                   onChange={(e) =>
                     handlePermissionChange(e.target.value as PermissionLevel)

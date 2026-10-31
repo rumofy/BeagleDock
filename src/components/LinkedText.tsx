@@ -1,4 +1,5 @@
 import { memo, useMemo } from "react";
+import { beagleApi } from "../api/beagleApi";
 import { splitFileLinks } from "../lib/fileLinks";
 
 export interface FileTarget {
@@ -7,7 +8,7 @@ export interface FileTarget {
   column?: number;
 }
 
-/** Texto da resposta com referências a arquivos (`src/app.ts:42`) clicáveis. */
+/** Texto da resposta com referências a arquivos (`src/app.ts:42`) e endereços web clicáveis. */
 export const LinkedText = memo(function LinkedText({
   text,
   onOpenFile,
@@ -25,6 +26,16 @@ export const LinkedText = memo(function LinkedText({
       {parts.map((part, index) =>
         part.type === "text" ? (
           <span key={index}>{part.value}</span>
+        ) : part.type === "url" ? (
+          <button
+            key={index}
+            type="button"
+            onClick={() => void beagleApi.openExternalUrl(part.url).catch(() => {})}
+            title={`Abrir no navegador: ${part.url}`}
+            className="text-[0.95em] underline underline-offset-2 text-[#8a4b0f] hover:text-[#b45309] cursor-pointer break-all text-left"
+          >
+            {part.value}
+          </button>
         ) : (
           <button
             key={index}

@@ -98,3 +98,32 @@ test("links: nome com linha sem diretório conta; sem linha e sem barra não", (
   assert.equal(split("o arquivo README.md existe").filter((p) => p.type === "file").length, 1);
   assert.deepEqual(split("sem nada"), [{ type: "text", value: "sem nada" }]);
 });
+
+test("links web: http(s) viram link sem a pontuação final e sem virar arquivo", () => {
+  const text = "Veja (https://github.com/acme/api/blob/main/src/app.ts), ou https://pt.wikipedia.org/wiki/Foo_(bar). Fim: http://localhost:5173/x?a=1&b=2!";
+  const parts = split(text);
+  assert.deepEqual(parts.filter((p) => p.type === "url").map((p) => p.url), [
+    "https://github.com/acme/api/blob/main/src/app.ts",
+    "https://pt.wikipedia.org/wiki/Foo_(bar)",
+    "http://localhost:5173/x?a=1&b=2",
+  ]);
+  assert.equal(parts.filter((p) => p.type === "file").length, 0);
+  assert.equal(parts.map((p) => p.value).join(""), text, "nenhum caractere se perde");
+});
+
+test("links web: arquivo e endereço no mesmo texto; esquema sem host é ignorado", () => {
+  const parts = split("Abra src/app.ts:3 e https://example.com/docs, não https:// nem ftp://x.com");
+  assert.deepEqual(parts.filter((p) => p.type === "file").map((p) => p.path), ["src/app.ts"]);
+  assert.deepEqual(parts.filter((p) => p.type === "url").map((p) => p.url), ["https://example.com/docs"]);
+});
+
+test("abrir no navegador: só http(s) sem credenciais chega ao sistema", async () => {
+  const { openExternalUrl } = require("../electron/external-links");
+  const opened = [];
+  const shell = { openExternal: async (u) => opened.push(u) };
+  assert.deepEqual(await openExternalUrl(" https://example.com/a?b=1 ", shell), { ok: true });
+  for (const bad of ["file:///etc/passwd", "javascript:alert(1)", "ftp://x.com", "https://u:p@x.com", "nada", "", null])
+    assert.equal((await openExternalUrl(bad, shell)).ok, false, String(bad));
+  assert.deepEqual(opened, ["https://example.com/a?b=1"]);
+  assert.equal((await openExternalUrl("https://x.com", { openExternal: async () => { throw new Error("sem navegador"); } })).ok, false);
+});

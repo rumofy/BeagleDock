@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   saveWorkspace: (ws) => ipcRenderer.invoke("save-workspace", ws),
   pickDirectory: (options) => ipcRenderer.invoke("pick-directory", options),
   openInEditor: (request) => ipcRenderer.invoke("open-in-editor", request),
+  listNativeCommands: (request) => ipcRenderer.invoke("list-native-commands", request),
+  openExternalUrl: (url) => ipcRenderer.invoke("open-external-url", url),
   getZoom: () => ipcRenderer.invoke("get-zoom"),
   setZoom: (factor) => ipcRenderer.invoke("set-zoom", factor),
   saveAppSettings: (settingsObj) =>

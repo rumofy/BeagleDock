@@ -8,6 +8,7 @@ const {
   nativeImage,
   powerSaveBlocker,
   dialog,
+  shell: electronShell,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
@@ -34,6 +35,9 @@ const { createBackgroundController } = require("./background");
 const { pickDirectory } = require("./folder-picker");
 const zoom = require("./zoom");
 const { openInEditor } = require("./editor");
+const { openExternalUrl, parseExternalUrl } = require("./external-links");
+const { createNativeCommands } = require("./native-commands");
+const nativeCommands = createNativeCommands();
 const agyUsage = createAgyUsage();
 const providerUsage = createProviderUsage({
   // Cada leitura inicia uma CLI: com a janela oculta ou minimizada, consulta bem menos.
@@ -669,9 +673,22 @@ function createWindow() {
       .catch(() => {});
   });
   mainWindow.zoomControl = { apply: applyZoom };
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // Links http(s) abrem no navegador padrão; a janela do app nunca navega nem abre outra janela.
+  const openInBrowser = (url) => {
+    try {
+      electronShell.openExternal(parseExternalUrl(url)).catch(() => {});
+    } catch {
+      /* endereço não permitido */
+    }
+  };
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    openInBrowser(url);
+    return { action: "deny" };
+  });
   mainWindow.webContents.on("will-navigate", (event, url) => {
-    if (url !== mainWindow.webContents.getURL()) event.preventDefault();
+    if (url === mainWindow.webContents.getURL()) return;
+    event.preventDefault();
+    openInBrowser(url);
   });
 
   const devUrl = "http://127.0.0.1:5173";
@@ -1055,6 +1072,12 @@ module.exports.ready = app.whenReady().then(async () => {
       return { ok: false, error: e.message };
     }
   });
+  handle("list-native-commands", (_event, request) =>
+    nativeCommands.list(String(request?.providerId || ""), validCwd(request?.cwd), {
+      refresh: !!request?.refresh,
+    }),
+  );
+  handle("open-external-url", (_event, url) => openExternalUrl(url, electronShell));
   handle("get-zoom", () => mainWindow.webContents.getZoomFactor());
   handle("set-zoom", (_event, factor) => mainWindow.zoomControl.apply(Number(factor)));
 
