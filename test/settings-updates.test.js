@@ -12,7 +12,7 @@ const {
 } = require("../electron/ecosystem");
 const { buildArgs } = require("../electron/cli-runner");
 function temp(t) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "capyai-settings-test-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-settings-test-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
 }
@@ -219,7 +219,7 @@ test("Codex npm updates keep the detected prefix, including Windows npm shims", 
     "install",
     "--global",
     "--prefix",
-    prefix,
+    fs.realpathSync(prefix),
     "@openai/codex@latest",
   ]);
   const windowsPrefix = path.join(root, "windows-npm"),
@@ -234,7 +234,7 @@ test("Codex npm updates keep the detected prefix, including Windows npm shims", 
     "install",
     "--global",
     "--prefix",
-    windowsPrefix,
+    fs.realpathSync(windowsPrefix),
     "@openai/codex@latest",
   ]);
 });

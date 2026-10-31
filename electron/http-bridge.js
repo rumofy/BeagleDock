@@ -13,10 +13,18 @@ const ALLOWED_METHODS = new Set([
   "listAIMemoryPages",
   "readAIMemoryPage",
   "runAIMemoryCommand",
+  "getAIMemoryScope",
+  "listAIMemoryProjects",
+  "listAIMemoryProjectPages",
+  "getAIMemoryProjectOverview",
+  "listAIMemoryProjectSessions",
+  "getAIMemoryMaintenancePrompt",
+  "getAIMemoryMaintenanceCwd",
   "getInstalledSkills",
   "getCliHistory",
   "loadFullConversation",
   "getUserProfile",
+  "getAppVersion",
   "getSavedState",
   "saveSession",
   "deleteSession",
@@ -63,7 +71,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
     next = () => json(res, 404, { error: "Rota não encontrada." }),
   ) {
     const url = new URL(req.url, "http://localhost");
-    if (!url.pathname.startsWith("/__capy/")) return next();
+    if (!url.pathname.startsWith("/__beagledock/")) return next();
     const expected = new URL(origin);
     if (
       req.headers.host !== expected.host ||
@@ -72,7 +80,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
         !["same-origin", "none"].includes(req.headers["sec-fetch-site"]))
     )
       return json(res, 403, { error: "Origem não autorizada." });
-    const events = url.pathname === "/__capy/events";
+    const events = url.pathname === "/__beagledock/events";
     const presented = events
       ? url.searchParams.get("token")
       : req.headers.authorization?.replace(/^Bearer /, "");
@@ -94,7 +102,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
       });
       return;
     }
-    if (url.pathname !== "/__capy/invoke")
+    if (url.pathname !== "/__beagledock/invoke")
       return json(res, 404, { error: "Rota não encontrada." });
     if (req.method !== "POST") return json(res, 405, { error: "Use POST." });
     if (req.headers["content-type"]?.split(";")[0] !== "application/json")

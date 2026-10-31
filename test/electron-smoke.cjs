@@ -142,7 +142,7 @@ async function send(win, text, expected) {
     );
     const args = JSON.parse(
       require("fs").readFileSync(
-        path.join(process.env.CAPYAI_SMOKE_ROOT, "last-args-agy.json"),
+        path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, "last-args-agy.json"),
         "utf8",
       ),
     );
@@ -154,7 +154,7 @@ async function send(win, text, expected) {
     `[...document.querySelectorAll('img[src*="providers/"]')].length>=3 && [...document.querySelectorAll('img[src*="providers/"]')].every(img=>img.complete && img.naturalWidth>0)`,
   );
   const state = await win.webContents.executeJavaScript(
-    "window.capyAPI.getSavedState()",
+    "window.beagleAPI.getSavedState()",
   );
   assert.equal(state.sessions.length, 3);
   assert.equal(new Set(state.sessions.map((s) => s.nativeSessionId)).size, 3);
@@ -182,7 +182,7 @@ async function send(win, text, expected) {
     await waitFor(win, `document.body.innerText.includes('Na fila')`);
     await waitFor(win, `!document.body.innerText.includes('EXECUTANDO CLI')`);
     const after = await win.webContents.executeJavaScript(
-      "window.capyAPI.getSavedState()",
+      "window.beagleAPI.getSavedState()",
     );
     const agyBefore = state.sessions.find(
       (s) => s.providerId === "antigravity",
@@ -225,7 +225,7 @@ async function send(win, text, expected) {
     );
     await send(win, "independent conversation", "codex fixture resposta 1");
     const middle = await win.webContents.executeJavaScript(
-      "window.capyAPI.getSavedState()",
+      "window.beagleAPI.getSavedState()",
     );
     const created = middle.sessions.find(
       (s) => !state.sessions.some((old) => old.id === s.id),
@@ -250,7 +250,7 @@ async function send(win, text, expected) {
       `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
     );
     const done = await win.webContents.executeJavaScript(
-      "window.capyAPI.getSavedState()",
+      "window.beagleAPI.getSavedState()",
     );
     assert.equal(
       done.sessions.find((s) => s.id === agyBefore.id).nativeSessionId,
@@ -278,7 +278,7 @@ async function send(win, text, expected) {
         `document.querySelector('header').innerText.includes('Nova sessão')`,
       );
       await win.webContents.executeJavaScript(
-        `window.__liveOutput='';window.__unsubscribeLive?.();window.__unsubscribeLive=window.capyAPI.on('pty-data',p=>{window.__liveOutput+=p.data;});void 0;`,
+        `window.__liveOutput='';window.__unsubscribeLive?.();window.__unsubscribeLive=window.beagleAPI.on('pty-data',p=>{window.__liveOutput+=p.data;});void 0;`,
       );
       await win.webContents.executeJavaScript(
         `(()=>{const input=document.querySelector('input[placeholder^="Mensagem"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'smoke-live ${index}');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
@@ -354,7 +354,7 @@ async function send(win, text, expected) {
         `Desktop streaming and allow/deny: provider ${index} passed before completion.`,
       );
       const stopBefore = await win.webContents.executeJavaScript(
-        "window.capyAPI.getSavedState()",
+        "window.beagleAPI.getSavedState()",
       );
       const target = stopBefore.sessions.find(
         (s) => s.title === "smoke-live " + index,
@@ -388,7 +388,7 @@ async function send(win, text, expected) {
         `!document.querySelector('[aria-label="Parar execução e cancelar fila"]') && !document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
       );
       const stopped = await win.webContents.executeJavaScript(
-        "window.capyAPI.getSavedState()",
+        "window.beagleAPI.getSavedState()",
       );
       assert.equal(
         stopped.sessions.find((s) => s.id === target.id).nativeSessionId,
@@ -404,7 +404,7 @@ async function send(win, text, expected) {
       const provider = ["claude", "codex", "agy"][index];
       const received = require("fs").readFileSync(
         path.join(
-          process.env.CAPYAI_SMOKE_ROOT,
+          process.env.BEAGLEDOCK_SMOKE_ROOT,
           "received-" + provider + ".jsonl",
         ),
         "utf8",
@@ -426,7 +426,7 @@ async function send(win, text, expected) {
         `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
       );
       const afterStop = await win.webContents.executeJavaScript(
-        "window.capyAPI.getSavedState()",
+        "window.beagleAPI.getSavedState()",
       );
       assert.equal(
         afterStop.sessions.find((s) => s.id === target.id).nativeSessionId,
@@ -435,7 +435,7 @@ async function send(win, text, expected) {
       const inputs = require("fs")
         .readFileSync(
           path.join(
-            process.env.CAPYAI_SMOKE_ROOT,
+            process.env.BEAGLEDOCK_SMOKE_ROOT,
             "received-" + provider + ".jsonl",
           ),
           "utf8",
@@ -495,7 +495,7 @@ async function send(win, text, expected) {
     assert.deepEqual(
       JSON.parse(
         require("fs").readFileSync(
-          path.join(process.env.CAPYAI_SMOKE_ROOT, "update-agy.json"),
+          path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, "update-agy.json"),
           "utf8",
         ),
       ),

@@ -5,7 +5,7 @@ const fs = require("fs"),
   path = require("path");
 const { createLiveFiles, liveDirectories } = require("../electron/live-files");
 test("native task files stream growing UTF-8 logs before command completion and exclude old files and symlinks", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-live-test-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-live-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const file = path.join(root, "task-1.log");
   fs.writeFileSync(file, "old content");
@@ -42,7 +42,7 @@ test("native task files stream growing UTF-8 logs before command completion and 
   assert.doesNotMatch(data.map((d) => d.text).join(""), /later/);
 });
 test("first-run logs can be discovered after the native id arrives, with bounded reads and session-specific roots", async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-native-roots-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-native-roots-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const dirs = liveDirectories(
     "antigravity",
@@ -82,7 +82,7 @@ test("first-run logs can be discovered after the native id arrives, with bounded
   );
 });
 test("canonical temp roots work through macOS-style system symlinks but session symlinks cannot escape", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-canonical-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-canonical-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const real = path.join(root, "real"),
     alias = path.join(root, "alias");

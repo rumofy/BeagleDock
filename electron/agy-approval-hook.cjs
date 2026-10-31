@@ -1,7 +1,7 @@
 // This hook delegates unchanged outside BeagleDock; it never changes command arguments.
 const net = require("net");
-const socket = process.env.BLEAGLEDOCK_APPROVAL_SOCKET,
-  token = process.env.BLEAGLEDOCK_APPROVAL_TOKEN;
+const socket = process.env.BEAGLEDOCK_APPROVAL_SOCKET,
+  token = process.env.BEAGLEDOCK_APPROVAL_TOKEN;
 if (!socket || !token) {
   console.log(JSON.stringify({ decision: "allow" }));
   process.exit(0);

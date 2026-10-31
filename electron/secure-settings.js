@@ -52,4 +52,31 @@ function publicSettings(settings) {
   }
   return result;
 }
-module.exports = { protectSettings, publicSettings, SECRET_KEYS };
+// Credenciais cifradas com a identidade antiga do app podem não ser mais legíveis.
+// Remove apenas as que falham ao decifrar; sem cofre disponível não há como saber.
+function dropUnreadableSecrets(settings, storage = systemStorage()) {
+  const result = { ...settings };
+  const dropped = [];
+  let available = false;
+  try {
+    available = !!storage?.isEncryptionAvailable();
+  } catch {}
+  if (!available) return { settings: result, dropped };
+  for (const key of SECRET_KEYS) {
+    const value = result[key];
+    if (!value || typeof value !== "object" || value.encrypted !== 1) continue;
+    try {
+      storage.decryptString(Buffer.from(String(value.ciphertext), "base64"));
+    } catch {
+      delete result[key];
+      dropped.push(key);
+    }
+  }
+  return { settings: result, dropped };
+}
+module.exports = {
+  protectSettings,
+  publicSettings,
+  dropUnreadableSecrets,
+  SECRET_KEYS,
+};

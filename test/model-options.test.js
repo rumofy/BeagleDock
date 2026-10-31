@@ -10,7 +10,7 @@ const {
   resolveModelSelection,
 } = require("../electron/model-options");
 const compiled = ts.transpileModule(
-  fs.readFileSync("src/modelSelection.ts", "utf8"),
+  fs.readFileSync("src/lib/modelSelection.ts", "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS } },
 ).outputText;
 const context = { exports: {} };

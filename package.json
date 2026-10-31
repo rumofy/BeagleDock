@@ -1,6 +1,6 @@
 {
   "name": "beagledock",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Multi-CLI for Developers — Claude Code, Codex CLI and Antigravity",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -11,6 +11,8 @@
     "build:vite": "vite build",
     "build:electron": "electron-builder",
     "preview": "vite preview",
+    "version": "node scripts/release-version.mjs",
+    "install:local": "node scripts/install-local.mjs",
     "test": "node --test test/*.test.js",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && npm run build:vite && npm run build:electron",
@@ -36,6 +38,8 @@
     "node-pty": "^1.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
     "smol-toml": "^1.9.1",
     "sqlite3": "^6.0.1"
   },
@@ -54,11 +58,12 @@
     "wait-on": "^8.0.5"
   },
   "build": {
-    "appId": "dev.capyai.desktop",
+    "appId": "dev.beagledock.desktop",
     "productName": "BeagleDock",
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "shared/**/*",
       "package.json",
       "LICENSE",
       "NOTICE"
@@ -91,7 +96,8 @@
           "StartupWMClass": "BeagleDock"
         }
       },
-      "syncDesktopName": true
+      "syncDesktopName": true,
+      "icon": "build/icons"
     },
     "directories": {
       "output": "release"
@@ -123,7 +129,8 @@
       "license": "LICENSE",
       "shortcutName": "BeagleDock"
     },
-    "publish": null
+    "publish": null,
+    "buildDependenciesFromSource": true
   },
   "engines": {
     "node": ">=22.12.0"

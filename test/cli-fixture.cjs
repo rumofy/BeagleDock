@@ -6,7 +6,7 @@ const args = process.argv.slice(2),
   name = path.basename(process.argv[1]);
 if (args[0] === "update") {
   fs.writeFileSync(
-    path.join(process.env.CAPYAI_SMOKE_ROOT, "update-" + name + ".json"),
+    path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, "update-" + name + ".json"),
     JSON.stringify(args),
   );
   console.log("Updated fixture.");
@@ -56,7 +56,7 @@ if (name === "agy" && args.includes("/usage")) {
   );
   process.exit(0);
 }
-const root = process.env.CAPYAI_SMOKE_ROOT;
+const root = process.env.BEAGLEDOCK_SMOKE_ROOT;
 if (!root) throw new Error("Fixture requires isolated storage.");
 if (name === "codex" && args[0] === "app-server") {
   let thread,
@@ -486,13 +486,13 @@ process.stdin.on("data", (chunk) => {
           );
           setTimeout(() => {
             const client = require("net").createConnection(
-              process.env.BLEAGLEDOCK_APPROVAL_SOCKET,
+              process.env.BEAGLEDOCK_APPROVAL_SOCKET,
             );
             let result = "";
             client.on("connect", () =>
               client.write(
                 JSON.stringify({
-                  token: process.env.BLEAGLEDOCK_APPROVAL_TOKEN,
+                  token: process.env.BEAGLEDOCK_APPROVAL_TOKEN,
                   request: {
                     conversationId: id,
                     toolCall: {

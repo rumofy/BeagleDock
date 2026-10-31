@@ -6,7 +6,7 @@ const fs = require("fs"),
 const { spawnCli, terminateCli } = require("../electron/platform");
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 test("stopping a CLI stops its descendant command without terminating another process group", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-process-stop-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-process-stop-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const leaf =
     "const fs=require('fs');setInterval(()=>fs.appendFileSync(process.argv[1],'x'),20);";

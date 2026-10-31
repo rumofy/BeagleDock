@@ -33,7 +33,6 @@ export interface WorkspaceItem {
   name: string;
   path: string;
   hasAIMemory: boolean;
-  aiMemoryDaemonActive?: boolean;
 }
 
 export interface ChatSession {
@@ -217,4 +216,72 @@ export interface AIMemoryProjectSummary {
   projectId: string;
   pages: number;
   lastUpdated: string;
+}
+
+export interface AIMemoryApiResult<T> {
+  ok: boolean;
+  data?: T;
+  status?: number;
+  error?: string;
+  notFound?: boolean;
+  rawText?: string;
+}
+
+export interface AIMemoryProject {
+  workspace: string;
+  project: string;
+  projectId: string;
+  pageCount: number;
+  sessionCount: number;
+  observationCount: number;
+  openSessionCount: number;
+  lastUpdated: string;
+  lastActivity: string;
+}
+
+export interface AIMemoryPageItem {
+  path: string;
+  title: string;
+  kind: string;
+  tier: string;
+  updatedAt: string;
+}
+
+export interface AIMemoryPageContent extends AIMemoryPageItem {
+  workspace?: string;
+  project?: string;
+  body: string;
+  body_markdown?: string;
+  pinned?: boolean;
+  createdAt?: string;
+  frontmatter?: Record<string, unknown>;
+  links?: unknown[];
+  backlinks?: unknown[];
+}
+
+export interface AIMemoryOverview {
+  counts: Record<string, number>;
+  activity7d: unknown;
+  activity30d: unknown;
+  lastObservationAt: string;
+  pendingHandoffCount: number;
+  health: {
+    stale: number;
+    duplicates: number;
+    contradictions: number;
+    orphans: number;
+    stalePages: Array<{ path: string; title?: string }>;
+    duplicatePages: Array<{ path: string; title?: string }>;
+    orphanPages: Array<{ path: string; title?: string; kind?: string }>;
+  };
+}
+
+export interface AIMemoryScope {
+  workspace: string;
+  project: string;
+  source: "marker" | "git" | "folder";
+  markerPath: string | null;
+  serverOnline: boolean;
+  projectExists: boolean;
+  pages: number | null;
 }

@@ -6,18 +6,18 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { randomBytes } from "node:crypto";
 const projectDir = path.dirname(fileURLToPath(import.meta.url));
-function capyBridgePlugin() {
-  const enabled = process.env.CAPYAI_BROWSER_BRIDGE === "1";
+function beagleBridgePlugin() {
+  const enabled = process.env.BEAGLEDOCK_BROWSER_BRIDGE === "1";
   const token = randomBytes(32).toString("hex");
   return {
-    name: "capy-bridge",
+    name: "beagledock-bridge",
     apply: "serve" as const,
     transformIndexHtml() {
       return enabled
         ? [
             {
               tag: "meta",
-              attrs: { name: "capy-bridge-token", content: token },
+              attrs: { name: "beagledock-bridge-token", content: token },
               injectTo: "head" as const,
             },
           ]
@@ -46,7 +46,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    capyBridgePlugin(),
+    beagleBridgePlugin(),
     {
       name: "production-csp",
       apply: "build",

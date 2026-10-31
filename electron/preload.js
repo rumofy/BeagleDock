@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
-contextBridge.exposeInMainWorld("capyAPI", {
+contextBridge.exposeInMainWorld("beagleAPI", {
   getGlobalPermissions: () => ipcRenderer.invoke("get-global-permissions"),
   saveGlobalPermissions: (id, changes) =>
     ipcRenderer.invoke("save-global-permissions", id, changes),
@@ -18,6 +18,22 @@ contextBridge.exposeInMainWorld("capyAPI", {
     ipcRenderer.invoke("ai-memory-list-pages", workspace, project, limit),
   readAIMemoryPage: (pagePath, workspace, project) =>
     ipcRenderer.invoke("ai-memory-read-page", pagePath, workspace, project),
+  getAIMemoryScope: (cwd) => ipcRenderer.invoke("ai-memory-scope", cwd),
+  listAIMemoryProjects: () => ipcRenderer.invoke("ai-memory-projects"),
+  listAIMemoryProjectPages: (ws, p) =>
+    ipcRenderer.invoke("ai-memory-project-pages", ws, p),
+  getAIMemoryProjectOverview: (ws, p) =>
+    ipcRenderer.invoke("ai-memory-project-overview", ws, p),
+  listAIMemoryProjectSessions: (ws, p) =>
+    ipcRenderer.invoke("ai-memory-project-sessions", ws, p),
+  deleteAIMemoryPage: (ws, p, pagePath, confirmProtected) =>
+    ipcRenderer.invoke("ai-memory-delete-page", ws, p, pagePath, confirmProtected),
+  purgeAIMemoryProject: (ws, p, confirmName) =>
+    ipcRenderer.invoke("ai-memory-purge-project", ws, p, confirmName),
+  getAIMemoryMaintenancePrompt: (opts) =>
+    ipcRenderer.invoke("ai-memory-maintenance-prompt", opts),
+  getAIMemoryMaintenanceCwd: () =>
+    ipcRenderer.invoke("ai-memory-maintenance-cwd"),
   runAIMemoryCommand: (subcmdArgs, cwd) =>
     ipcRenderer.invoke("ai-memory-command", subcmdArgs, cwd),
   getInstalledSkills: () => ipcRenderer.invoke("get-skills"),
@@ -25,6 +41,7 @@ contextBridge.exposeInMainWorld("capyAPI", {
   loadFullConversation: (provider, sessionId) =>
     ipcRenderer.invoke("load-full-conversation", provider, sessionId),
   getUserProfile: () => ipcRenderer.invoke("get-user-profile"),
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   getSavedState: () => ipcRenderer.invoke("get-saved-state"),
   saveSession: (session) => ipcRenderer.invoke("save-session", session),
   deleteSession: (sessionId) => ipcRenderer.invoke("delete-session", sessionId),

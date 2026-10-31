@@ -41,7 +41,7 @@ test("approval IDs are single-use, validated, scoped by session and canceled on 
   assert.deepEqual(events.at(-1), []);
 });
 test("AGY hook installation preserves other hooks and backs up the original; malformed config is untouched", (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-hooks-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-hooks-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const file = path.join(home, ".gemini/config/hooks.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -57,7 +57,7 @@ test("AGY hook installation preserves other hooks and backs up the original; mal
   });
   const saved = fs.readFileSync(file, "utf8");
   assert.deepEqual(JSON.parse(saved).existing, JSON.parse(original).existing);
-  assert.equal(fs.readFileSync(file + ".before-bleagledock", "utf8"), original);
+  assert.equal(fs.readFileSync(file + ".before-beagledock", "utf8"), original);
   ensureHook({
     home,
     env: {},
@@ -68,6 +68,29 @@ test("AGY hook installation preserves other hooks and backs up the original; mal
   fs.writeFileSync(file, "{invalid");
   assert.throws(() => ensureHook({ home, env: {} }), /inválido/);
   assert.equal(fs.readFileSync(file, "utf8"), "{invalid");
+});
+test("AGY hook installation removes legacy hook entries, keeps other hooks and does not duplicate", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-legacy-hooks-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const file = path.join(home, ".gemini/config/hooks.json");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const legacyEntry = { PreToolUse: [{ matcher: ".*", hooks: [] }] };
+  const keep = { SessionStart: [{ command: "example" }] };
+  const original = JSON.stringify({
+    mine: keep,
+    "capyai-permissions": legacyEntry,
+    "bleagledock-permissions": legacyEntry,
+  });
+  fs.writeFileSync(file, original);
+  const options = { home, env: {}, node: "/fixture/node", script: "/fixture/hook.cjs" };
+  ensureHook(options);
+  const saved = JSON.parse(fs.readFileSync(file, "utf8"));
+  assert.deepEqual(Object.keys(saved).sort(), ["beagledock-permissions", "mine"]);
+  assert.deepEqual(saved.mine, keep);
+  assert.equal(fs.readFileSync(file + ".before-beagledock", "utf8"), original);
+  const text = fs.readFileSync(file, "utf8");
+  ensureHook(options);
+  assert.equal(fs.readFileSync(file, "utf8"), text);
 });
 function send(socket, message) {
   return new Promise((resolve, reject) => {
@@ -80,7 +103,7 @@ function send(socket, message) {
   });
 }
 test("AGY approval IPC authenticates requests, matches the native conversation, delegates outside approved modes and never rewrites commands", async (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "bleagle-approval-ipc-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-approval-ipc-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const asks = [];
   const bridge = await createAgyApprovalBridge({
@@ -101,8 +124,8 @@ test("AGY approval IPC authenticates requests, matches the native conversation, 
       conversationId: "native-session-123",
       toolCall: { name: "run_command", args: { CommandLine: "npm test" } },
     },
-    socket = bridge.env.BLEAGLEDOCK_APPROVAL_SOCKET,
-    token = bridge.env.BLEAGLEDOCK_APPROVAL_TOKEN;
+    socket = bridge.env.BEAGLEDOCK_APPROVAL_SOCKET,
+    token = bridge.env.BEAGLEDOCK_APPROVAL_TOKEN;
   assert.equal(await send(socket, { token: "bad", request }), null);
   assert.equal(asks.length, 0);
   assert.equal(

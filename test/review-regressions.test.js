@@ -5,9 +5,9 @@ const fs = require("node:fs"),
   path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const root = fs.mkdtempSync(
-  path.join(os.tmpdir(), "capyai-review-regressions-"),
+  path.join(os.tmpdir(), "beagledock-review-regressions-"),
 );
-process.env.CAPYAI_DATA_DIR = root;
+process.env.BEAGLEDOCK_DATA_DIR = root;
 const store = require("../electron/database");
 const { createSessionService } = require("../electron/session-service");
 const { createCliRunner } = require("../electron/cli-runner");
@@ -61,7 +61,7 @@ test("reopening existing native history twice replaces saved messages, including
   const code = `const db=require(${JSON.stringify(path.resolve("electron/database.js"))});(async()=>{console.log(JSON.stringify(await db.getChatMessages('review-import')));await new Promise((r,j)=>db.db.close(e=>e?j(e):r()));})().catch(e=>{console.error(e.message);process.exit(1)});`;
   const restored = JSON.parse(
     execFileSync(process.execPath, ["-e", code], {
-      env: { ...process.env, CAPYAI_DATA_DIR: root },
+      env: { ...process.env, BEAGLEDOCK_DATA_DIR: root },
       encoding: "utf8",
     }),
   );
