@@ -1,4 +1,5 @@
 const { StringDecoder } = require("string_decoder");
+const path = require("path");
 const { findBinary, spawnCli, validCwd, terminateCli } = require("./platform");
 const {
   agyPermissionSettings,
@@ -6,6 +7,7 @@ const {
 } = require("./agy-permissions");
 
 const { createLiveFiles, liveDirectories } = require("./live-files");
+const { createAgyChildOutput } = require("./agy-child-output");
 const { createCodexStream } = require("./codex-stream");
 const {
   claudeToolActivity,
@@ -269,6 +271,7 @@ function createCliRunner({
               permission,
               ask: approvals.ask,
               getNativeId: () => processes.get(sessionId)?.nativeId,
+              onConversation: (id) => processes.get(sessionId)?.watchConversation?.(id),
             });
           if (cancelled.has(sessionId) || closed) {
             approvalBridge.close();
@@ -323,7 +326,58 @@ function createCliRunner({
         });
         const decoder = new StringDecoder("utf8");
         const startLiveFiles = (id, baseline) => {
-          if (current.liveFiles) return;
+          if (current.liveFiles) {
+            if (providerId === "antigravity" && id !== current.nativeId && !current.childOutputs.has(id)) {
+              current.childOutputs.set(id, createAgyChildOutput({
+                onCommand: (command) => {
+                  activity("Executando comando…", oneLine(command));
+                  output(sessionId, `$ ${command}\r\n`, child.pid);
+                },
+                onOutput: (text) => {
+                  activity("Recebendo saída do comando…");
+                  output(sessionId, text, child.pid);
+                },
+                onToolStart: ({ id: key, name, command, args: toolArgs }) => {
+                  if (["send_message", "manage_inbox"].includes(name)) return;
+                  const parentId =
+                    current.childAgents?.get(id) || current.lastAgentStepId;
+                  const isCommand = typeof command === "string" && command.length > 0;
+                  current.events.upsert(`child-${id}-${key}`, {
+                    kind: isCommand ? "command" : "tool",
+                    title: String(name || "tool"),
+                    detail: oneLine(
+                      command ||
+                        (toolArgs ? JSON.stringify(toolArgs) : ""),
+                    ),
+                    ...(bufferingNote(command)
+                      ? { meta: { note: bufferingNote(command) } }
+                      : {}),
+                    ...(parentId ? { parentId } : {}),
+                  });
+                },
+                onToolEnd: ({ id: key, status, error }) => {
+                  const eventId = `child-${id}-${key}`;
+                  if (current.events.get(eventId))
+                    current.events.finish(eventId, status, {
+                      ...(error ? { detail: oneLine(error) } : {}),
+                    });
+                },
+                onFinish: () => {
+                  const parentId = current.childAgents?.get(id);
+                  if (parentId && current.events.get(parentId))
+                    current.events.finish(parentId, "done");
+                },
+                hasLiveOutput: (step) => current.childLiveSteps.has(`${id}:${step}`),
+              }));
+              const directories = liveDirectories(providerId, id, cwd).map((d) => ({ ...d, conversationId: id }));
+              if (directories.length) directories.push({ ...directories[0], dir: path.join(path.dirname(directories[0].dir), "logs"), pattern: /^transcript\.jsonl$/ });
+              void current.liveFiles.addDirectories(directories);
+            }
+            return;
+          }
+          current.childAgents = new Map();
+          current.childOutputs = new Map();
+          current.childLiveSteps = new Set();
           current.liveOutputSteps = new Set();
           current.liveTexts = new Map();
           current.liveTaskIds = new Set();
@@ -331,7 +385,13 @@ function createCliRunner({
             directories: liveDirectories(providerId, id, cwd),
             baseline,
             onData: (data, meta) => {
-              if (meta.stepIndex) {
+              if (meta.conversationId && meta.file === "transcript.jsonl") {
+                current.childOutputs.get(meta.conversationId)?.(data);
+                return;
+              }
+              if (meta.conversationId && meta.stepIndex)
+                current.childLiveSteps.add(`${meta.conversationId}:${meta.stepIndex}`);
+              if (meta.stepIndex && !meta.conversationId) {
                 current.liveOutputSteps.add(Number(meta.stepIndex));
                 current.liveTaskIds.add(`task-${meta.stepIndex}`);
               }
@@ -347,12 +407,15 @@ function createCliRunner({
             },
           });
         };
+        current.watchConversation = (id) => startLiveFiles(id, false);
         if (nativeId) startLiveFiles(nativeId, true);
         const setNativeId = (id) => {
           if (
             typeof id !== "string" ||
             !/^[a-zA-Z0-9_-]{8,160}$/.test(id) ||
-            id === current.nativeId
+            id === current.nativeId ||
+            current.childAgents?.has(id) ||
+            current.childOutputs?.has(id)
           )
             return;
           if (current.nativeId) {
@@ -488,28 +551,50 @@ function createCliRunner({
                   info.name ||
                   info.tool_name ||
                   info.tool ||
+                  step.tool_name ||
                   String(step.step_type).toLowerCase();
+                const isSubagent =
+                  step.step_type === "subagent" ||
+                  /subagent/i.test(String(name));
+                if (isSubagent) current.lastAgentStepId = id;
+                const spawned = Array.isArray(step.subagent_info?.subagents)
+                  ? step.subagent_info.subagents
+                  : [];
+                for (const sub of spawned) {
+                  if (typeof sub?.conversation_id === "string") {
+                    current.childAgents ||= new Map();
+                    current.childAgents.set(sub.conversation_id, id);
+                    startLiveFiles(sub.conversation_id, false);
+                  }
+                }
                 if (!current.events.get(id))
                   current.events.upsert(id, {
-                    kind: /subagent/i.test(String(name))
+                    kind: isSubagent
                       ? "agent"
                       : command
                         ? "command"
                         : isTool
                           ? "tool"
                           : "step",
-                    title: isTool ? String(name) : String(step.step_type),
+                    title: isTool || isSubagent ? String(name) : String(step.step_type),
                     ...(bufferingNote(command)
                       ? { meta: { note: bufferingNote(command) } }
                       : {}),
                     detail: oneLine(
                       command ||
+                        spawned[0]?.initial_prompt ||
                         (info.parameters
                           ? JSON.stringify(info.parameters)
                           : step.text || ""),
                     ),
                   });
-                if (step.state === "DONE")
+                else if (spawned[0]?.initial_prompt)
+                  current.events.upsert(id, {
+                    detail: oneLine(spawned[0].initial_prompt),
+                  });
+                // invoke_subagent retorna DONE ao criar o agente em segundo plano; ele continua ativo
+                // até entregar a mensagem de conclusão ou encerrar o turno.
+                if (step.state === "DONE" && (!isSubagent || info.error || !spawned.length))
                   current.events.finish(id, info.error ? "error" : "done", {
                     ...(info.error
                       ? { detail: oneLine(info.error.message || "Falha.") }

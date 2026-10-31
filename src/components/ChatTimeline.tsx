@@ -71,7 +71,7 @@ const EventRow = memo(function EventRow({
     : (event.durationMs ?? 0);
   const hasText = !!event.text;
   return (
-    <li className="py-1">
+    <li className="py-1 min-w-0 overflow-hidden">
       <div className="flex items-center gap-2 min-w-0">
         <span
           className={`shrink-0 ${event.status === "error" ? "text-rose-600" : running ? "text-amber-600" : "text-[#8c8270]"}`}
@@ -79,7 +79,7 @@ const EventRow = memo(function EventRow({
         >
           <Icon size={13} />
         </span>
-        <span className="text-[11px] font-semibold text-[#3d382e] shrink-0">
+        <span className="text-[11px] font-semibold text-[#3d382e] truncate max-w-[45%]" title={event.title || KIND_LABEL[event.kind]}>
           {event.title || KIND_LABEL[event.kind]}
         </span>
         {event.detail && (
@@ -90,7 +90,7 @@ const EventRow = memo(function EventRow({
             {event.detail}
           </span>
         )}
-        <span className="ml-auto flex items-center gap-1.5 shrink-0 text-[10px] font-mono text-[#938b7a]">
+        <span className="ml-auto flex items-center gap-1.5 shrink-0 text-[10px] font-mono tabular-nums text-[#938b7a]">
           {elapsed > 0 && formatDuration(elapsed)}
           {event.exitCode !== undefined && event.exitCode !== 0 && (
             <span className="text-rose-600">exit {event.exitCode}</span>
@@ -139,7 +139,7 @@ const EventRow = memo(function EventRow({
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="mt-0.5 ml-5 text-left w-[calc(100%-1.25rem)]"
+          className="mt-0.5 ml-5 block text-left w-[calc(100%-1.25rem)] overflow-hidden"
           aria-expanded={expanded}
         >
           <span
@@ -187,18 +187,18 @@ export const ChatTimeline = memo(function ChatTimeline({
   const now = useNow(open && running > 0);
   return (
     <div
-      className="rounded-xl border border-[#e4dec9] bg-[#faf8f4] px-2.5 py-1.5"
+      className="min-w-0 rounded-xl border border-[#e4dec9] bg-[#faf8f4] px-2.5 py-1.5"
       data-testid="chat-timeline"
     >
       <button
         type="button"
         onClick={() => setUserOpen(!open)}
-        className="flex items-center gap-1.5 text-[11px] font-bold text-[#665e4f] w-full"
+        className="flex items-center gap-1.5 text-[11px] font-bold text-[#665e4f] w-full whitespace-nowrap"
         aria-expanded={open}
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         Atividade
-        <span className="font-normal text-[#938b7a]">
+        <span className="font-normal text-[#938b7a] truncate min-w-0">
           · {events.length} {events.length === 1 ? "etapa" : "etapas"}
           {agents > 0
             ? ` · ${agents} ${agents === 1 ? "agente" : "agentes"}`
@@ -208,7 +208,10 @@ export const ChatTimeline = memo(function ChatTimeline({
         </span>
       </button>
       {open && (
-        <ul className="mt-1 divide-y divide-[#eee8d9] max-h-72 overflow-y-auto">
+        <ul
+          data-testid="chat-timeline-steps"
+          className={`mt-1 min-w-0 divide-y divide-[#eee8d9] overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable] ${streaming || running > 0 ? "h-72" : "max-h-72"}`}
+        >
           {roots.map((event) => (
             <EventRow
               key={event.id}

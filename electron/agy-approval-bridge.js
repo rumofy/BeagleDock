@@ -4,6 +4,7 @@ const fs = require("fs"),
   net = require("net"),
   crypto = require("crypto");
 const { removeLegacyHooks } = require("./migration");
+const { settingsPath } = require("./agy-permissions");
 const READ_TOOLS = new Set([
   "read_file",
   "view_file",
@@ -12,6 +13,29 @@ const READ_TOOLS = new Set([
   "grep_search",
   "list_permissions",
   "manage_task",
+  "command_status",
+  "list_resources",
+  "read_resource",
+  "invoke_subagent",
+  "define_subagent",
+  "manage_subagents",
+  "send_message",
+  "manage_inbox",
+  "wait",
+  "wait_5_seconds",
+  "finish",
+  "ask_question",
+]);
+const READ_MCP_TOOLS = new Set([
+  "memory_query",
+  "memory_recent",
+  "memory_read_page",
+  "memory_read_session_observations",
+  "memory_status",
+  "memory_briefing",
+  "memory_explore",
+  "memory_handoff_list",
+  "memory_message_list",
 ]);
 const WRITE_TOOLS = new Set([
   "write_to_file",
@@ -20,6 +44,20 @@ const WRITE_TOOLS = new Set([
   "edit_file",
   "write_file",
 ]);
+function effectivePermission(permission, options) {
+  if (permission !== "inherit") return permission;
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsPath(options), "utf8"));
+    if (
+      settings?.toolPermission === "always-proceed" ||
+      settings?.agentMode === "auto"
+    )
+      return "full";
+    if (settings?.agentMode === "plan") return "plan";
+    if (settings?.toolPermission === "strict") return "strict";
+  } catch {}
+  return "edits";
+}
 function ensureHook({
   home = os.homedir(),
   env = process.env,
@@ -95,6 +133,7 @@ async function createAgyApprovalBridge({
   permission,
   ask,
   getNativeId,
+  onConversation = () => {},
   home,
   env,
   node,
@@ -138,7 +177,8 @@ async function createAgyApprovalBridge({
         nativeId = getNativeId();
       if (
         !nativeId ||
-        request.conversationId !== nativeId ||
+        typeof request.conversationId !== "string" ||
+        !/^[a-zA-Z0-9_-]{8,160}$/.test(request.conversationId) ||
         !request.toolCall?.name
       ) {
         client.end(
@@ -149,18 +189,31 @@ async function createAgyApprovalBridge({
         );
         return;
       }
+      // O segredo é exclusivo desta árvore de processos e é herdado pelos subagentes.
+      // Eles têm IDs nativos próprios; exigir o ID do pai negava suas ferramentas sem perguntar.
+      // Outro processo/sessão continua sem acesso: precisa autenticar com o token desta ponte.
+      onConversation(request.conversationId);
       const name = request.toolCall.name;
+      const args = request.toolCall.args || {};
+      const activePermission = effectivePermission(permission, { home, env });
+      const isReadMcp =
+        name === "call_mcp_tool" &&
+        args.ServerName === "ai-memory" &&
+        READ_MCP_TOOLS.has(args.ToolName);
       let result = { decision: "allow" };
       if (
-        !["full", "plan", "ask"].includes(permission) &&
+        !["full", "plan", "ask"].includes(activePermission) &&
         !READ_TOOLS.has(name) &&
-        !(permission === "edits" && WRITE_TOOLS.has(name))
+        !isReadMcp &&
+        !(activePermission === "edits" && WRITE_TOOLS.has(name))
       ) {
         const allow = await ask({
           sessionId,
           providerId: "antigravity",
           tool: name,
-          input: request.toolCall.args,
+          input: request.conversationId === nativeId
+            ? request.toolCall.args
+            : { ...request.toolCall.args, agentConversationId: request.conversationId },
         });
         result = {
           decision: allow ? "auto_approve" : "deny",

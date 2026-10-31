@@ -228,12 +228,33 @@ function createCodexStream({
         });
       }
       const SUB_KINDS = new Set(["command", "mcp", "tool", "file", "web"]);
+      function commandOutput(id, delta) {
+        current.commands.set(id, (current.commands.get(id) || "") + delta);
+        output(delta);
+      }
+      function completeCommand(id, item) {
+        const received = current.commands.get(id) || "";
+        const full = item.aggregatedOutput || "";
+        if (full && full !== received) {
+          if (full.startsWith(received)) output(full.slice(received.length));
+          else if (received && full.endsWith(received))
+            output("\r\n[Início da saída]\r\n" + full.slice(0, -received.length));
+          else if (!received) output(full);
+        }
+        output("\r\n");
+        current.commands.delete(id);
+      }
       function handleSubThreadItem(method, params, parentId) {
+        const id = `${params.threadId}:${params.itemId || params.item?.id}`;
+        if (method === "item/commandExecution/outputDelta") {
+          commandOutput(id, params.delta || "");
+          return;
+        }
         const item = params.item || {};
+        if (!["item/started", "item/completed"].includes(method)) return;
         const label = codexItemActivity(item);
         if (!label || !SUB_KINDS.has(label.kind) || !item.id) return;
-        const id = `${params.threadId}:${item.id}`;
-        if (!current.events.get(id))
+        if (!current.events.get(id)) {
           current.events.upsert(id, {
             kind: label.kind,
             title: label.title,
@@ -241,7 +262,9 @@ function createCodexStream({
             parentId,
             ...(label.note ? { meta: { note: label.note } } : {}),
           });
-        if (method === "item/completed")
+          if (item.type === "commandExecution") output(`$ ${item.command}\r\n`);
+        }
+        if (method === "item/completed") {
           current.events.finish(
             id,
             ["failed", "declined"].includes(item.status) || item.error
@@ -251,11 +274,13 @@ function createCodexStream({
               ? { durationMs: item.durationMs }
               : {},
           );
+          if (item.type === "commandExecution") completeCommand(id, item);
+        }
       }
       // Registra as conversas dos agentes lançados, para rotear as etapas delas.
       function learnSubThreads(item) {
         const ids =
-          item.type === "collabAgentToolCall"
+          item.type === "collabAgentToolCall" && ["spawnAgent", "spawn_agent"].includes(item.tool)
             ? Array.isArray(item.receiverThreadIds)
               ? item.receiverThreadIds
               : []
@@ -266,15 +291,31 @@ function createCodexStream({
         current.subThreads ||= new Map();
         for (const threadId of ids)
           if (typeof threadId === "string")
-            current.subThreads.set(threadId, item.id);
+            if (!current.subThreads.has(threadId)) current.subThreads.set(threadId, item.id);
         // Agente do Codex pode seguir trabalhando depois do fim do turno: não é encerrado com ele.
         current.events.upsert(item.id, {
+          kind: "agent",
+          title: codexItemActivity(item)?.title || "Subagente",
           meta: {
             threads: ids.length,
             background: true,
             ...(item.model ? { model: String(item.model) } : {}),
           },
         });
+      }
+      function updateAgentStates(item) {
+        for (const [threadId, state] of Object.entries(item.agentsStates || {})) {
+          const id = current.subThreads?.get(threadId);
+          if (!id) continue;
+          if (state?.message) current.events.upsert(id, { text: state.message });
+          if (["completed", "shutdown", "interrupted", "errored", "notFound"].includes(state?.status))
+            current.events.finish(id, ["errored", "notFound", "interrupted"].includes(state.status) ? "error" : "done");
+        }
+        if (item.type === "subAgentActivity") {
+          const id = current.subThreads?.get(item.agentThreadId);
+          if (id && ["completed", "interrupted"].includes(item.kind))
+            current.events.finish(id, item.kind === "completed" ? "done" : "error");
+        }
       }
       function handle(ev) {
         if (ev.id !== undefined && !ev.method) {
@@ -290,7 +331,7 @@ function createCodexStream({
         if (ev.id !== undefined && ev.method) {
           if (/requestApproval$/.test(ev.method)) {
             const request = ev.params || {};
-            if (request.threadId && request.threadId !== current.nativeId) {
+            if (request.threadId && request.threadId !== current.nativeId && !current.subThreads?.has(request.threadId)) {
               send({ id: ev.id, result: { decision: "decline" } });
               return;
             }
@@ -344,11 +385,7 @@ function createCodexStream({
         if (params.threadId && params.threadId !== current.nativeId) {
           // Conversa de um subagente: as etapas dela entram aninhadas sob o agente que a lançou.
           const parentId = current.subThreads?.get(params.threadId);
-          if (
-            parentId &&
-            (ev.method === "item/started" || ev.method === "item/completed")
-          )
-            handleSubThreadItem(ev.method, params, parentId);
+          if (parentId) handleSubThreadItem(ev.method, params, parentId);
           return;
         }
         if (params.turnId && current.turnId && params.turnId !== current.turnId)
@@ -388,6 +425,11 @@ function createCodexStream({
             output(`$ ${params.item.command}\r\n`);
           const label = codexItemActivity(params.item);
           if (label) {
+            // Uma atividade do subagente atualiza o agente original; não cria um agente por mensagem.
+            if (params.item.type === "subAgentActivity" && current.subThreads?.has(params.item.agentThreadId)) {
+              updateAgentStates(params.item);
+              return;
+            }
             sendActivity(label.activity, label.detail);
             current.events.upsert(params.item.id, {
               kind: label.kind,
@@ -397,6 +439,7 @@ function createCodexStream({
               ...(label.note ? { meta: { note: label.note } } : {}),
             });
             learnSubThreads(params.item);
+            updateAgentStates(params.item);
           }
         } else if (
           ev.method === "item/reasoning/textDelta" ||
@@ -451,6 +494,10 @@ function createCodexStream({
           }
           const label = codexItemActivity(item);
           if (label && item.id) {
+            if (item.type === "subAgentActivity" && current.subThreads?.has(item.agentThreadId)) {
+              updateAgentStates(item);
+              return;
+            }
             learnSubThreads(item);
             if (!current.events.get(item.id))
               current.events.upsert(item.id, {
@@ -460,7 +507,8 @@ function createCodexStream({
               });
             const failed =
               ["failed", "declined"].includes(item.status) || !!item.error;
-            current.events.finish(item.id, failed ? "error" : "done", {
+            const runningAgent = label.kind === "agent" && !failed && current.events.get(item.id)?.meta?.background;
+            if (!runningAgent) current.events.finish(item.id, failed ? "error" : "done", {
               ...(label.detail ? { detail: label.detail } : {}),
               ...(Number.isFinite(item.durationMs)
                 ? { durationMs: item.durationMs }
@@ -486,25 +534,14 @@ function createCodexStream({
                   }
                 : {}),
             });
+            updateAgentStates(item);
           }
           if (item.type === "agentMessage") {
             current.messages.set(item.id, item.text || "");
             publish();
           }
           if (item.type === "commandExecution") {
-            const received = current.commands.get(item.id) || "",
-              full = item.aggregatedOutput || "";
-            if (full && full !== received) {
-              if (full.startsWith(received))
-                output(full.slice(received.length));
-              else if (received && full.endsWith(received))
-                output(
-                  "\r\n[Início da saída]\r\n" + full.slice(0, -received.length),
-                );
-              else if (!received) output(full);
-            }
-            output("\r\n");
-            current.commands.delete(item.id);
+            completeCommand(item.id, item);
           }
         } else if (ev.method === "turn/completed") {
           const turn = params.turn || {};

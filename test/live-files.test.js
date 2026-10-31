@@ -4,6 +4,29 @@ const fs = require("fs"),
   os = require("os"),
   path = require("path");
 const { createLiveFiles, liveDirectories } = require("../electron/live-files");
+test("AGY: diretório do filho é acompanhado durante o turno sem reler os logs do pai", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-live-child-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const parent = liveDirectories("antigravity", "parent-session", "/project", { home, env: {} });
+  const child = liveDirectories("antigravity", "child-session", "/project", { home, env: {} }).map((d) => ({ ...d, conversationId: "child-session" }));
+  fs.mkdirSync(parent[0].dir, { recursive: true });
+  fs.mkdirSync(child[0].dir, { recursive: true });
+  fs.writeFileSync(path.join(parent[0].dir, "task-3.log"), "OLD_PARENT");
+  const output = [];
+  const watcher = createLiveFiles({ directories: parent, onData: (text, meta) => output.push({ text, meta }), interval: 10000 });
+  t.after(() => watcher.stop());
+  await watcher.ready;
+  await watcher.addDirectories(child);
+  fs.writeFileSync(path.join(child[0].dir, "task-3.log"), "CHILD_FIRST\n");
+  await watcher.poll();
+  assert.equal(output[0].text, "CHILD_FIRST\n");
+  assert.equal(output[0].meta.conversationId, "child-session");
+  assert.equal(output[0].meta.stepIndex, "3");
+  await watcher.addDirectories(child);
+  fs.appendFileSync(path.join(child[0].dir, "task-3.log"), "CHILD_LAST\n");
+  await watcher.poll();
+  assert.equal(output.map((e) => e.text).join(""), "CHILD_FIRST\nCHILD_LAST\n");
+});
 test("native task files stream growing UTF-8 logs before command completion and exclude old files and symlinks", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-live-test-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
