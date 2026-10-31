@@ -35,6 +35,19 @@ export interface WorkspaceItem {
   hasAIMemory: boolean;
 }
 
+/** Quanto da janela de contexto do modelo está ocupado (e a última compactação). */
+export interface ContextInfo {
+  source?: string;
+  used: number | null;
+  window: number | null;
+  /** A janela veio da CLI (true) ou é uma estimativa pelo nome do modelo (false). */
+  windowKnown?: boolean;
+  compacting?: boolean;
+  compactions?: number;
+  lastCompaction?: { pre?: number; post?: number; trigger?: string; at?: number };
+  updatedAt?: number;
+}
+
 export interface ChatSession {
   id: string;
   providerId: AIProviderId;
@@ -50,6 +63,12 @@ export interface ChatSession {
   ptyLog?: string[];
   ptyRaw?: string;
   nativeSessionId?: string;
+  /** Fora da lista principal, com o histórico preservado. */
+  archived?: boolean;
+  /** Último contexto conhecido, restaurado ao reabrir. */
+  context?: ContextInfo;
+  /** O nome foi dado pela pessoa: o título automático nunca o substitui. */
+  titleLocked?: boolean;
 }
 
 export interface ModelOption {
@@ -82,8 +101,8 @@ export interface AIProviderStatus {
     remainingResetMinutes?: number | null;
     updatedAt?: string | null;
     stale?: boolean;
-    weeklyResetAt?: string;
-    window5hResetAt?: string;
+    weeklyResetAt?: string | null;
+    window5hResetAt?: string | null;
     totalTokens?: number | null;
     inputTokens?: number | null;
     outputTokens?: number | null;
@@ -130,6 +149,50 @@ export interface AIMemoryStatus {
   availableDaemons: AIMemoryDaemonTarget[];
 }
 
+export type ChatEventKind =
+  | "reasoning"
+  | "command"
+  | "tool"
+  | "mcp"
+  | "file"
+  | "web"
+  | "plan"
+  | "agent"
+  | "compaction"
+  | "status"
+  | "step";
+
+/** Uma etapa da resposta (raciocínio, comando, ferramenta…), no mesmo formato para as três CLIs. */
+export interface ChatEvent {
+  id: string;
+  kind: ChatEventKind;
+  title: string;
+  detail?: string;
+  text?: string;
+  status: "running" | "done" | "error";
+  startedAt?: number;
+  endedAt?: number;
+  durationMs?: number;
+  exitCode?: number;
+  /** Etapa feita por um agente: o id da etapa do agente que a lançou. */
+  parentId?: string;
+  /** Dados do agente: tipo, tokens, ferramentas usadas, última ferramenta. */
+  meta?: {
+    taskId?: string;
+    subagentType?: string;
+    tokens?: number;
+    toolUses?: number;
+    lastTool?: string;
+    durationMs?: number;
+    model?: string;
+    threads?: number;
+    /** Aviso sobre a etapa (ex.: o comando só mostra a saída ao terminar). */
+    note?: string;
+    /** Agente lançado em segundo plano: segue trabalhando depois do fim do turno. */
+    background?: boolean;
+  };
+}
+
 export interface ChatMessage {
   id: string;
   sessionId: string;
@@ -145,7 +208,16 @@ export interface ChatMessage {
   embeddedPtyLog?: string[];
   isStreaming?: boolean;
   activity?: string;
+  /** Complemento da atividade atual (comando, trecho do raciocínio…). */
+  detail?: string;
   startedAt?: number;
+  /** Quando a atividade atual começou. */
+  activitySince?: number;
+  /** Último evento recebido da CLI, de qualquer tipo (inclusive sinal de vida). */
+  lastEventAt?: number;
+  /** Último evento que trouxe progresso real (texto, etapa ou atividade nova). */
+  lastProgressAt?: number;
+  events?: ChatEvent[];
 }
 
 export interface AppSettings {
@@ -158,12 +230,14 @@ export interface AppSettings {
   customEndpoint?: string;
   defaultProvider: AIProviderId;
   theme: "cream" | "dark" | "system";
+  /** Fator de zoom da interface (0,7 a 1,6). */
+  zoomFactor?: number;
   workspaces: WorkspaceItem[];
 }
 
 export interface AppNotification {
   id: string;
-  category: "cli_update" | "new_model" | "ai_memory";
+  category: "cli_update" | "new_model" | "ai_memory" | "mcp_auth";
   title: string;
   description: string;
   date: string;

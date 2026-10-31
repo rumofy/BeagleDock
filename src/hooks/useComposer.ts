@@ -1,4 +1,5 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { loadDrafts, saveDrafts, updateDraft, type DraftMap } from "../lib/drafts";
 import type { ChatAttachment, ChatSession } from "../types";
 
 interface Params {
@@ -19,7 +20,66 @@ export function useComposer({
   handleTriggerHandoff,
   sendPrompt,
 }: Params) {
-  const [inputMessage, setInputMessage] = useState("");
+  // O hook roda a cada quadro do stream (vive no provedor do app): nada de ler o armazenamento
+  // nem interpretar JSON nas renderizações. Carrega uma vez, e grava com atraso.
+  const storageRef = useRef<Storage | undefined | null>(null);
+  const getStorage = () => {
+    if (storageRef.current === null) {
+      try {
+        storageRef.current = window.localStorage;
+      } catch {
+        storageRef.current = undefined;
+      }
+    }
+    return storageRef.current;
+  };
+  const drafts = useRef<DraftMap | null>(null);
+  const getDrafts = () => (drafts.current ??= loadDrafts(getStorage()));
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flushDrafts = () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = null;
+    if (drafts.current) saveDrafts(drafts.current, getStorage());
+  };
+  useEffect(() => {
+    // Não perde o último trecho digitado ao fechar o app ou esconder a janela.
+    const onHide = () => flushDrafts();
+    window.addEventListener("beforeunload", onHide);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("beforeunload", onHide);
+      document.removeEventListener("visibilitychange", onHide);
+      flushDrafts();
+    };
+  }, []);
+  const [draftIds, setDraftIds] = useState<string[]>(() =>
+    Object.keys(getDrafts()),
+  );
+  const sessionId = currentSession?.id || "";
+  const [inputMessage, setInputMessageRaw] = useState(
+    () => getDrafts()[sessionId] || "",
+  );
+  const loadedFor = useRef(sessionId);
+  const setInputMessage = (value: string) => {
+    setInputMessageRaw(value);
+    if (!sessionId) return;
+    drafts.current = updateDraft(getDrafts(), sessionId, value);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(flushDrafts, 400);
+    // A lista de rascunhos só muda quando uma conversa ganha ou perde rascunho.
+    const ids = Object.keys(drafts.current);
+    setDraftIds((prev) =>
+      prev.length === ids.length && prev.every((id, i) => id === ids[i])
+        ? prev
+        : ids,
+    );
+  };
+  // Ao trocar de conversa, mostra o rascunho dela (o da anterior já foi guardado ao digitar).
+  useEffect(() => {
+    if (loadedFor.current === sessionId) return;
+    loadedFor.current = sessionId;
+    setInputMessageRaw(getDrafts()[sessionId] || "");
+  }, [sessionId]);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -115,6 +175,7 @@ export function useComposer({
   return {
     inputMessage,
     setInputMessage,
+    draftIds,
     attachments,
     fileInputRef,
     handlePaste,

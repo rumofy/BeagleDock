@@ -71,12 +71,13 @@ function initDatabase() {
       "CREATE TRIGGER IF NOT EXISTS link_requires_session BEFORE INSERT ON session_links WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversa inexistente ou removida.'); END",
     );
     for (const [table, columns] of Object.entries({
-      sessions: ["permission"],
+      sessions: ["permission", "archived", "context_json", "title_locked"],
       chat_history: [
         "model_badge",
         "reasoning_badge",
         "command_snippet",
         "attachments_json",
+        "events_json",
       ],
     })) {
       const existing = new Set(
@@ -123,7 +124,7 @@ async function saveSession(s) {
   if (link && link.cwd !== s.cwd)
     throw new Error("Crie uma nova sessão para trocar de diretório.");
   await run(
-    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,updated_ts=CURRENT_TIMESTAMP",
+    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,updated_ts=CURRENT_TIMESTAMP",
     [
       s.id,
       s.providerId,
@@ -136,6 +137,7 @@ async function saveSession(s) {
       s.createdAt || new Date().toISOString(),
       s.lastActive || "",
       s.permission || "inherit",
+      s.titleLocked ? "1" : null,
     ],
   );
   if (s.nativeSessionId)
@@ -165,6 +167,54 @@ async function setNativeSession(sessionId, providerId, nativeId, cwd) {
     [sessionId, providerId, nativeId, cwd],
   );
 }
+function parseContext(json) {
+  try {
+    const c = JSON.parse(json || "null");
+    return c && Number.isFinite(c.used)
+      ? {
+          used: c.used,
+          window: Number.isFinite(c.window) ? c.window : null,
+          windowKnown: !!c.windowKnown,
+          source: typeof c.source === "string" ? c.source : undefined,
+          compactions: Number.isFinite(c.compactions) ? c.compactions : 0,
+          lastCompaction:
+            c.lastCompaction && typeof c.lastCompaction === "object"
+              ? c.lastCompaction
+              : undefined,
+          updatedAt: Number.isFinite(c.updatedAt) ? c.updatedAt : undefined,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+// Último contexto conhecido da conversa, para a barra aparecer ao reabrir o app.
+async function setSessionContext(id, context) {
+  await initDatabase();
+  if (!context || !Number.isFinite(context.used)) return { success: false };
+  await run("UPDATE sessions SET context_json=? WHERE id=?", [
+    JSON.stringify({
+      used: context.used,
+      window: Number.isFinite(context.window) ? context.window : null,
+      windowKnown: !!context.windowKnown,
+      source: context.source,
+      compactions: context.compactions || 0,
+      lastCompaction: context.lastCompaction,
+      updatedAt: context.updatedAt,
+    }),
+    id,
+  ]);
+  return { success: true };
+}
+async function setSessionArchived(id, archived) {
+  await initDatabase();
+  const result = await run("UPDATE sessions SET archived=? WHERE id=?", [
+    archived ? "1" : null,
+    id,
+  ]);
+  if (!result.changes) throw new Error("Conversa inexistente ou removida.");
+  return { success: true, id, archived: !!archived };
+}
 async function deleteSessionFromDb(id) {
   await initDatabase();
   await run("DELETE FROM sessions WHERE id=?", [id]);
@@ -187,15 +237,58 @@ async function getSavedSessions() {
     createdAt: r.created_at,
     lastActive: r.last_active,
     permission: r.permission || "edits",
+    archived: r.archived === "1",
+    titleLocked: r.title_locked === "1",
+    context: parseContext(r.context_json),
     nativeSessionId: r.native_id || undefined,
     ptyLog: [],
   }));
 }
 const insertMessageSql =
-  "INSERT INTO chat_history (id,session_id,provider,sender,sender_name,model_badge,reasoning_badge,text,command_snippet,attachments_json,timestamp) VALUES (?,?,?,?,?,?,?,?,?,?,?)";
+  "INSERT INTO chat_history (id,session_id,provider,sender,sender_name,model_badge,reasoning_badge,text,command_snippet,attachments_json,timestamp,events_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
 const messageSql =
   insertMessageSql +
-  " ON CONFLICT(id) DO UPDATE SET text=excluded.text,model_badge=excluded.model_badge,reasoning_badge=excluded.reasoning_badge";
+  " ON CONFLICT(id) DO UPDATE SET text=excluded.text,model_badge=excluded.model_badge,reasoning_badge=excluded.reasoning_badge,events_json=COALESCE(excluded.events_json,chat_history.events_json)";
+const MAX_EVENTS_JSON = 512 * 1024;
+const META_NUMBERS = ["tokens", "toolUses", "durationMs", "threads"];
+const META_STRINGS = ["taskId", "subagentType", "lastTool", "model", "note"];
+function cleanMeta(meta) {
+  if (!meta || typeof meta !== "object") return undefined;
+  const out = {};
+  for (const key of META_NUMBERS)
+    if (Number.isFinite(meta[key])) out[key] = meta[key];
+  for (const key of META_STRINGS)
+    if (typeof meta[key] === "string" && meta[key])
+      out[key] = meta[key].slice(0, key === "note" ? 200 : 120);
+  if (meta.background === true) out.background = true;
+  return Object.keys(out).length ? out : undefined;
+}
+function eventsJson(events) {
+  if (!Array.isArray(events) || !events.length) return null;
+  const clean = events
+    .filter((e) => e && typeof e === "object")
+    .slice(0, 300)
+    .map((e) => ({
+      id: String(e.id),
+      parentId: e.parentId ? String(e.parentId).slice(0, 200) : undefined,
+      meta: cleanMeta(e.meta),
+      kind: String(e.kind || "status"),
+      title: String(e.title || "").slice(0, 200),
+      detail: e.detail ? String(e.detail).slice(0, 400) : undefined,
+      text: e.text ? String(e.text).slice(0, 4000) : undefined,
+      status: ["running", "done", "error"].includes(e.status)
+        ? e.status
+        : "done",
+      startedAt: Number.isFinite(e.startedAt) ? e.startedAt : undefined,
+      endedAt: Number.isFinite(e.endedAt) ? e.endedAt : undefined,
+      durationMs: Number.isFinite(e.durationMs) ? e.durationMs : undefined,
+      exitCode: Number.isFinite(e.exitCode) ? e.exitCode : undefined,
+    }));
+  let json = JSON.stringify(clean);
+  if (json.length > MAX_EVENTS_JSON)
+    json = JSON.stringify(clean.map(({ text, ...rest }) => rest));
+  return json.length > MAX_EVENTS_JSON ? null : json;
+}
 function messageParams(m) {
   return [
     m.id,
@@ -209,6 +302,7 @@ function messageParams(m) {
     m.commandSnippet || null,
     m.attachments ? JSON.stringify(m.attachments) : null,
     m.timestamp,
+    eventsJson(m.events),
   ];
 }
 async function sessionExists(id) {
@@ -265,15 +359,68 @@ async function replaceChatMessages(id, messages) {
     );
   }
 }
+// Atualização tardia de uma resposta (agente em segundo plano): mescla por id com o que já foi
+// gravado, sem apagar o resto da linha do tempo.
+async function mergeMessageEvents(sessionId, messageId, events) {
+  await initDatabase();
+  const row = await get(
+    "SELECT events_json FROM chat_history WHERE id=? AND session_id=?",
+    [messageId, sessionId],
+  );
+  if (!row) return { success: false };
+  let existing = [];
+  try {
+    existing = JSON.parse(row.events_json || "[]") || [];
+  } catch {}
+  const byId = new Map(existing.map((e) => [e.id, e]));
+  for (const event of Array.isArray(events) ? events : [])
+    if (event && typeof event === "object" && event.id)
+      byId.set(String(event.id), event);
+  const merged = [...byId.values()];
+  trackLive(messageId, merged);
+  const json = eventsJson(merged);
+  if (!json) return { success: false };
+  await run(
+    "UPDATE chat_history SET events_json=? WHERE id=? AND session_id=?",
+    [json, messageId, sessionId],
+  );
+  return { success: true };
+}
+function trackLive(messageId, events) {
+  if (Array.isArray(events) && events.some((e) => e && e.status === "running"))
+    LIVE_MESSAGE_IDS.add(messageId);
+  else LIVE_MESSAGE_IDS.delete(messageId);
+}
 async function saveChatMessage(m) {
   await initDatabase();
+  trackLive(m.id, m.events);
   await run(messageSql, messageParams(m));
   return { success: true, id: m.id };
 }
+// Respostas com agentes em segundo plano ainda ativas nesta execução do app.
+const LIVE_MESSAGE_IDS = new Set();
 function chatRow(r) {
   let attachments;
   try {
     attachments = JSON.parse(r.attachments_json || "null") || undefined;
+  } catch {}
+  let events;
+  try {
+    events = JSON.parse(r.events_json || "null") || undefined;
+    // "Rodando" no histórico é de uma execução anterior do app: o desfecho real é desconhecido.
+    if (events && !LIVE_MESSAGE_IDS.has(r.id))
+      events = events.map((e) =>
+        e.status === "running"
+          ? {
+              ...e,
+              status: "done",
+              meta: {
+                ...e.meta,
+                note: "estado final desconhecido: o app foi fechado antes do fim",
+              },
+            }
+          : e,
+      );
   } catch {}
   return {
     id: r.id,
@@ -285,6 +432,7 @@ function chatRow(r) {
     text: r.text,
     commandSnippet: r.command_snippet || undefined,
     attachments,
+    events,
     timestamp: r.timestamp,
   };
 }
@@ -310,13 +458,7 @@ async function saveWorkspace(ws) {
   await initDatabase();
   await run(
     "INSERT INTO workspaces (id,name,path,has_ai_memory,ai_memory_daemon) VALUES (?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET name=excluded.name,has_ai_memory=excluded.has_ai_memory,ai_memory_daemon=excluded.ai_memory_daemon,last_accessed=CURRENT_TIMESTAMP",
-    [
-      ws.id,
-      ws.name,
-      ws.path,
-      ws.hasAIMemory ? 1 : 0,
-      0,
-    ],
+    [ws.id, ws.name, ws.path, ws.hasAIMemory ? 1 : 0, 0],
   );
   return { success: true, workspace: ws };
 }
@@ -388,11 +530,14 @@ module.exports = {
   saveUserProfile,
   getUserProfile,
   saveSession,
+  setSessionArchived,
+  setSessionContext,
   getSavedSessions,
   getNativeSession,
   setNativeSession,
   deleteSessionFromDb,
   saveChatMessage,
+  mergeMessageEvents,
   replaceChatMessages,
   sessionExists,
   getChatMessages,

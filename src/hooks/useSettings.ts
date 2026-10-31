@@ -10,7 +10,9 @@ export function useSettings(setAppError: (message: string) => void) {
   const [policyDrafts, setPolicyDrafts] = useState<
     Record<string, Record<string, string>>
   >({});
-  const [cliFeedback, setCliFeedback] = useState<Record<string, string | undefined>>({});
+  const [cliFeedback, setCliFeedback] = useState<
+    Record<string, string | undefined>
+  >({});
   const [cliUpdating, setCliUpdating] = useState<string>("");
   const [settings, setSettings] = useState<AppSettings>({
     defaultProvider: "claude",
@@ -26,8 +28,10 @@ export function useSettings(setAppError: (message: string) => void) {
   }, []);
   const handleSaveSettings = async () => {
     try {
-      
-      const result = await beagleApi.saveAppSettings(settings);
+      // O zoom é gravado por Ctrl +/−; o valor guardado no estado pode estar velho.
+      const { zoomFactor: _stale, ...toSave } = settings;
+      void _stale;
+      const result = await beagleApi.saveAppSettings(toSave as typeof settings);
       if (!result?.success)
         throw new Error(result?.error || "Falha ao salvar configurações.");
       setSettings(result.settings);

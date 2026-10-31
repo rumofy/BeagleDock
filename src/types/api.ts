@@ -7,7 +7,9 @@ import type {
   AIProviderId,
   AppNotification,
   AppSettings,
+  ChatEvent,
   ChatMessage,
+  ContextInfo,
   ChatSession,
   HistorySessionItem,
   SkillItem,
@@ -16,12 +18,26 @@ import type {
   AIProviderStatus,
 } from "./index";
 
+/** Uma escolha oferecida pela própria CLI para um pedido de permissão. */
+export interface ApprovalOption {
+  id: string;
+  label: string;
+  kind: "allow" | "deny";
+  description?: string;
+  /** A escolha grava uma regra que vale além desta ação (projeto, sessão…). */
+  persistent?: boolean;
+  danger?: boolean;
+  /** Aceita uma instrução para a IA junto da negação. */
+  allowsMessage?: boolean;
+}
+
 export interface CliApproval {
   id: string;
   sessionId: string;
   providerId: AIProviderId;
   tool: string;
   input: string;
+  options: ApprovalOption[];
 }
 
 export interface GlobalPolicyField {
@@ -96,6 +112,24 @@ export interface ExecutePromptPayload {
   permission: string;
   cancelled: boolean;
 }
+export interface OpenInEditorRequest {
+  /** Pasta do projeto da conversa. */
+  cwd: string;
+  /** Arquivo ou pasta, relativo ao projeto; sem alvo abre o projeto inteiro. */
+  target?: string;
+  line?: number;
+  column?: number;
+}
+
+export interface PickDirectoryResult {
+  canceled: boolean;
+  error?: string;
+  path?: string;
+  name?: string;
+  hasAIMemory?: boolean;
+  isGitRepo?: boolean;
+}
+
 export interface ExecutePromptResult {
   ok?: boolean;
   cancelled?: boolean;
@@ -103,6 +137,7 @@ export interface ExecutePromptResult {
   output?: string;
   error?: string;
   nativeSessionId?: string;
+  events?: ChatEvent[];
 }
 
 export interface AIMemoryStatusResult {
@@ -138,9 +173,36 @@ export interface StreamEvents {
   "cli-stream-chunk": {
     sessionId: string;
     responseMessageId?: string;
-    chunk: string;
+    chunk?: string;
     fullText?: string;
     activity?: string;
+    detail?: string;
+    emittedAt?: number;
+  };
+  "cli-context": ContextInfo & { sessionId: string };
+  "cli-turn-started": {
+    sessionId: string;
+    responseMessageId: string;
+    providerId: AIProviderId;
+    model?: string;
+  };
+  "cli-turn-finished": {
+    sessionId: string;
+    responseMessageId: string;
+    providerId: AIProviderId;
+    ok: boolean;
+    text: string;
+    error?: string;
+    events?: ChatEvent[];
+    model?: string;
+    discard?: boolean;
+    context?: ContextInfo;
+  };
+  "cli-activity-event": {
+    sessionId: string;
+    responseMessageId?: string;
+    event: ChatEvent;
+    emittedAt?: number;
   };
   "cli-approvals": CliApproval[];
 }
@@ -153,7 +215,8 @@ export interface BeagleAPI {
   readNotifications(): Promise<UpdateInfo>;
   updateCli(id: string): Promise<{ ok: boolean; version?: string | null; error?: string }>;
   getCliApprovals(): Promise<CliApproval[]>;
-  resolveCliApproval(id: string, decision: "allow" | "deny"): Promise<unknown>;
+  /** `decision`: "allow" | "deny" ou o id de uma opção oferecida; `message` acompanha uma negação. */
+  resolveCliApproval(id: string, decision: string, message?: string): Promise<unknown>;
   detectTools(): Promise<ToolsUpdate>;
   getAIMemoryStatus(): Promise<AIMemoryStatusResult>;
   searchAIMemory(query: string, isGlobal?: boolean, workspace?: string | null, project?: string | null): Promise<AIMemoryApiResult<any>>;
@@ -178,6 +241,12 @@ export interface BeagleAPI {
   saveSession(session: ChatSession): Promise<OkResult>;
   deleteSession(sessionId: string): Promise<OkResult>;
   saveWorkspace(workspace: WorkspaceItem): Promise<WorkspaceItem & OkResult>;
+  compactSession(id: string, providerId: string): Promise<OkResult>;
+  setSessionArchived(id: string, archived: boolean): Promise<OkResult & { success?: boolean }>;
+  pickDirectory(options?: { defaultPath?: string; title?: string }): Promise<PickDirectoryResult>;
+  openInEditor(request: OpenInEditorRequest): Promise<OkResult>;
+  getZoom(): Promise<number>;
+  setZoom(factor: number): Promise<number>;
   saveAppSettings(settings: AppSettings): Promise<SaveSettingsResult>;
   replaceChatMessages(id: string, messages: Array<ChatMessage & { provider?: string }>): Promise<OkResult>;
   saveChatMessage(message: ChatMessage & { provider?: string }): Promise<OkResult>;

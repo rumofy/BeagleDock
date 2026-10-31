@@ -73,6 +73,11 @@ async function send(win, text, expected) {
     win,
     `document.querySelector('[aria-label="Cotas por grupo do AGY"]')?.innerText.includes('Claude and GPT models')`,
   );
+  // Cotas lidas das próprias CLIs (Claude /usage e Codex app-server), com horário de reinício.
+  await waitFor(
+    win,
+    `(()=>{const t=document.body.innerText;return t.includes('5h: 34%') && t.includes('5h: 21%') && t.includes('Reinicia · 5h:');})()`,
+  );
   for (const [index, name] of ["claude", "codex", "agy"].entries()) {
     if (stage === "first") {
       await win.webContents.executeJavaScript(
@@ -307,15 +312,60 @@ async function send(win, text, expected) {
         ),
         true,
       );
+      // Fechar a janela no meio da execução vai para a bandeja: o app e a sessão continuam.
+      win.close();
+      assert.equal(win.isDestroyed(), false, "fechar não destrói a janela");
+      assert.equal(
+        !win.isVisible() || win.isMinimized(),
+        true,
+        "a janela sai da tela (bandeja ou minimizada)",
+      );
       await waitFor(
         win,
         `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
       );
+      win.show();
+      assert.equal(win.isVisible(), true);
       await win.webContents.executeJavaScript(
         `void window.__unsubscribeLive()`,
       );
+      // Opcional: capturas de tela para revisão visual (BEAGLEDOCK_SHOT_DIR=/pasta).
+      if (process.env.BEAGLEDOCK_SHOT_DIR && index === 0) {
+        const fsShots = require("fs");
+        for (const theme of ["light", "dark"]) {
+          await win.webContents.executeJavaScript(
+            `document.documentElement.dataset.theme=${JSON.stringify(theme)};void 0`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          const image = await win.webContents.capturePage();
+          fsShots.writeFileSync(
+            require("path").join(process.env.BEAGLEDOCK_SHOT_DIR, `chat-${theme}.png`),
+            image.toPNG(),
+          );
+        }
+        await win.webContents.executeJavaScript(
+          `document.querySelector('button[title^="Configurações"]').click();void 0`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await win.webContents.executeJavaScript(
+          `document.documentElement.dataset.theme='dark';void 0`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        fsShots.writeFileSync(
+          require("path").join(process.env.BEAGLEDOCK_SHOT_DIR, "settings-dark.png"),
+          (await win.webContents.capturePage()).toPNG(),
+        );
+        await win.webContents.executeJavaScript(
+          `document.documentElement.dataset.theme='light';void 0`,
+        );
+        // Volta ao chat para o restante do teste.
+        await win.webContents.executeJavaScript(
+          `[...document.querySelectorAll('button')].find((b)=>b.innerText.includes('Voltar ao Chat'))?.click();void 0`,
+        );
+        await waitFor(win, `!!document.querySelector('input[placeholder^="Mensagem"]')`);
+      }
       for (const [prompt, button, answer] of [
-        ["smoke-approval allow", "Autorizar uma vez", "APPROVED_ACTION_DONE"],
+        ["smoke-approval allow", "Permitir uma vez", "APPROVED_ACTION_DONE"],
         ["smoke-approval deny", "Negar", "DENIED_ACTION_DONE"],
       ]) {
         await win.webContents.executeJavaScript(
@@ -332,6 +382,30 @@ async function send(win, text, expected) {
           win,
           `!!document.querySelector('[aria-label="Autorizar ação da CLI"]')`,
         );
+        // A permissão aparece no próprio chat (com as opções da CLI), destacada no cabeçalho,
+        // e não no aviso global.
+        assert.equal(
+          await win.webContents.executeJavaScript(
+            `!!document.querySelector('[data-testid="approval-card"]') && !!document.querySelector('[data-testid="waiting-permission"]') && !document.querySelector('[aria-label="Permissão pendente em outra conversa"]') && document.body.innerText.includes('Aguardando permissão')`,
+          ),
+          true,
+          "permissão inline no chat com destaque",
+        );
+        if (process.env.BEAGLEDOCK_SHOT_DIR && index === 1 && prompt.endsWith("allow")) {
+          for (const theme of ["light", "dark"]) {
+            await win.webContents.executeJavaScript(
+              `document.documentElement.dataset.theme=${JSON.stringify(theme)};void 0`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            require("fs").writeFileSync(
+              require("path").join(process.env.BEAGLEDOCK_SHOT_DIR, `approval-${theme}.png`),
+              (await win.webContents.capturePage()).toPNG(),
+            );
+          }
+          await win.webContents.executeJavaScript(
+            `document.documentElement.dataset.theme='light';void 0`,
+          );
+        }
         assert.equal(
           await win.webContents.executeJavaScript(
             `document.querySelectorAll('button[title="Abrir nova conversa"]:disabled').length`,
@@ -339,7 +413,7 @@ async function send(win, text, expected) {
           0,
         );
         await win.webContents.executeJavaScript(
-          `[...document.querySelectorAll('[aria-label="Autorizar ação da CLI"] button')].find(b=>b.textContent===${JSON.stringify(button)}).click()`,
+          `[...document.querySelectorAll('[aria-label="Autorizar ação da CLI"] button')].find(b=>b.textContent.startsWith(${JSON.stringify(button)})).click()`,
         );
         await waitFor(
           win,
@@ -463,6 +537,56 @@ async function send(win, text, expected) {
     win,
     `!!document.querySelector('select[aria-label="Antigravity: Política de ferramentas global"]')`,
   );
+  if (stage === "first") {
+    // Renomear (duplo clique), arquivar, desarquivar e excluir com confirmação; o estado é restaurado.
+    const rowSelector = `[data-session-id]`;
+    const original = await win.webContents.executeJavaScript(
+      `document.querySelector('${rowSelector} span[title="Duplo clique para renomear"]').textContent`,
+    );
+    const rowId = await win.webContents.executeJavaScript(
+      `document.querySelector('${rowSelector}').getAttribute('data-session-id')`,
+    );
+    const row = `[data-session-id="${rowId}"]`;
+    const typeName = async (name) => {
+      await win.webContents.executeJavaScript(
+        `document.querySelector('${row} span[title="Duplo clique para renomear"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));void 0`,
+      );
+      await waitFor(win, `!!document.querySelector('input[aria-label="Novo nome da conversa"]')`);
+      await win.webContents.executeJavaScript(
+        `(()=>{const i=document.querySelector('input[aria-label="Novo nome da conversa"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,${JSON.stringify(name)});i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()`,
+      );
+      await waitFor(
+        win,
+        `document.querySelector('${row} span[title="Duplo clique para renomear"]')?.textContent===${JSON.stringify(name)}`,
+      );
+    };
+    await typeName("Renomeada no smoke");
+    // Arquivar: sai da lista principal e aparece em "Arquivadas".
+    await win.webContents.executeJavaScript(
+      `document.querySelector('${row} button[aria-label="Arquivar conversa"]').click()`,
+    );
+    await waitFor(win, `!document.querySelector('${row}') && document.body.innerText.toLowerCase().includes('arquivadas (1)')`);
+    await win.webContents.executeJavaScript(
+      `[...document.querySelectorAll('button[aria-expanded]')].find(b=>b.textContent.includes('Arquivadas')).click()`,
+    );
+    await waitFor(win, `!!document.querySelector('${row} button[aria-label="Desarquivar conversa"]')`);
+    await win.webContents.executeJavaScript(
+      `document.querySelector('${row} button[aria-label="Desarquivar conversa"]').click()`,
+    );
+    await waitFor(win, `!!document.querySelector('${row} button[aria-label="Arquivar conversa"]') && !document.body.innerText.toLowerCase().includes('arquivadas (')`);
+    // Excluir exige confirmar: o primeiro clique só arma o botão.
+    await win.webContents.executeJavaScript(
+      `document.querySelector('${row} button[aria-label="Excluir conversa"]').click()`,
+    );
+    await waitFor(win, `!![...document.querySelectorAll('${row} button')].find(b=>b.textContent==='Excluir?')`);
+    assert.equal(
+      await win.webContents.executeJavaScript(`!!document.querySelector('${row}')`),
+      true,
+      "o primeiro clique não exclui",
+    );
+    await waitFor(win, `![...document.querySelectorAll('${row} button')].find(b=>b.textContent==='Excluir?')`, 6000);
+    await typeName(original);
+  }
   if (stage === "first") {
     await win.webContents.executeJavaScript(
       `(()=>{const field=document.querySelector('select[aria-label="Antigravity: Política de ferramentas global"]');field.value='strict';field.dispatchEvent(new Event('change',{bubbles:true}));})()`,

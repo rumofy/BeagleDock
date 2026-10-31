@@ -27,6 +27,7 @@ const ALLOWED_METHODS = new Set([
   "getAppVersion",
   "getSavedState",
   "saveSession",
+  "setSessionArchived",
   "deleteSession",
   "saveWorkspace",
   "saveAppSettings",

@@ -50,6 +50,7 @@ function createSessionService({ store, runner }) {
               antigravity: "Antigravity",
             }[payload.providerId] || payload.providerId,
           text,
+          events: result.events,
           modelBadge: payload.model,
           reasoningBadge: payload.effort,
           timestamp: new Date().toISOString(),
@@ -107,6 +108,8 @@ function createSessionService({ store, runner }) {
       if (removing.has(id)) return cancelled();
       if (wasStopped() || result.cancelled)
         return stoppedResult(payload, result, true);
+      if (result.context && typeof store.setSessionContext === "function")
+        await write(id, () => store.setSessionContext(id, result.context)).catch(() => {});
       if (payload.responseMessageId) {
         try {
           await write(id, () =>
@@ -124,6 +127,7 @@ function createSessionService({ store, runner }) {
               text: result.ok
                 ? result.output || "Execução concluída."
                 : `Erro: ${result.error || "Falha na execução."}${result.output ? "\n\n" + result.output : ""}`,
+              events: result.events,
               modelBadge: payload.model,
               reasoningBadge: payload.effort,
               timestamp: new Date().toISOString(),
@@ -170,7 +174,45 @@ function createSessionService({ store, runner }) {
     execute,
     interrupt,
     isBusy: () => turns.size > 0,
+    // Sessões com turno rodando ou na fila (a fila aguarda dentro de `turns`).
+    activeCount: () => turns.size,
     remove,
+    // Turno que a CLI começou sozinha (agente principal respondendo depois de um agente em segundo
+    // plano): grava como uma resposta nova da conversa.
+    saveAutoTurn: async (p) => {
+      if (!p || p.discard || !p.responseMessageId) return;
+      try {
+        if (!(await store.sessionExists(p.sessionId))) return;
+        const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
+        await write(p.sessionId, async () => {
+          await store.saveChatMessage({
+            id: p.responseMessageId,
+            sessionId: p.sessionId,
+            provider: p.providerId,
+            sender: p.providerId,
+            senderName: names[p.providerId] || p.providerId,
+            text: p.ok
+              ? p.text || "Execução concluída."
+              : `Erro: ${p.error || "Falha na execução."}${p.text ? "\n\n" + p.text : ""}`,
+            events: p.events,
+            modelBadge: p.model,
+            timestamp: new Date().toISOString(),
+          });
+          if (p.context && typeof store.setSessionContext === "function")
+            await store.setSessionContext(p.sessionId, p.context);
+        });
+      } catch {}
+    },
+    saveLateEvents: ({ sessionId, responseMessageId, events }) =>
+      typeof store.mergeMessageEvents === "function"
+        ? write(sessionId, () =>
+            store.mergeMessageEvents(sessionId, responseMessageId, events),
+          ).catch(() => {})
+        : Promise.resolve(),
+    setSessionContext: (id, context) =>
+      write(id, () => store.setSessionContext(id, context)),
+    setSessionArchived: (id, archived) =>
+      write(id, () => store.setSessionArchived(id, archived)),
     saveSession: (session) =>
       write(session.id, () => store.saveSession(session)),
     saveChatMessage: (message) =>

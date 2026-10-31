@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   readNotifications: () => ipcRenderer.invoke("read-notifications"),
   updateCli: (id) => ipcRenderer.invoke("update-cli", id),
   getCliApprovals: () => ipcRenderer.invoke("get-cli-approvals"),
-  resolveCliApproval: (id, decision) =>
-    ipcRenderer.invoke("resolve-cli-approval", id, decision),
+  resolveCliApproval: (id, decision, message) =>
+    ipcRenderer.invoke("resolve-cli-approval", id, decision, message),
   detectTools: () => ipcRenderer.invoke("detect-tools"),
   getAIMemoryStatus: () => ipcRenderer.invoke("ai-memory-status"),
   searchAIMemory: (query, isGlobal = true, workspace = null, project = null) =>
@@ -45,7 +45,15 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   getSavedState: () => ipcRenderer.invoke("get-saved-state"),
   saveSession: (session) => ipcRenderer.invoke("save-session", session),
   deleteSession: (sessionId) => ipcRenderer.invoke("delete-session", sessionId),
+  compactSession: (id, providerId) =>
+    ipcRenderer.invoke("compact-session", id, providerId),
+  setSessionArchived: (id, archived) =>
+    ipcRenderer.invoke("set-session-archived", id, archived),
   saveWorkspace: (ws) => ipcRenderer.invoke("save-workspace", ws),
+  pickDirectory: (options) => ipcRenderer.invoke("pick-directory", options),
+  openInEditor: (request) => ipcRenderer.invoke("open-in-editor", request),
+  getZoom: () => ipcRenderer.invoke("get-zoom"),
+  setZoom: (factor) => ipcRenderer.invoke("set-zoom", factor),
   saveAppSettings: (settingsObj) =>
     ipcRenderer.invoke("save-app-settings", settingsObj),
   replaceChatMessages: (id, messages) =>
@@ -66,6 +74,10 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "pty-data",
         "pty-exit",
         "cli-stream-chunk",
+        "cli-activity-event",
+        "cli-context",
+        "cli-turn-started",
+        "cli-turn-finished",
         "cli-approvals",
       ].includes(channel)
     )

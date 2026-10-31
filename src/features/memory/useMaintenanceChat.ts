@@ -72,9 +72,9 @@ export function useMaintenanceChat({
           void sendPrompt(maintenanceSession, text);
         },
         onStop: () => void handleStopSession(maintenanceSession.id),
-        onResolveApproval: async (id: string, decision: "allow" | "deny") => {
+        onResolveApproval: async (id: string, decision: string, message?: string) => {
           try {
-            await beagleApi.resolveCliApproval(id, decision);
+            await beagleApi.resolveCliApproval(id, decision, message);
           } catch (e) {
             setAppError((e as Error).message);
           }

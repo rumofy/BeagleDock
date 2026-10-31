@@ -56,6 +56,25 @@ if (name === "agy" && args.includes("/usage")) {
   );
   process.exit(0);
 }
+if (name === "claude" && args.includes("/usage")) {
+  const at = (hours) =>
+    new Date(Date.now() + hours * 3600000).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "America/Sao_Paulo",
+    });
+  console.log(
+    JSON.stringify({
+      is_error: false,
+      subtype: "success",
+      result: `Current session: 34% used · resets ${at(2)} (America/Sao_Paulo)\nCurrent week (all models): 12% used · resets ${at(72)} (America/Sao_Paulo)`,
+    }),
+  );
+  process.exit(0);
+}
 const root = process.env.BEAGLEDOCK_SMOKE_ROOT;
 if (!root) throw new Error("Fixture requires isolated storage.");
 if (name === "codex" && args[0] === "app-server") {
@@ -75,6 +94,21 @@ if (name === "codex" && args[0] === "app-server") {
       if (m.id === "codex-approval" && approvalFinish) {
         approvalFinish(m.result?.decision === "accept");
         approvalFinish = null;
+        continue;
+      }
+      if (m.method === "account/rateLimits/read") {
+        const at = (hours) => Math.floor(Date.now() / 1000) + hours * 3600;
+        emit({
+          id: m.id,
+          result: {
+            rateLimits: {
+              limitId: "codex",
+              planType: "plus",
+              primary: { usedPercent: 21, windowDurationMins: 300, resetsAt: at(3) },
+              secondary: { usedPercent: 47, windowDurationMins: 10080, resetsAt: at(80) },
+            },
+          },
+        });
         continue;
       }
       if (m.method === "initialize") emit({ id: m.id, result: {} });

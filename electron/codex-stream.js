@@ -1,11 +1,37 @@
 const { StringDecoder } = require("string_decoder");
+const { randomUUID } = require("crypto");
 const { terminateCli } = require("./platform");
+const { createStderrFilter } = require("./codex-mcp-auth");
+const { codexItemActivity, reasoningTail } = require("./activity-labels");
+const { LIVE_OUTPUT_GUIDANCE } = require("./guidance");
+const { createEventTracker } = require("./stream-events");
+const { codexContext, createContextTracker } = require("./context-usage");
+const { askApproval, codexApprovalOptions } = require("./approval-options");
+
+const textOf = (value) =>
+  (Array.isArray(value) ? value : value == null ? [] : [value])
+    .map((part) => (typeof part === "string" ? part : part?.text || ""))
+    .filter(Boolean)
+    .join("\n\n");
+const planText = (plan, explanation) =>
+  [
+    explanation,
+    ...(Array.isArray(plan) ? plan : []).map(
+      (step) =>
+        `${step?.status === "completed" ? "[x]" : step?.status === "inProgress" ? "[~]" : "[ ]"} ${step?.step || ""}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join("\n");
 function createCodexStream({
   spawn,
   store,
   emit = () => {},
-  turnTimeout = 900000,
+  turnTimeout = 0, // 0 = sem limite de tempo por turno
   approvals,
+  onMcpAuthError = () => {},
+  onLateEvents = () => {},
+  onAutoTurn = () => {},
 }) {
   const entries = new Map();
   let sequence = 0;
@@ -83,7 +109,15 @@ function createCodexStream({
         stderr: "",
         buffer: "",
         turnId: null,
+        model,
       };
+      e.events = createEventTracker({
+        emit,
+        sessionId,
+        pid: () => child.pid,
+        onLate: onLateEvents,
+      });
+      e.context = createContextTracker({ emit, sessionId, source: "codex" });
       entries.set(sessionId, e);
       const current = e;
       const output = (data) =>
@@ -124,6 +158,124 @@ function createCodexStream({
           pid: child.pid,
         });
       };
+      const sendActivity = (activity, detail) =>
+        emit("cli-stream-chunk", {
+          sessionId,
+          responseMessageId: current.responseMessageId,
+          activity,
+          ...(detail ? { detail } : {}),
+          pid: child.pid,
+        });
+      // Uma compactação manual em andamento bloqueia o envio seguinte até terminar.
+      function settleCompaction(entry) {
+        const c = entry.compaction;
+        if (!c) return;
+        clearTimeout(c.timer);
+        entry.compaction = null;
+        entry.manualCompaction = false;
+        entry.context.compacting(false);
+        c.resolve();
+      }
+      function markCompacted(entry) {
+        entry.context.compacted({ trigger: entry.manualCompaction ? "manual" : "auto" });
+        settleCompaction(entry);
+      }
+      // Turno que o app-server começou sozinho (ex.: o agente principal recebeu o resultado de um
+      // agente e responde): vira uma mensagem nova, em vez de ser descartado.
+      function startAutoTurn() {
+        const id = `auto-${randomUUID()}`;
+        current.messages.clear();
+        current.commands.clear();
+        current.text = "";
+        current.error = null;
+        current.reasoningParts = new Map();
+        current.responseMessageId = id;
+        current.events.start(id);
+        let resolveDone;
+        current.autoDone = new Promise((r) => (resolveDone = r));
+        current.finish = (result) => {
+          current.finish = null;
+          current.events.finishRunning(result.ok ? "done" : "error");
+          const events = current.events.snapshot();
+          current.events.endTurn();
+          const text = String(result.output || current.text || "");
+          const payload = {
+            sessionId,
+            providerId: "codex",
+            responseMessageId: id,
+            ok: !!result.ok,
+            text,
+            error: result.error,
+            events,
+            model: current.model,
+            // Compactação automática, parada ou turno sem texto: nada a mostrar no chat.
+            discard: !!result.cancelled || (!text.trim() && !result.error),
+            context: current.context.hasData() ? current.context.snapshot() : undefined,
+          };
+          emit("cli-turn-finished", payload);
+          try {
+            onAutoTurn(payload);
+          } finally {
+            current.autoDone = null;
+            resolveDone();
+          }
+        };
+        emit("cli-turn-started", {
+          sessionId,
+          responseMessageId: id,
+          providerId: "codex",
+          model: current.model,
+        });
+      }
+      const SUB_KINDS = new Set(["command", "mcp", "tool", "file", "web"]);
+      function handleSubThreadItem(method, params, parentId) {
+        const item = params.item || {};
+        const label = codexItemActivity(item);
+        if (!label || !SUB_KINDS.has(label.kind) || !item.id) return;
+        const id = `${params.threadId}:${item.id}`;
+        if (!current.events.get(id))
+          current.events.upsert(id, {
+            kind: label.kind,
+            title: label.title,
+            detail: label.detail,
+            parentId,
+            ...(label.note ? { meta: { note: label.note } } : {}),
+          });
+        if (method === "item/completed")
+          current.events.finish(
+            id,
+            ["failed", "declined"].includes(item.status) || item.error
+              ? "error"
+              : "done",
+            Number.isFinite(item.durationMs)
+              ? { durationMs: item.durationMs }
+              : {},
+          );
+      }
+      // Registra as conversas dos agentes lançados, para rotear as etapas delas.
+      function learnSubThreads(item) {
+        const ids =
+          item.type === "collabAgentToolCall"
+            ? Array.isArray(item.receiverThreadIds)
+              ? item.receiverThreadIds
+              : []
+            : item.type === "subAgentActivity" && item.agentThreadId
+              ? [item.agentThreadId]
+              : [];
+        if (!ids.length || !item.id) return;
+        current.subThreads ||= new Map();
+        for (const threadId of ids)
+          if (typeof threadId === "string")
+            current.subThreads.set(threadId, item.id);
+        // Agente do Codex pode seguir trabalhando depois do fim do turno: não é encerrado com ele.
+        current.events.upsert(item.id, {
+          meta: {
+            threads: ids.length,
+            background: true,
+            ...(item.model ? { model: String(item.model) } : {}),
+          },
+        });
+      }
       function handle(ev) {
         if (ev.id !== undefined && !ev.method) {
           const pending = current.requests.get(ev.id);
@@ -143,22 +295,35 @@ function createCodexStream({
               return;
             }
             const decide = async () => {
-              const allow = approvals
-                ? await approvals.ask({
+              const { options, native } = codexApprovalOptions(
+                ev.method,
+                request,
+              );
+              // Sem broker a resposta é imediata (negada), sem passar por uma volta assíncrona.
+              const decision = approvals
+                ? await askApproval(approvals, {
                     sessionId,
                     providerId: "codex",
                     tool: ev.method,
                     input: request,
+                    options,
+                    native,
                   })
-                : false;
+                : { allow: false };
               if (!child.killed && child.exitCode === null) {
                 const result =
                   ev.method === "item/permissions/requestApproval"
                     ? {
-                        permissions: allow ? request.permissions || {} : {},
+                        permissions: decision.allow
+                          ? request.permissions || {}
+                          : {},
                         scope: "turn",
                       }
-                    : { decision: allow ? "accept" : "decline" };
+                    : decision.cancelled
+                  ? { decision: "cancel" }
+                  : decision.native || {
+                      decision: decision.allow ? "accept" : "decline",
+                    };
                 send({ id: ev.id, result });
               }
             };
@@ -176,10 +341,22 @@ function createCodexStream({
           return;
         }
         const params = ev.params || {};
-        if (params.threadId && params.threadId !== current.nativeId) return;
+        if (params.threadId && params.threadId !== current.nativeId) {
+          // Conversa de um subagente: as etapas dela entram aninhadas sob o agente que a lançou.
+          const parentId = current.subThreads?.get(params.threadId);
+          if (
+            parentId &&
+            (ev.method === "item/started" || ev.method === "item/completed")
+          )
+            handleSubThreadItem(ev.method, params, parentId);
+          return;
+        }
         if (params.turnId && current.turnId && params.turnId !== current.turnId)
           return;
-        if (ev.method === "turn/started") current.turnId = params.turn?.id;
+        if (ev.method === "turn/started") {
+          current.turnId = params.turn?.id;
+          if (!current.finish && !current.compaction) startAutoTurn();
+        }
         else if (ev.method === "item/agentMessage/delta") {
           const id = params.itemId;
           current.messages.set(
@@ -199,13 +376,117 @@ function createCodexStream({
             pid: child.pid,
           });
           output(params.delta || "");
+        } else if (ev.method === "thread/tokenUsage/updated") {
+          const usage = codexContext(params.tokenUsage);
+          if (usage) current.context.update(usage);
+        } else if (ev.method === "thread/compacted") {
+          markCompacted(current);
+        } else if (ev.method === "item/started") {
+          if (params.item?.type === "contextCompaction")
+            current.context.compacting(true);
+          if (params.item?.type === "commandExecution")
+            output(`$ ${params.item.command}\r\n`);
+          const label = codexItemActivity(params.item);
+          if (label) {
+            sendActivity(label.activity, label.detail);
+            current.events.upsert(params.item.id, {
+              kind: label.kind,
+              title: label.title,
+              detail: label.detail,
+              status: "running",
+              ...(label.note ? { meta: { note: label.note } } : {}),
+            });
+            learnSubThreads(params.item);
+          }
         } else if (
-          ev.method === "item/started" &&
-          params.item?.type === "commandExecution"
-        )
-          output(`$ ${params.item.command}\r\n`);
-        else if (ev.method === "item/completed") {
+          ev.method === "item/reasoning/textDelta" ||
+          ev.method === "item/reasoning/summaryTextDelta"
+        ) {
+          // Resumo e conteúdo são fluxos separados: o texto exibido é o conteúdo, ou o resumo se
+          // não houver (nunca os dois misturados).
+          const parts = (current.reasoningParts ||= new Map()).get(
+            params.itemId,
+          ) || { summary: "", content: "" };
+          parts[
+            ev.method.endsWith("summaryTextDelta") ? "summary" : "content"
+          ] += params.delta || "";
+          current.reasoningParts.set(params.itemId, parts);
+          current.events.setText(
+            params.itemId,
+            parts.content || parts.summary,
+            {
+              kind: "reasoning",
+              title: "Raciocínio",
+            },
+          );
+          current.reasoning = (
+            (current.reasoning || "") + (params.delta || "")
+          ).slice(-2000);
+          const at = Date.now();
+          if (!current.reasoningAt || at - current.reasoningAt >= 120) {
+            current.reasoningAt = at;
+            sendActivity("Raciocinando…", reasoningTail(current.reasoning));
+          }
+        } else if (ev.method === "item/reasoning/summaryPartAdded") {
+          const parts = current.reasoningParts?.get(params.itemId);
+          if (parts?.summary) parts.summary += "\n\n";
+        } else if (ev.method === "item/mcpToolCall/progress") {
+          sendActivity("Ferramenta MCP em andamento…", params.message);
+          // Só atualiza uma etapa conhecida: progresso de item desconhecido não cria etapa sem título.
+          if (current.events.get(params.itemId))
+            current.events.upsert(params.itemId, { detail: params.message });
+        } else if (ev.method === "turn/plan/updated") {
+          sendActivity("Atualizando o plano…", params.explanation);
+          current.events.upsert("plan", {
+            kind: "plan",
+            title: "Plano",
+            text: planText(params.plan, params.explanation),
+          });
+        } else if (ev.method === "item/completed") {
           const item = params.item || {};
+          if (item.type === "reasoning") current.reasoning = "";
+          if (item.type === "contextCompaction") {
+            sendActivity("Contexto compactado");
+            markCompacted(current);
+          }
+          const label = codexItemActivity(item);
+          if (label && item.id) {
+            learnSubThreads(item);
+            if (!current.events.get(item.id))
+              current.events.upsert(item.id, {
+                kind: label.kind,
+                title: label.title,
+                detail: label.detail,
+              });
+            const failed =
+              ["failed", "declined"].includes(item.status) || !!item.error;
+            current.events.finish(item.id, failed ? "error" : "done", {
+              ...(label.detail ? { detail: label.detail } : {}),
+              ...(Number.isFinite(item.durationMs)
+                ? { durationMs: item.durationMs }
+                : {}),
+              ...(item.type === "commandExecution" &&
+              Number.isFinite(item.exitCode)
+                ? { exitCode: item.exitCode }
+                : {}),
+              ...(item.type === "reasoning"
+                ? {
+                    text:
+                      textOf(item.content) ||
+                      textOf(item.summary) ||
+                      current.events.get(item.id)?.text,
+                  }
+                : {}),
+              ...(item.type === "plan" ? { text: item.text } : {}),
+              ...(item.error
+                ? {
+                    detail:
+                      item.error.message ||
+                      (typeof item.error === "string" ? item.error : "Falha."),
+                  }
+                : {}),
+            });
+          }
           if (item.type === "agentMessage") {
             current.messages.set(item.id, item.text || "");
             publish();
@@ -227,6 +508,17 @@ function createCodexStream({
           }
         } else if (ev.method === "turn/completed") {
           const turn = params.turn || {};
+          // Fim de OUTRO turno (ex.: a compactação manual) ou fora de turno: não encerra a resposta atual.
+          if (
+            (turn.id && current.turnId && turn.id !== current.turnId) ||
+            !current.finish
+          ) {
+            settleCompaction(current);
+            return;
+          }
+          current.events.finishRunning(
+            turn.status === "completed" ? "done" : "error",
+          );
           current.finish?.({
             ok: turn.status === "completed",
             output: current.text,
@@ -257,10 +549,14 @@ function createCodexStream({
             handle(JSON.parse(line));
           } catch {}
       });
+      const stderrFilter = createStderrFilter({
+        forward: output,
+        onAuthError: onMcpAuthError,
+      });
       child.stderr.on("data", (chunk) => {
         const value = chunk.toString();
         current.stderr = (current.stderr + value).slice(-16000);
-        output(value);
+        stderrFilter(value);
       });
       child.stdin.on("error", (error) =>
         current.finish?.({ ok: false, error: error.message }),
@@ -269,6 +565,8 @@ function createCodexStream({
         current.finish?.({ ok: false, error: error.message }),
       );
       child.on("close", (code) => {
+        // Pedidos de permissão pendentes não sobrevivem ao app-server que os fez.
+        approvals?.cancelSession(sessionId);
         if (entries.get(sessionId) === current) entries.delete(sessionId);
         for (const pending of current.requests.values())
           pending.reject(new Error("O Codex encerrou a conexão."));
@@ -292,6 +590,7 @@ function createCodexStream({
           {
             ...(nativeId ? { threadId: nativeId } : {}),
             cwd,
+            developerInstructions: LIVE_OUTPUT_GUIDANCE,
             ...(model ? { model } : {}),
             ...(permission !== "inherit"
               ? {
@@ -330,28 +629,46 @@ function createCodexStream({
     }
     if (entries.get(sessionId) !== current)
       return { ok: false, cancelled: true, error: "Execução interrompida." };
+    // Compactação manual em curso: espera terminar para os eventos dela não caírem neste turno.
+    if (current.compaction) await current.compaction.promise;
+    if (current.autoDone) await current.autoDone;
+    if (entries.get(sessionId) !== current)
+      return { ok: false, cancelled: true, error: "Execução interrompida." };
     current.messages.clear();
     current.commands.clear();
     current.turnId = null;
     current.text = "";
     current.error = null;
     current.responseMessageId = responseMessageId;
+    current.reasoningParts = new Map();
+    current.subThreads ||= new Map();
+    current.events.start(responseMessageId);
     return new Promise((resolve) => {
       let done = false;
-      const timer = setTimeout(() => {
-        current.finish({
-          ok: false,
-          error: "Tempo limite da execução. A conversa permanece salva.",
-        });
-        close(sessionId);
-      }, turnTimeout);
+      const timer =
+        turnTimeout > 0
+          ? setTimeout(() => {
+              current.finish({
+                ok: false,
+                error: "Tempo limite da execução. A conversa permanece salva.",
+              });
+              close(sessionId);
+            }, turnTimeout)
+          : undefined;
       current.finish = (result) => {
         if (done) return;
         done = true;
         clearTimeout(timer);
         current.finish = null;
+        current.events.finishRunning(result.ok ? "done" : "error");
+        const turnEvents = current.events.snapshot();
+        current.events.endTurn();
         resolve({
           ...result,
+          events: turnEvents,
+          context: current.context.hasData()
+            ? current.context.snapshot()
+            : undefined,
           pid: current.child.pid,
           nativeSessionId: current.nativeId,
         });
@@ -372,8 +689,39 @@ function createCodexStream({
         );
     });
   }
+  // Compactação nativa do Codex (thread/compact/start): só com o app-server da conversa ativo e
+  // ocioso. Espera a compactação terminar e devolve o contexto resultante (para ser salvo).
+  async function compact(id, { timeoutMs = 120000 } = {}) {
+    const e = entries.get(id);
+    if (!e || !e.nativeId || e.child.exitCode !== null || e.child.killed)
+      return {
+        ok: false,
+        error:
+          "Envie uma mensagem ao Codex antes de compactar: a conversa ainda não está ativa.",
+      };
+    if (e.finish)
+      return { ok: false, error: "Aguarde o fim da execução para compactar." };
+    if (e.compaction) return { ok: false, error: "A conversa já está sendo compactada." };
+    // Fora de turno os eventos não pertencem à resposta anterior.
+    e.responseMessageId = undefined;
+    e.events.start(undefined);
+    let resolve;
+    const promise = new Promise((r) => (resolve = r));
+    e.compaction = { promise, resolve, timer: setTimeout(() => settleCompaction(e), timeoutMs) };
+    e.manualCompaction = true;
+    e.context.compacting(true);
+    try {
+      await e.request("thread/compact/start", { threadId: e.nativeId });
+    } catch (error) {
+      settleCompaction(e);
+      return { ok: false, error: error.message };
+    }
+    await promise;
+    return { ok: true, context: e.context.hasData() ? e.context.snapshot() : undefined };
+  }
   return {
     execute,
+    compact,
     kill: close,
     shutdown() {
       for (const id of entries.keys()) close(id);

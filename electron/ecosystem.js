@@ -314,8 +314,8 @@ function createEcosystem({
     }
   }
   return {
-    notifyOnce(id, category, title, description) {
-      notify(id, category, title, description);
+    notifyOnce(id, category, title, description, extra) {
+      notify(id, category, title, description, extra);
       persist();
     },
     observe,

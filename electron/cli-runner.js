@@ -7,6 +7,21 @@ const {
 
 const { createLiveFiles, liveDirectories } = require("./live-files");
 const { createCodexStream } = require("./codex-stream");
+const {
+  claudeToolActivity,
+  reasoningTail,
+  oneLine,
+  bufferingNote,
+} = require("./activity-labels");
+const { LIVE_OUTPUT_GUIDANCE } = require("./guidance");
+const { randomUUID } = require("crypto");
+const { createEventTracker } = require("./stream-events");
+const {
+  claudeContextUsed,
+  pickModelWindow,
+  createContextTracker,
+} = require("./context-usage");
+const { askApproval, claudeApprovalOptions } = require("./approval-options");
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 const PERMISSIONS = new Set(["inherit", "plan", "ask", "edits", "full"]);
 
@@ -56,7 +71,7 @@ function buildArgs({
     if (providerId === "claude") {
       args.push(
         "--append-system-prompt",
-        "BeagleDock displays your text and terminal output live. For long-running commands such as tests, builds and installs, preserve incremental stdout/stderr: run the command directly. Do not pipe it through tail, collect it in command substitution, or redirect all output to a file and read it only after completion unless the user explicitly requests that behavior. Summarize the result in chat after the command finishes. This guidance does not grant permissions or override project instructions.",
+        LIVE_OUTPUT_GUIDANCE,
         "--verbose",
         "--include-partial-messages",
         "--permission-prompts",
@@ -94,11 +109,18 @@ function createCliRunner({
   find = findBinary,
   spawn = spawnCli,
   checkCwd = validCwd,
-  turnTimeout = 15 * 60 * 1000,
+  // 0 = sem limite: execuções longas e sessões em segundo plano nunca são encerradas por tempo.
+  turnTimeout = 0,
   resolveSelection = ({ model, effort }) => ({ model, effort }),
   readAgyPermissions = readInheritedPermissions,
   globalFingerprint = () => "",
   approvals,
+  onMcpAuthError = () => {},
+  // Atualizações de eventos depois do fim do turno (agentes em segundo plano).
+  onLateEvents = () => {},
+  // Turno espontâneo da CLI (o agente principal recebeu o resultado de um agente em segundo plano
+  // e responde sozinho): o app o guarda e avisa, em vez de descartar.
+  onAutoTurn = () => {},
 }) {
   const codex = createCodexStream({
     spawn,
@@ -106,6 +128,9 @@ function createCliRunner({
     emit,
     turnTimeout,
     approvals,
+    onMcpAuthError,
+    onLateEvents,
+    onAutoTurn,
   });
   const processes = new Map();
   const busy = new Set();
@@ -274,14 +299,28 @@ function createCliRunner({
         };
         processes.set(sessionId, entry);
         const current = entry;
-        const activity = (text) =>
+        const activity = (text, detail) =>
           emit("cli-stream-chunk", {
             sessionId,
             responseMessageId: current.turn?.responseMessageId,
             activity: text,
+            ...(detail ? { detail } : {}),
             pid: child.pid,
           });
         current.activity = activity;
+        current.events = createEventTracker({
+          emit,
+          sessionId,
+          pid: () => child.pid,
+          onLate: onLateEvents,
+        });
+        current.blocks = new Map();
+        current.eventSeq = 0;
+        current.context = createContextTracker({
+          emit,
+          sessionId,
+          source: providerId,
+        });
         const decoder = new StringDecoder("utf8");
         const startLiveFiles = (id, baseline) => {
           if (current.liveFiles) return;
@@ -348,6 +387,51 @@ function createCliRunner({
             pid: child.pid,
           });
         };
+        function startAutoTurn(ev) {
+          const id = `auto-${randomUUID()}`;
+          const model = ev.message?.model || ev.event?.message?.model || current.model;
+          let resolveDone;
+          const auto = {
+            text: "",
+            responseMessageId: id,
+            hasDeltas: false,
+            auto: true,
+            model,
+            done: new Promise((r) => (resolveDone = r)),
+          };
+          auto.finish = async (result) => {
+            if (auto.finished) return;
+            auto.finished = true;
+            current.turn = null;
+            await current.liveFiles?.poll().catch(() => {});
+            current.events.finishRunning(result.ok ? "done" : "error");
+            const events = current.events.snapshot();
+            current.events.endTurn();
+            const text = String(result.output || auto.text || "");
+            const payload = {
+              sessionId,
+              providerId,
+              responseMessageId: id,
+              ok: !!result.ok,
+              text,
+              error: result.error,
+              events,
+              model,
+              // Sem texto nem erro não há o que mostrar (ex.: só ferramentas): descarta a mensagem.
+              discard: !text.trim() && !result.error,
+              context: current.context.hasData() ? current.context.snapshot() : undefined,
+            };
+            emit("cli-turn-finished", payload);
+            try {
+              onAutoTurn(payload);
+            } finally {
+              resolveDone();
+            }
+          };
+          current.events.start(id);
+          current.turn = auto;
+          emit("cli-turn-started", { sessionId, responseMessageId: id, providerId, model });
+        }
         const handle = (ev) => {
           setNativeId(
             ev.session_id ||
@@ -357,17 +441,81 @@ function createCliRunner({
               ev.result?.session_id ||
               ev.result?.conversation_id,
           );
+          // Turno espontâneo do Claude Code: conteúdo do agente principal sem nenhuma mensagem sua em
+          // andamento. Etapas internas de subagentes (parent_tool_use_id) não começam turno.
+          if (
+            !current.turn &&
+            providerId === "claude" &&
+            !ev.parent_tool_use_id &&
+            ((ev.type === "stream_event" && ev.event?.type === "message_start") ||
+              ev.type === "assistant")
+          )
+            startAutoTurn(ev);
           const turn = current.turn;
           // AGY uses event/step_update/result, distinct from Claude's type envelope.
           if (providerId === "antigravity" && typeof ev.event === "string") {
             if (ev.event === "step_update") {
               const step = ev.step_update || {};
               setNativeId(step.conversation_id);
+              // O AGY informa o uso de cada chamada ao modelo (verificado com a CLI real, 1.4.12):
+              // a entrada de uma chamada já inclui todo o histórico, então é o contexto ocupado.
+              // A janela do modelo não é informada pela CLI.
+              if (
+                step.step_type === "agent_response" &&
+                step.state === "DONE" &&
+                Number.isFinite(step.usage?.input_tokens) &&
+                step.usage.input_tokens > 0
+              )
+                current.context.update({ used: step.usage.input_tokens });
               if (
                 step.step_type === "agent_response" &&
                 typeof step.text_delta === "string"
               )
                 stream(step.text_delta, true);
+              // user_input e system_message são ruído para a pessoa (o pedido e o prompt de sistema).
+              if (
+                step.step_type &&
+                !["agent_response", "user_input", "system_message"].includes(
+                  step.step_type,
+                )
+              ) {
+                const info = step.tool_info || {};
+                const id = `step-${step.step_index}`;
+                const isTool = step.step_type === "tool";
+                const command =
+                  info.parameters?.CommandLine || info.parameters?.command;
+                const name =
+                  info.name ||
+                  info.tool_name ||
+                  info.tool ||
+                  String(step.step_type).toLowerCase();
+                if (!current.events.get(id))
+                  current.events.upsert(id, {
+                    kind: /subagent/i.test(String(name))
+                      ? "agent"
+                      : command
+                        ? "command"
+                        : isTool
+                          ? "tool"
+                          : "step",
+                    title: isTool ? String(name) : String(step.step_type),
+                    ...(bufferingNote(command)
+                      ? { meta: { note: bufferingNote(command) } }
+                      : {}),
+                    detail: oneLine(
+                      command ||
+                        (info.parameters
+                          ? JSON.stringify(info.parameters)
+                          : step.text || ""),
+                    ),
+                  });
+                if (step.state === "DONE")
+                  current.events.finish(id, info.error ? "error" : "done", {
+                    ...(info.error
+                      ? { detail: oneLine(info.error.message || "Falha.") }
+                      : {}),
+                  });
+              }
               if (step.step_type === "tool") {
                 current.agyTools ||= new Map();
                 const previous = current.agyTools.get(step.step_index);
@@ -375,7 +523,7 @@ function createCliRunner({
                 const command =
                   info.parameters?.CommandLine || info.parameters?.command;
                 if (command && !previous) {
-                  activity("CLI executando ferramenta…");
+                  activity("Executando comando…", oneLine(command));
                   output(sessionId, `$ ${command}\r\n`, child.pid);
                 }
                 const value =
@@ -439,15 +587,19 @@ function createCliRunner({
           if (ev.type === "control_request") {
             const request = ev.request || {};
             const response = async () => {
-              const allow =
-                request.subtype === "can_use_tool" && approvals
-                  ? await approvals.ask({
-                      sessionId,
-                      providerId,
-                      tool: request.tool_name,
-                      input: request.input,
-                    })
-                  : false;
+              let decision = { allow: false };
+              if (request.subtype === "can_use_tool" && approvals) {
+                // Opções nativas do Claude Code (permission_suggestions): "permitir sempre", pasta, modo…
+                const { options, native } = claudeApprovalOptions(request);
+                decision = await askApproval(approvals, {
+                  sessionId,
+                  providerId,
+                  tool: request.display_name || request.tool_name,
+                  input: request.input,
+                  options,
+                  native,
+                });
+              }
               if (child.killed || child.exitCode !== null) return;
               child.stdin.write(
                 JSON.stringify({
@@ -455,20 +607,157 @@ function createCliRunner({
                   response: {
                     subtype: "success",
                     request_id: ev.request_id,
-                    response: allow
-                      ? { behavior: "allow", updatedInput: request.input || {} }
+                    response: decision.allow
+                      ? {
+                          behavior: "allow",
+                          updatedInput: request.input || {},
+                          ...(decision.native?.updatedPermissions
+                            ? {
+                                updatedPermissions:
+                                  decision.native.updatedPermissions,
+                              }
+                            : {}),
+                        }
                       : {
                           behavior: "deny",
-                          message: "Ação não autorizada pelo usuário.",
+                          message:
+                            decision.message ||
+                            "Ação não autorizada pelo usuário.",
                         },
                   },
                 }) + "\n",
               );
             };
             void response().catch(() => kill(sessionId));
+          } else if (ev.type === "system") {
+            if (ev.subtype === "compact_boundary") {
+              const id = `compact-${++current.eventSeq}`;
+              current.events.upsert(id, {
+                kind: "compaction",
+                title: "Compactação de contexto",
+                detail: oneLine(ev.compact_metadata?.trigger || ""),
+              });
+              current.events.finish(id);
+              activity("Contexto compactado");
+              current.context.compacted({
+                pre: ev.compact_metadata?.pre_tokens,
+                post: ev.compact_metadata?.post_tokens,
+                trigger: ev.compact_metadata?.trigger,
+              });
+            } else if (ev.subtype === "task_started" && ev.tool_use_id) {
+              // Ciclo de tarefa do subagente (Claude Code 2.1.316, verificado): o `Agent` lançado
+              // aparece como uma etapa de agente, e as etapas internas ficam aninhadas nela.
+              current.events.upsert(ev.tool_use_id, {
+                kind: "agent",
+                title: `Agente ${ev.subagent_type || ""}`.trim(),
+                detail: oneLine(ev.description),
+                meta: {
+                  taskId: ev.task_id,
+                  subagentType: ev.subagent_type,
+                  ...(ev.is_backgrounded === true ? { background: true } : {}),
+                },
+              });
+              activity(
+                `Agente ${ev.subagent_type || ""}`.trim(),
+                oneLine(ev.description),
+              );
+            } else if (ev.subtype === "task_progress" && ev.tool_use_id) {
+              current.events.upsert(ev.tool_use_id, {
+                detail: oneLine(ev.description),
+                meta: {
+                  tokens: ev.usage?.total_tokens,
+                  toolUses: ev.usage?.tool_uses,
+                  durationMs: ev.usage?.duration_ms,
+                  lastTool: ev.last_tool_name,
+                },
+              });
+            } else if (ev.subtype === "task_notification" && ev.tool_use_id) {
+              current.events.finish(
+                ev.tool_use_id,
+                ev.status === "completed" ? "done" : "error",
+                {
+                  text: oneLine(ev.summary, 600),
+                  meta: {
+                    tokens: ev.usage?.total_tokens,
+                    toolUses: ev.usage?.tool_uses,
+                    durationMs: ev.usage?.duration_ms,
+                  },
+                },
+              );
+            } else if (ev.subtype === "thinking_tokens") {
+              // O Claude Code não expõe o texto do raciocínio (chega vazio), mas informa a
+              // contagem estimada de tokens: é progresso real, visível na etapa e na atividade.
+              const id = [...current.blocks.values()]
+                .filter((v) => v.startsWith("think-"))
+                .at(-1);
+              const detail = `~${Number(ev.estimated_tokens) || 0} tokens de raciocínio`;
+              if (id) current.events.upsert(id, { detail });
+              activity("Raciocinando…", detail);
+            } else if (ev.subtype === "status" && ev.status === "compacting") {
+              current.events.upsert("compacting", {
+                kind: "compaction",
+                title: "Compactação de contexto",
+              });
+              activity("Compactando o contexto…");
+              current.context.compacting(true);
+            } else if (
+              ev.subtype === "status" &&
+              current.events.get("compacting")
+            ) {
+              current.events.finish("compacting");
+              current.context.compacting(false);
+            }
           } else if (ev.type === "stream_event") {
             const delta = ev.event?.delta;
             if (delta?.type === "text_delta") stream(delta.text, true);
+            if (
+              ev.event?.type === "content_block_start" &&
+              ev.event.content_block?.type === "thinking"
+            ) {
+              current.thinking = "";
+              activity("Raciocinando…");
+              const id = `think-${++current.eventSeq}`;
+              current.blocks.set(ev.event.index, id);
+              current.events.upsert(id, {
+                kind: "reasoning",
+                title: "Raciocínio",
+              });
+            }
+            if (delta?.type === "thinking_delta")
+              current.events.appendText(
+                current.blocks.get(ev.event.index),
+                delta.thinking,
+              );
+            if (ev.event?.type === "content_block_stop") {
+              const id = current.blocks.get(ev.event.index);
+              if (id) {
+                current.events.finish(id);
+                current.blocks.delete(ev.event.index);
+              }
+            }
+            if (delta?.type === "thinking_delta") {
+              current.thinking = (
+                (current.thinking || "") + (delta.thinking || "")
+              ).slice(-2000);
+              const at = Date.now();
+              if (!current.thinkingAt || at - current.thinkingAt >= 120) {
+                current.thinkingAt = at;
+                activity("Raciocinando…", reasoningTail(current.thinking));
+              }
+            }
+            if (
+              ev.event?.type === "content_block_start" &&
+              ev.event.content_block?.type === "tool_use"
+            ) {
+              activity(
+                `Preparando ${ev.event.content_block.name || "ferramenta"}…`,
+              );
+              const label = claudeToolActivity(ev.event.content_block);
+              current.events.upsert(ev.event.content_block.id, {
+                kind: label.kind,
+                title: label.title,
+              });
+            }
             if (
               ev.event?.type === "content_block_start" &&
               ev.event.content_block?.type === "text" &&
@@ -476,12 +765,43 @@ function createCliRunner({
             )
               turn.text += "\n\n";
           } else if (ev.type === "assistant") {
+            if (providerId === "claude" && !ev.parent_tool_use_id) {
+              const used = claudeContextUsed(ev.message?.usage);
+              if (used !== null) {
+                current.model = ev.message?.model || current.model;
+                current.context.update({
+                  used,
+                  window: current.contextWindow,
+                  windowKnown: Number.isFinite(current.contextWindow),
+                  model: current.model,
+                });
+              }
+            }
             for (const block of ev.message?.content || []) {
               if (block.type === "text") stream(block.text);
               if (block.type === "tool_use") {
                 current.tools ||= new Set();
                 current.tools.add(block.id);
-                activity(`CLI: ${block.name || "ferramenta"}`);
+                const label = claudeToolActivity(block);
+                activity(label.activity, label.detail);
+                current.events.upsert(block.id, {
+                  kind: label.kind,
+                  title: label.title,
+                  detail: label.detail,
+                  ...(label.note || block.input?.run_in_background
+                    ? {
+                        meta: {
+                          ...(label.note ? { note: label.note } : {}),
+                          ...(label.kind === "agent" && block.input?.run_in_background
+                            ? { background: true }
+                            : {}),
+                        },
+                      }
+                    : {}),
+                  ...(ev.parent_tool_use_id
+                    ? { parentId: ev.parent_tool_use_id }
+                    : {}),
+                });
                 const command =
                   block.input?.command ||
                   block.input?.description ||
@@ -492,6 +812,16 @@ function createCliRunner({
             if (turn) turn.hasDeltas = false;
           } else if (ev.type === "user") {
             for (const block of ev.message?.content || []) {
+              // A chamada de um agente em segundo plano volta na hora ("Async agent launched"):
+              // ele continua rodando até a notificação final da tarefa.
+              if (
+                block.type === "tool_result" &&
+                !current.events.get(block.tool_use_id)?.meta?.background
+              )
+                current.events.finish(
+                  block.tool_use_id,
+                  block.is_error ? "error" : "done",
+                );
               if (
                 block.type !== "tool_result" ||
                 !current.tools?.has(block.tool_use_id)
@@ -540,6 +870,13 @@ function createCliRunner({
               turn.error =
                 ev.error?.message || ev.message || "A CLI informou uma falha.";
           } else if (ev.type === "result" && turn) {
+            if (providerId === "claude") {
+              const window = pickModelWindow(ev.modelUsage, current.model);
+              if (window) {
+                current.contextWindow = window;
+                current.context.setWindow(window, true);
+              }
+            }
             const resultText =
               typeof ev.result === "string" ? ev.result : ev.result?.text;
             turn.finish({
@@ -602,16 +939,23 @@ function createCliRunner({
             });
         });
       }
+      // Um turno espontâneo em andamento termina antes de a mensagem nova usar a CLI.
+      if (entry.turn?.auto) await entry.turn.done;
       return await new Promise((resolve) => {
         const current = entry;
         let finished = false;
-        const timer = setTimeout(() => {
-          current.turn?.finish({
-            ok: false,
-            error: "Tempo limite da execução. A conversa permanece salva.",
-          });
-          kill(sessionId);
-        }, turnTimeout);
+        const timer =
+          turnTimeout > 0
+            ? setTimeout(() => {
+                current.turn?.finish({
+                  ok: false,
+                  error:
+                    "Tempo limite da execução. A conversa permanece salva.",
+                });
+                kill(sessionId);
+              }, turnTimeout)
+            : undefined;
+        current.events.start(payload.responseMessageId);
         current.turn = {
           text: "",
           responseMessageId: payload.responseMessageId,
@@ -636,8 +980,15 @@ function createCliRunner({
               kill(sessionId);
             }
             if (!current.nativeId) kill(sessionId);
+            current.events.finishRunning(result.ok ? "done" : "error");
+            const turnEvents = current.events.snapshot();
+            current.events.endTurn();
             resolve({
               ...result,
+              events: turnEvents,
+              context: current.context.hasData()
+                ? current.context.snapshot()
+                : undefined,
               pid: current.child.pid,
               nativeSessionId: current.nativeId,
             });
@@ -674,6 +1025,19 @@ function createCliRunner({
     execute,
     kill,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),
+    busyCount: () => busy.size,
+    // Compactação nativa: só o Codex tem comando próprio fora da conversa; no Claude Code é a
+    // mensagem /compact, e o AGY não oferece compactação em modo programático.
+    compact: (id, providerId) =>
+      providerId === "codex"
+        ? codex.compact(id)
+        : Promise.resolve({
+            ok: false,
+            error:
+              providerId === "antigravity"
+                ? "O AGY não oferece compactação em modo programático."
+                : "No Claude Code a compactação é a mensagem /compact.",
+          }),
     async prepareUpdate() {
       await codex.prepareUpdate();
       if (busy.size)

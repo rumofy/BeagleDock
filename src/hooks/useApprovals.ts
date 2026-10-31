@@ -12,9 +12,9 @@ export function useApprovals(setAppError: (message: string) => void) {
       .catch(() => {});
     return beagleApi.on("cli-approvals", setCliApprovals);
   }, []);
-  const resolveApproval = async (id: string, decision: "allow" | "deny") => {
+  const resolveApproval = async (id: string, decision: string, message?: string) => {
     try {
-      await beagleApi.resolveCliApproval(id, decision);
+      await beagleApi.resolveCliApproval(id, decision, message);
     } catch (e) {
       setAppError((e as Error).message);
     }

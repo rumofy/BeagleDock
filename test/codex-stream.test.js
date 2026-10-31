@@ -61,8 +61,9 @@ function harness() {
     calls.push({ child, bin, args, options });
     return child;
   };
-  const make = () =>
+  const make = (extra = {}) =>
     createCliRunner({
+      ...extra,
       store,
       spawn,
       find: () => "/fixture/codex",
@@ -241,5 +242,336 @@ test("Codex keeps initial output that a CLI publishes only in its completed snap
   assert.equal(text.split("last line").length - 1, 1);
   h.notify("turn/completed", { turn: { status: "completed" } });
   await pending;
+  runner.shutdown();
+});
+test("Codex timeline: reasoning, MCP, plan and compaction appear live and are returned with the turn", async () => {
+  const h = harness(),
+    runner = h.make(),
+    pending = runner.execute(payload);
+  await tick();
+  const live = () =>
+    h.events.filter((e) => e.channel === "cli-activity-event").map((e) => e.data.event);
+  h.notify("item/started", { item: { id: "r1", type: "reasoning" } });
+  h.notify("item/reasoning/summaryTextDelta", { itemId: "r1", delta: "Analisando os testes" });
+  assert.equal(live().at(-1).kind, "reasoning");
+  assert.match(live().at(-1).text, /Analisando/);
+  assert.equal(live().at(-1).status, "running");
+  h.notify("item/started", {
+    item: { id: "m1", type: "mcpToolCall", server: "figma", tool: "get_design", arguments: { id: 1 } },
+  });
+  h.notify("item/mcpToolCall/progress", { itemId: "m1", message: "baixando…" });
+  assert.equal(live().at(-1).detail, "baixando…");
+  h.notify("turn/plan/updated", {
+    explanation: "Plano inicial",
+    plan: [{ step: "Ler", status: "completed" }, { step: "Testar", status: "inProgress" }],
+  });
+  assert.match(live().at(-1).text, /\[x\] Ler\n\[~\] Testar/);
+  h.notify("item/started", { item: { id: "c1", type: "contextCompaction" } });
+  h.notify("item/completed", { item: { id: "c1", type: "contextCompaction" } });
+  h.notify("item/completed", {
+    item: { id: "m1", type: "mcpToolCall", server: "figma", tool: "get_design", status: "failed", error: { message: "sem permissão" }, durationMs: 42 },
+  });
+  h.notify("item/completed", {
+    item: { id: "r1", type: "reasoning", summary: ["Analisei os testes e achei a causa"] },
+  });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  const byId = Object.fromEntries(result.events.map((e) => [e.id, e]));
+  assert.equal(byId.m1.status, "error");
+  assert.equal(byId.m1.detail, "sem permissão");
+  assert.equal(byId.m1.durationMs, 42);
+  assert.equal(byId.m1.title, "MCP figma/get_design");
+  assert.equal(byId.r1.status, "done");
+  assert.match(byId.r1.text, /achei a causa/);
+  assert.equal(byId.c1.kind, "compaction");
+  assert.equal(byId.c1.status, "done");
+  assert.equal(byId.plan.status, "done");
+  runner.shutdown();
+});
+
+test("app-server do Codex que cai cancela as permissões pendentes da sessão", async () => {
+  const h = harness();
+  const cancelled = [];
+  const approvals = {
+    ask: () => new Promise(() => {}), // ninguém responde
+    cancelSession: (id) => cancelled.push(id),
+    shutdown() {},
+  };
+  const runner = h.make({ approvals });
+  const pending = runner.execute({ ...payload, permission: "edits" });
+  await tick();
+  const c = h.calls[0].child;
+  c.event({ id: "req-1", method: "item/commandExecution/requestApproval", params: { threadId: c.threadId, command: "rm -rf x" } });
+  await tick();
+  assert.deepEqual(cancelled, [], "ainda não houve queda");
+  c.close(1);
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.ok(cancelled.includes(payload.sessionId), "a permissão pendente foi cancelada na queda");
+  runner.shutdown();
+});
+
+test("raciocínio do Codex: resumo e conteúdo não se misturam e o resumo ganha parágrafos", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  const live = () => h.events.filter((e) => e.channel === "cli-activity-event").map((e) => e.data.event).filter((e) => e.id === "r1");
+  h.notify("item/started", { item: { id: "r1", type: "reasoning" } });
+  h.notify("item/reasoning/summaryTextDelta", { itemId: "r1", delta: "Primeiro ponto" });
+  h.notify("item/reasoning/summaryPartAdded", { itemId: "r1" });
+  h.notify("item/reasoning/summaryTextDelta", { itemId: "r1", delta: "Segundo ponto" });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  const summary = result.events.find((e) => e.id === "r1");
+  assert.equal(summary.text, "Primeiro ponto\n\nSegundo ponto");
+  assert.ok(live().length >= 2);
+  const h2 = harness(), runner2 = h2.make(), pending2 = runner2.execute(payload);
+  await tick();
+  h2.notify("item/started", { item: { id: "r9", type: "reasoning" } });
+  h2.notify("item/reasoning/summaryTextDelta", { itemId: "r9", delta: "resumo" });
+  h2.notify("item/reasoning/textDelta", { itemId: "r9", delta: "conteúdo bruto" });
+  h2.notify("turn/completed", { turn: { status: "completed" } });
+  const r2 = (await pending2).events.find((e) => e.id === "r9");
+  assert.equal(r2.text, "conteúdo bruto", "com conteúdo, o resumo não é concatenado");
+  runner.shutdown();
+  runner2.shutdown();
+});
+
+test("progresso de MCP de item desconhecido não cria etapa sem título", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  h.notify("item/mcpToolCall/progress", { itemId: "fantasma", message: "?" });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.events.some((e) => e.id === "fantasma"), false);
+  runner.shutdown();
+});
+
+test("Codex: a opção escolhida volta ao app-server no formato nativo (sessão, emenda, cancelar)", async () => {
+  const h = harness();
+  const answers = [
+    { allow: true, optionId: "acceptForSession", native: { decision: "acceptForSession" } },
+    { allow: true, optionId: "amend", native: { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["npm", "test"] } } } },
+    { allow: false, optionId: "cancel", native: { decision: "cancel" } },
+  ];
+  const asked = [];
+  const approvals = { askDetailed: async (r) => (asked.push(r), answers.shift()), cancelSession() {}, shutdown() {} };
+  const runner = h.make({ approvals });
+  const pending = runner.execute({ ...payload, permission: "edits" });
+  await tick();
+  const c = h.calls[0].child;
+  for (const id of [701, 702, 703]) {
+    c.event({ id, method: "item/commandExecution/requestApproval", params: { threadId: c.threadId, command: "npm test", proposedExecpolicyAmendment: ["npm", "test"] } });
+    await tick();
+  }
+  const reply = (id) => c.messages.find((m) => m.id === id)?.result;
+  assert.deepEqual(reply(701), { decision: "acceptForSession" });
+  assert.deepEqual(reply(702), { decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: ["npm", "test"] } } });
+  assert.deepEqual(reply(703), { decision: "cancel" });
+  assert.deepEqual(asked[0].options.map((o) => o.id), ["accept", "acceptForSession", "amend", "decline", "cancel"]);
+  assert.equal(asked[0].tool, "item/commandExecution/requestApproval");
+  // Permissão adicional mantém o formato próprio (permissions + scope), sem opções inventadas.
+  answers.push({ allow: true });
+  c.event({ id: 704, method: "item/permissions/requestApproval", params: { threadId: c.threadId, permissions: { network: true } } });
+  await tick();
+  assert.deepEqual(reply(704), { permissions: { network: true }, scope: "turn" });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+  runner.shutdown();
+});
+
+test("Codex: contexto vem do tokenUsage, compactação é capturada e o comando nativo é enviado", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  const ctxs = () => h.events.filter((e) => e.channel === "cli-context").map((e) => e.data);
+  h.notify("thread/tokenUsage/updated", { tokenUsage: { last: { totalTokens: 8200 }, total: { totalTokens: 90000 }, modelContextWindow: 272000 } });
+  assert.equal(ctxs().at(-1).used, 8200);
+  assert.equal(ctxs().at(-1).window, 272000);
+  h.notify("item/started", { item: { id: "c1", type: "contextCompaction" } });
+  assert.equal(ctxs().at(-1).compacting, true);
+  h.notify("item/completed", { item: { id: "c1", type: "contextCompaction" } });
+  assert.equal(ctxs().at(-1).compacting, false);
+  assert.equal(ctxs().at(-1).compactions, 1);
+  // Durante a execução não compacta; ocioso, envia thread/compact/start.
+  assert.match((await runner.compact(payload.sessionId, "codex")).error, /Aguarde/);
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.context.window, 272000);
+  const c = h.calls[0].child;
+  const compact = runner.compact(payload.sessionId, "codex");
+  await tick();
+  const request = c.messages.find((m) => m.method === "thread/compact/start");
+  assert.equal(request.params.threadId, "native-codex-123");
+  c.event({ id: request.id, result: {} });
+  // O comando espera a compactação terminar (evento do app-server) antes de responder.
+  c.event({ method: "item/completed", params: { threadId: c.threadId, item: { id: "cmp-1", type: "contextCompaction" } } });
+  const done = await compact;
+  assert.equal(done.ok, true);
+  assert.equal(done.context.compactions, 2, "uma automática no turno anterior + esta manual");
+  assert.equal((await runner.compact("sem-conversa", "codex")).ok, false);
+  assert.match((await runner.compact("x", "antigravity")).error, /AGY/);
+  assert.match((await runner.compact("x", "claude")).error, /\/compact/);
+  runner.shutdown();
+});
+
+// Formato do esquema do protocolo (v2); o disparo de subagentes pelo Codex real NÃO foi verificado.
+test("Codex: etapas da conversa de um subagente entram aninhadas sob o agente (formato do esquema)", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  const c = h.calls[0].child;
+  const sub = (method, params) => c.event({ method, params: { threadId: "sub-thread-1", turnId: "sub-turn-1", ...params } });
+  h.notify("item/started", { item: { id: "collab-1", type: "collabAgentToolCall", tool: "spawn_agent", prompt: "contar arquivos", receiverThreadIds: ["sub-thread-1"], model: "gpt-x" } });
+  sub("item/started", { item: { id: "cmd-s1", type: "commandExecution", command: "find . | wc -l" } });
+  sub("item/started", { item: { id: "msg-s1", type: "agentMessage" } });
+  sub("item/completed", { item: { id: "cmd-s1", type: "commandExecution", status: "completed", durationMs: 12 } });
+  // conversa desconhecida: ignorada
+  c.event({ method: "item/started", params: { threadId: "outra", item: { id: "x", type: "commandExecution", command: "rm" } } });
+  h.notify("item/completed", { item: { id: "collab-1", type: "collabAgentToolCall", tool: "spawn_agent", receiverThreadIds: ["sub-thread-1"], status: "completed" } });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  const byId = Object.fromEntries(result.events.map((e) => [e.id, e]));
+  assert.equal(byId["collab-1"].kind, "agent");
+  assert.equal(byId["collab-1"].meta.threads, 1);
+  assert.equal(byId["sub-thread-1:cmd-s1"].parentId, "collab-1");
+  assert.equal(byId["sub-thread-1:cmd-s1"].status, "done");
+  assert.equal(byId["sub-thread-1:cmd-s1"].durationMs, 12);
+  assert.equal(byId["sub-thread-1:msg-s1"], undefined, "mensagens do subagente não viram etapas");
+  assert.equal(byId["outra:x"], undefined, "conversa desconhecida é ignorada");
+  runner.shutdown();
+});
+
+test("Codex: enviar durante a compactação manual espera ela terminar e o fim da compactação não encerra a resposta", async () => {
+  const h = harness(), runner = h.make(), first = runner.execute(payload);
+  await tick();
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await first;
+  const c = h.calls[0].child;
+  const ctxs = () => h.events.filter((e) => e.channel === "cli-context").map((e) => e.data);
+  const compact = runner.compact(payload.sessionId, "codex");
+  await tick();
+  const request = c.messages.find((m) => m.method === "thread/compact/start");
+  c.event({ id: request.id, result: {} });
+  c.event({ method: "turn/started", params: { threadId: c.threadId, turn: { id: "turn-compact" } } });
+  await tick();
+  assert.equal(ctxs().at(-1).compacting, true);
+  // A pessoa envia uma mensagem no meio da compactação: ela espera.
+  const second = runner.execute({ ...payload, prompt: "segunda", responseMessageId: "response-2" });
+  await tick();
+  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 1, "o turno novo ainda não começou");
+  // Fim da compactação (evento + fim do turno dela): termina a espera, sem encerrar nada indevidamente.
+  c.event({ method: "item/completed", params: { threadId: c.threadId, turnId: "turn-compact", item: { id: "cmp", type: "contextCompaction" } } });
+  c.event({ method: "thread/compacted", params: { threadId: c.threadId, turnId: "turn-compact" } });
+  c.event({ method: "turn/completed", params: { threadId: c.threadId, turn: { id: "turn-compact", status: "completed" } } });
+  const compacted = await compact;
+  assert.equal(compacted.ok, true);
+  assert.equal(compacted.context, undefined === compacted.context ? undefined : compacted.context);
+  assert.equal(ctxs().at(-1).compactions, 1, "dois eventos, uma compactação");
+  assert.equal(ctxs().at(-1).lastCompaction.trigger, "manual");
+  await tick();
+  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 2, "agora o turno novo começou");
+  // Um turn/completed ATRASADO da compactação não pode encerrar a segunda resposta.
+  c.event({ method: "turn/completed", params: { threadId: c.threadId, turn: { id: "turn-compact", status: "completed" } } });
+  h.notify("item/agentMessage/delta", { itemId: "a2", delta: "resposta real" });
+  h.notify("turn/completed", { turn: { id: c.turnId, status: "completed" } });
+  const result = await second;
+  assert.equal(result.output, "resposta real");
+  assert.equal(result.ok, true);
+  runner.shutdown();
+});
+
+test("Codex: parar a sessão com permissão pendente responde 'cancel' ao app-server", async () => {
+  const h = harness();
+  const { createApprovalBroker } = require("../electron/approvals");
+  const approvals = createApprovalBroker();
+  const runner = h.make({ approvals });
+  const pending = runner.execute({ ...payload, permission: "edits" });
+  await tick();
+  const c = h.calls[0].child;
+  c.event({ id: 801, method: "item/commandExecution/requestApproval", params: { threadId: c.threadId, command: "rm x" } });
+  await tick();
+  approvals.cancelSession(payload.sessionId);
+  await tick();
+  assert.deepEqual(c.messages.find((m) => m.id === 801)?.result, { decision: "cancel" });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+  runner.shutdown();
+});
+
+test("Codex recebe a orientação de saída ao vivo e a etapa de comando com | tail ganha aviso", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  const start = h.calls[0].child.messages.find((m) => m.method === "thread/start");
+  assert.match(start.params.developerInstructions, /preserve incremental stdout/);
+  h.notify("item/started", { item: { id: "cmd-t", type: "commandExecution", command: "npm test 2>&1 | tail -40" } });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.match(result.events.find((e) => e.id === "cmd-t").meta.note, /tail/);
+  runner.shutdown();
+});
+
+// Formato do esquema do protocolo; agentes do Codex real NÃO foram verificados.
+test("Codex: agente ainda em andamento no fim do turno segue rodando e as etapas dele chegam depois, na resposta de origem", async () => {
+  const h = harness();
+  const late = [];
+  const runner = h.make({ onLateEvents: (p) => late.push(p) });
+  const pending = runner.execute(payload);
+  await tick();
+  const c = h.calls[0].child;
+  const sub = (method, params) => c.event({ method, params: { threadId: "sub-thread-9", turnId: "sub-turn-9", ...params } });
+  h.notify("item/started", { item: { id: "collab-9", type: "collabAgentToolCall", tool: "spawn_agent", prompt: "rodar testes", receiverThreadIds: ["sub-thread-9"], status: "inProgress" } });
+  sub("item/started", { item: { id: "cmd-a", type: "commandExecution", command: "npm test 2>&1 | tail -40" } });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  const at = Object.fromEntries(result.events.map((e) => [e.id, e]));
+  assert.equal(at["collab-9"].status, "running", "o agente não é encerrado com o turno");
+  assert.equal(at["sub-thread-9:cmd-a"].status, "running");
+  assert.match(at["sub-thread-9:cmd-a"].meta?.note ?? "", /tail/);
+  // depois do turno
+  sub("item/completed", { item: { id: "cmd-a", type: "commandExecution", status: "completed", durationMs: 40000 } });
+  sub("item/started", { item: { id: "cmd-b", type: "commandExecution", command: "git status" } });
+  h.notify("item/completed", { item: { id: "collab-9", type: "collabAgentToolCall", tool: "spawn_agent", receiverThreadIds: ["sub-thread-9"], status: "completed" } });
+  const emitted = h.events.filter((e) => e.channel === "cli-activity-event").map((e) => e.data).filter((d) => d.responseMessageId === payload.responseMessageId);
+  assert.equal(emitted.filter((d) => d.event.id === "collab-9").at(-1).event.status, "done");
+  assert.equal(emitted.filter((d) => d.event.id === "sub-thread-9:cmd-a").at(-1).event.status, "done");
+  assert.equal(emitted.filter((d) => d.event.id === "sub-thread-9:cmd-b").at(-1).event.parentId, "collab-9");
+  runner.shutdown();
+});
+
+test("Codex: turno que o app-server começa sozinho vira mensagem nova; compactação e turno vazio são descartados", async () => {
+  const h = harness();
+  const autos = [];
+  const runner = h.make({ onAutoTurn: (p) => autos.push(p) });
+  const first = runner.execute(payload);
+  await tick();
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await first;
+  const c = h.calls[0].child;
+  const ev = (method, params = {}) => c.event({ method, params: { threadId: c.threadId, ...params } });
+  // o agente principal responde sozinho
+  ev("turn/started", { turn: { id: "auto-turn-1" } });
+  const started = h.events.filter((e) => e.channel === "cli-turn-started");
+  assert.equal(started.length, 1);
+  assert.match(started[0].data.responseMessageId, /^auto-/);
+  ev("item/agentMessage/delta", { turnId: "auto-turn-1", itemId: "m1", delta: "O agente terminou: " });
+  ev("item/agentMessage/delta", { turnId: "auto-turn-1", itemId: "m1", delta: "789 testes." });
+  const chunk = h.events.filter((e) => e.channel === "cli-stream-chunk" && e.data.responseMessageId === started[0].data.responseMessageId).at(-1);
+  assert.equal(chunk.data.fullText, "O agente terminou: 789 testes.");
+  ev("turn/completed", { turn: { id: "auto-turn-1", status: "completed" } });
+  const finished = h.events.filter((e) => e.channel === "cli-turn-finished");
+  assert.equal(finished.length, 1);
+  assert.equal(finished[0].data.text, "O agente terminou: 789 testes.");
+  assert.equal(autos.length, 1);
+  assert.equal(autos[0].discard, false);
+  // compactação automática (sem texto): descartada
+  ev("turn/started", { turn: { id: "auto-turn-2" } });
+  ev("turn/completed", { turn: { id: "auto-turn-2", status: "completed" } });
+  assert.equal(autos.at(-1).discard, true);
+  // o turno do usuário NÃO é espontâneo
+  const before = h.events.filter((e) => e.channel === "cli-turn-started").length;
+  const second = runner.execute({ ...payload, prompt: "de novo", responseMessageId: "r2" });
+  await tick();
+  ev("turn/started", { turn: { id: c.turnId } });
+  assert.equal(h.events.filter((e) => e.channel === "cli-turn-started").length, before);
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await second;
   runner.shutdown();
 });

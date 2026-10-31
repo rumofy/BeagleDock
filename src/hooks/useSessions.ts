@@ -1,12 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
 import { conversationTitle } from "../lib/conversationTitle";
 import { modelSelection } from "../lib/modelSelection";
 import { providerQuota, stripAnsi } from "../lib/format";
+import { createFrameBatcher } from "../lib/frameBatcher";
+import { PROVIDER_NAMES } from "../lib/approvalLabels";
+import { recordStreamSample } from "../lib/streamMetrics";
+import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import type {
   AIProviderId,
   AIProviderStatus,
+  ChatEvent,
   ChatMessage,
+  ContextInfo,
   ChatSession,
   PermissionLevel,
   UserProfile,
@@ -36,7 +43,17 @@ export function useSessions({
   setShowWorkspaceModal,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
+  // Referências para os ouvintes de eventos, que não são recriados a cada renderização.
+  const providersRef = useRef(providers);
+  providersRef.current = providers;
+  const activeRef = useRef("");
+  activeRef.current = activeSessionId;
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
+  // Conversas com resposta nova (de um turno espontâneo) que você ainda não viu.
+  const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
+  const [contextBySession, setContextBySession] = useState<
+    Record<string, ContextInfo>
+  >({});
   const [executingSessions, setExecutingSessions] = useState<
     Record<string, number>
   >({});
@@ -70,13 +87,15 @@ export function useSessions({
   const hydrateSessions = (saved: SavedState) => {
     const sessions: ChatSession[] = (saved.sessions || []).map(
       (session: ChatSession) => {
-        const title = (saved.messagesBySession?.[session.id] || [])
-          .filter((m: ChatMessage) => m.sender === "user")
-          .reduce(
-            (current: string, m: ChatMessage) =>
-              conversationTitle(current, m.text),
-            session.title,
-          );
+        const title = session.titleLocked
+          ? session.title
+          : (saved.messagesBySession?.[session.id] || [])
+              .filter((m: ChatMessage) => m.sender === "user")
+              .reduce(
+                (current: string, m: ChatMessage) =>
+                  conversationTitle(current, m.text),
+                session.title,
+              );
         if (title !== session.title)
           void beagleApi
             .saveSession({ ...session, title })
@@ -90,64 +109,198 @@ export function useSessions({
         sessions: sessions.filter((s) => s.providerId === p.id),
       })),
     );
-    setActiveSessionId(sessions[0]?.id || "");
+    setActiveSessionId(
+      (sessions.find((s) => !s.archived) || sessions[0])?.id || "",
+    );
     setMessages(saved.messagesBySession || {});
+    setContextBySession(
+      Object.fromEntries(
+        sessions
+          .filter((s) => s.context)
+          .map((s) => [s.id, s.context as ContextInfo]),
+      ),
+    );
   };
+
+  // Ao abrir a conversa, a resposta nova deixa de ser "nova".
+  useEffect(() => {
+    if (activeSessionId)
+      setUnreadSessionIds((prev) =>
+        prev.includes(activeSessionId)
+          ? prev.filter((id) => id !== activeSessionId)
+          : prev,
+      );
+  }, [activeSessionId]);
 
   // Listener de streaming do PTY e execução de CLIs
   useEffect(() => {
     if (!backendAvailable()) return;
-    const unsubscribePty = beagleApi.on("pty-data", (payload) => {
-      if (!payload || !payload.sessionId) return;
-      const cleanChunk = stripAnsi(payload.data);
-      const lines = cleanChunk
-        .split(/\r?\n/)
-        .filter((l) => l.trim().length > 0);
-      if (lines.length === 0) return;
-
+    // Cada fonte de eventos é entregue à tela em, no máximo, uma renderização por quadro:
+    // sem timers que segurem dados, sempre com o estado mais recente.
+    const ptyBatcher = createFrameBatcher<{
+      sessionId: string;
+      data: string;
+      pid?: number;
+    }>((items) => {
+      const bySession = new Map<string, { data: string; pid?: number }>();
+      for (const item of items) {
+        const entry = bySession.get(item.sessionId) ?? { data: "" };
+        entry.data += item.data;
+        entry.pid = item.pid || entry.pid;
+        bySession.set(item.sessionId, entry);
+      }
       setProviders((prev) =>
-        prev.map((p) => ({
-          ...p,
-          sessions: p.sessions.map((s) => {
-            if (s.id !== payload.sessionId) return s;
-            const currentLogs = s.ptyLog || [];
-            const updatedLogs = [...currentLogs, ...lines].slice(-150);
-            return {
-              ...s,
-              pid: payload.pid || s.pid,
-              ptyLog: updatedLogs,
-              ptyRaw: ((s.ptyRaw || "") + payload.data).slice(-512 * 1024),
-            };
-          }),
-        })),
+        prev.map((p) => {
+          if (!p.sessions.some((s) => bySession.has(s.id))) return p;
+          return {
+            ...p,
+            sessions: p.sessions.map((s) => {
+              const batch = bySession.get(s.id);
+              if (!batch) return s;
+              const lines = stripAnsi(batch.data)
+                .split(/\r?\n/)
+                .filter((l) => l.trim().length > 0);
+              return {
+                ...s,
+                pid: batch.pid || s.pid,
+                ptyLog: lines.length
+                  ? [...(s.ptyLog || []), ...lines].slice(-150)
+                  : s.ptyLog,
+                ptyRaw: ((s.ptyRaw || "") + batch.data).slice(-512 * 1024),
+              };
+            }),
+          };
+        }),
       );
     });
+    const unsubscribePty = beagleApi.on("pty-data", (payload) => {
+      if (payload?.sessionId) ptyBatcher.push(payload);
+    });
 
+    const streamBatcher = createFrameBatcher<StreamItem>((items) => {
+      const wallStart = Date.now();
+      const start = performance.now();
+      // flushSync mantém o commit dentro do quadro e permite medir o custo real da renderização.
+      flushSync(() =>
+        setMessages((prev) => applyStreamItems(prev, items, wallStart)),
+      );
+      const commitMs = performance.now() - start;
+      for (const item of items)
+        recordStreamSample({
+          ipcMs: Math.max(
+            0,
+            item.receivedAt - (item.payload.emittedAt ?? item.receivedAt),
+          ),
+          frameWaitMs: wallStart - item.receivedAt,
+          commitMs,
+        });
+    });
     const unsubscribeStream = beagleApi.on("cli-stream-chunk", (payload) => {
-      if (!payload || !payload.sessionId) return;
-      setMessages((prev) => {
-        const sessionMsgs = prev[payload.sessionId] || [];
-        const lastIdx = payload.responseMessageId
-          ? sessionMsgs.findIndex((m) => m.id === payload.responseMessageId)
-          : sessionMsgs.findIndex((m) => m.isStreaming);
-        if (lastIdx >= 0 && sessionMsgs[lastIdx].isStreaming) {
-          const updated = [...sessionMsgs];
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            text:
-              typeof payload.fullText === "string"
-                ? stripAnsi(payload.fullText)
-                : updated[lastIdx].text,
-            activity: payload.activity || updated[lastIdx].activity,
+      if (payload?.sessionId)
+        streamBatcher.push({ kind: "chunk", payload, receivedAt: Date.now() });
+    });
+    // Turno que a CLI começou sozinha (o agente principal recebeu o resultado de um agente em
+    // segundo plano e responde): aparece como uma mensagem nova, ao vivo.
+    const unsubscribeTurnStarted = beagleApi.on(
+      "cli-turn-started",
+      ({ sessionId, responseMessageId, providerId, model }) => {
+        setMessages((prev) => {
+          const list = prev[sessionId] || [];
+          if (list.some((m) => m.id === responseMessageId)) return prev;
+          const provider = providersRef.current.find(
+            (p) => p.id === providerId,
+          );
+          return {
+            ...prev,
+            [sessionId]: [
+              ...list,
+              {
+                id: responseMessageId,
+                sessionId,
+                sender: providerId,
+                senderName:
+                  provider?.name || PROVIDER_NAMES[providerId] || providerId,
+                modelBadge: model,
+                text: "",
+                isStreaming: true,
+                activity: "Respondendo…",
+                startedAt: Date.now(),
+                timestamp: new Date().toLocaleTimeString(),
+              },
+            ],
           };
-          return { ...prev, [payload.sessionId]: updated };
-        }
-        return prev;
-      });
+        });
+      },
+    );
+    const unsubscribeTurnFinished = beagleApi.on(
+      "cli-turn-finished",
+      ({ sessionId, responseMessageId, ok, text, error, events, discard }) => {
+        setMessages((prev) => {
+          const list = prev[sessionId];
+          if (!list) return prev;
+          if (discard)
+            return {
+              ...prev,
+              [sessionId]: list.filter((m) => m.id !== responseMessageId),
+            };
+          return {
+            ...prev,
+            [sessionId]: list.map((m) =>
+              m.id === responseMessageId
+                ? {
+                    ...m,
+                    text: stripAnsi(
+                      ok
+                        ? text || "Execução concluída."
+                        : `Erro: ${error || "Falha na execução."}${text ? "\n\n" + text : ""}`,
+                    ),
+                    isStreaming: false,
+                    activity: undefined,
+                    detail: undefined,
+                    events: events?.length ? events : m.events,
+                  }
+                : m,
+            ),
+          };
+        });
+        if (!discard && activeRef.current !== sessionId)
+          setUnreadSessionIds((prev) =>
+            prev.includes(sessionId) ? prev : [...prev, sessionId],
+          );
+      },
+    );
+    const unsubscribeContext = beagleApi.on(
+      "cli-context",
+      ({ sessionId, ...info }) => {
+        setContextBySession((prev) => ({
+          ...prev,
+          // Uma atualização só da janela ou do estado "compactando" não apaga o uso já conhecido.
+          [sessionId]: {
+            ...prev[sessionId],
+            ...info,
+            used: info.used ?? prev[sessionId]?.used ?? null,
+            // Um rastreador novo (app-server reiniciado) começa em zero: o histórico não retrocede.
+            compactions: Math.max(
+              prev[sessionId]?.compactions ?? 0,
+              info.compactions ?? 0,
+            ),
+            lastCompaction:
+              info.lastCompaction ?? prev[sessionId]?.lastCompaction,
+          },
+        }));
+      },
+    );
+    const unsubscribeEvents = beagleApi.on("cli-activity-event", (payload) => {
+      if (payload?.sessionId && payload.event)
+        streamBatcher.push({ kind: "event", payload, receivedAt: Date.now() });
     });
     return () => {
       unsubscribePty();
       unsubscribeStream();
+      unsubscribeEvents();
+      unsubscribeContext();
+      unsubscribeTurnStarted();
+      unsubscribeTurnFinished();
     };
   }, []);
 
@@ -190,7 +343,6 @@ export function useSessions({
     void persistSession({ ...currentSession, cwd: newPath });
   };
 
-
   const handleModelChange = (model: string) => {
     if (!currentSession || isExecutingPrompt) return;
     const selected = modelSelection(
@@ -213,7 +365,6 @@ export function useSessions({
       void persistSession({ ...currentSession, permission });
   };
 
-
   const handleReasoningChange = (reasoningEffort: string) => {
     if (currentSession && !isExecutingPrompt)
       void persistSession({
@@ -226,7 +377,6 @@ export function useSessions({
             : currentSession.permission,
       });
   };
-
 
   const handleTriggerHandoff = async () => {
     if (!currentSession) return;
@@ -299,7 +449,6 @@ export function useSessions({
     }
   };
 
-
   const handleCreateSession = async (
     providerId: AIProviderId,
     e: React.MouseEvent,
@@ -307,7 +456,6 @@ export function useSessions({
     e.stopPropagation();
     await createSession(providerId);
   };
-
 
   // Cria (e persiste) uma sessão de chat; usada pelo botão + e pela Manutenção Assistida.
   const createSession = async (
@@ -396,7 +544,9 @@ export function useSessions({
     }));
 
     if (backendAvailable())
-      beagleApi.saveChatMessage({ ...initMsg, provider: providerId }).catch(() => {});
+      beagleApi
+        .saveChatMessage({ ...initMsg, provider: providerId })
+        .catch(() => {});
 
     if (activate) {
       setActiveSessionId(newId);
@@ -404,7 +554,6 @@ export function useSessions({
     }
     return newSession;
   };
-
 
   const handleDeleteSession = async (
     sessionId: string,
@@ -435,6 +584,82 @@ export function useSessions({
     }
   };
 
+  // Renomear grava o título escolhido: o título automático só troca títulos genéricos, então um
+  // nome dado pela pessoa nunca é sobrescrito.
+  const renameSession = async (sessionId: string, title: string) => {
+    const clean = title.replace(/\s+/g, " ").trim().slice(0, 120);
+    const session = allSessions.find((s) => s.id === sessionId);
+    if (!clean || !session || clean === session.title) return;
+    try {
+      const result = await beagleApi.saveSession({
+        ...session,
+        title: clean,
+        titleLocked: true,
+      });
+      if (!result?.success)
+        throw new Error(
+          result?.error || "Não foi possível renomear a conversa.",
+        );
+      setProviders((prev) =>
+        prev.map((p) => ({
+          ...p,
+          sessions: p.sessions.map((s) =>
+            s.id === sessionId ? { ...s, title: clean, titleLocked: true } : s,
+          ),
+        })),
+      );
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+
+  // Arquivar tira da lista principal sem apagar nada; a busca e o histórico continuam enxergando.
+  const setSessionArchived = async (sessionId: string, archived: boolean) => {
+    if (archived && (pendingTurns.current.get(sessionId) || 0) > 0) {
+      setAppError("Pare a execução desta conversa antes de arquivá-la.");
+      return;
+    }
+    try {
+      const result = await beagleApi.setSessionArchived(sessionId, archived);
+      if (!result?.success)
+        throw new Error(
+          result?.error || "Não foi possível arquivar a conversa.",
+        );
+      setProviders((prev) =>
+        prev.map((p) => ({
+          ...p,
+          sessions: p.sessions.map((s) =>
+            s.id === sessionId ? { ...s, archived } : s,
+          ),
+        })),
+      );
+      if (archived && activeSessionId === sessionId)
+        setActiveSessionId(
+          allSessions.find((s) => s.id !== sessionId && !s.archived)?.id || "",
+        );
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+
+  // Claude Code: a compactação é a mensagem /compact (testado com a CLI real); Codex tem comando
+  // próprio; o AGY não oferece compactação em modo programático.
+  const compactContext = async (session: ChatSession) => {
+    if (session.providerId === "claude") {
+      await sendPrompt(session, "/compact");
+      return;
+    }
+    try {
+      const result = await beagleApi.compactSession(
+        session.id,
+        session.providerId,
+      );
+      if (!result?.ok)
+        setAppError(result?.error || "Não foi possível compactar.");
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
 
   const handleStopSession = async (id: string) => {
     if (stoppingSessions[id]) return;
@@ -451,7 +676,6 @@ export function useSessions({
     }
   };
 
-
   // Envia um prompt para uma sessão (chat principal ou Manutenção Assistida).
   const sendPrompt = async (session: ChatSession, promptText: string) => {
     const provider = providers.find((p) => p.id === session.providerId);
@@ -464,7 +688,9 @@ export function useSessions({
       ...session,
       currentModel: selected.model,
       reasoningEffort: selected.effort,
-      title: conversationTitle(session.title, promptText),
+      title: session.titleLocked
+        ? session.title
+        : conversationTitle(session.title, promptText),
       status: "running" as const,
     };
     const id = sendingSession.id;
@@ -501,14 +727,30 @@ export function useSessions({
       ...prev,
       [id]: [...(prev[id] || []), userMsg, reply],
     }));
-    const finishReply = (text: string) =>
+    const finishReply = (text: string, events?: ChatEvent[], ok = false) =>
       setMessages((prev) =>
         !prev[id]
           ? prev
           : {
               ...prev,
               [id]: prev[id].map((m) =>
-                m.id === responseId ? { ...m, text, isStreaming: false } : m,
+                m.id === responseId
+                  ? {
+                      ...m,
+                      text,
+                      isStreaming: false,
+                      activity: undefined,
+                      detail: undefined,
+                      // A lista final vem do backend; sem ela, encerra o que ainda estava rodando.
+                      events: events?.length
+                        ? events
+                        : m.events?.map((e) =>
+                            e.status === "running"
+                              ? { ...e, status: ok ? "done" : "error" }
+                              : e,
+                          ),
+                    }
+                  : m,
               ),
             },
       );
@@ -548,6 +790,8 @@ export function useSessions({
               ? res.output || "Execução concluída."
               : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
         ),
+        res?.events,
+        !!res?.ok,
       );
       setProviders((prev) =>
         prev.map((p) => ({
@@ -607,6 +851,11 @@ export function useSessions({
     handleCreateSession,
     createSession,
     handleDeleteSession,
+    renameSession,
+    setSessionArchived,
+    contextBySession,
+    compactContext,
+    unreadSessionIds,
     handleStopSession,
     sendPrompt,
   };

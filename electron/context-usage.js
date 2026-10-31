@@ -1,0 +1,114 @@
+// Contexto da sessão: quanto da janela do modelo está ocupado, e quando houve compactação.
+// Fontes reais: Claude Code (usage do evento assistant + contextWindow do result + compact_boundary)
+// e Codex (thread/tokenUsage/updated). O AGY informa o uso de cada chamada (usage.input_tokens da
+// etapa agent_response), mas não a janela do modelo.
+const num = (v) => (Number.isFinite(v) && v >= 0 ? v : 0);
+
+// Contexto ocupado numa chamada = entrada + cache lido + cache criado (a saída entra na próxima).
+function claudeContextUsed(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const used = num(usage.input_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens);
+  return used > 0 ? used : null;
+}
+
+// Antes de o result informar a janela real, estima pelo nome do modelo (marcado como estimativa).
+function guessClaudeWindow(model) {
+  return /\[1m\]|(^|[-_])1m\b/i.test(String(model || "")) ? 1_000_000 : 200_000;
+}
+
+// Escolhe a janela do modelo da conversa principal. A chave de modelUsage pode ter sufixo (ex.: [1m])
+// ou haver modelos de subagente/título: casa pelo nome e, na dúvida, vale o modelo mais usado.
+function pickModelWindow(modelUsage, preferredModel) {
+  if (!modelUsage || typeof modelUsage !== "object") return null;
+  const entries = Object.entries(modelUsage).filter(([, v]) => Number.isFinite(v?.contextWindow));
+  if (!entries.length) return null;
+  const model = String(preferredModel || "");
+  const byName =
+    entries.find(([name]) => name === model) ||
+    entries.find(([name]) => model && (name.startsWith(model) || model.startsWith(name)));
+  if (byName) return byName[1].contextWindow;
+  const volume = (v) =>
+    num(v.inputTokens) + num(v.outputTokens) + num(v.cacheReadInputTokens) + num(v.cacheCreationInputTokens);
+  return entries.sort((a, b) => volume(b[1]) - volume(a[1]))[0][1].contextWindow;
+}
+
+function codexContext(tokenUsage) {
+  const used = num(tokenUsage?.last?.totalTokens);
+  const window = Number.isFinite(tokenUsage?.modelContextWindow) ? tokenUsage.modelContextWindow : null;
+  return used > 0 ? { used, window } : null;
+}
+
+function createContextTracker({ emit = () => {}, sessionId, source, now = Date.now }) {
+  const state = { used: null, window: null, windowKnown: false, compacting: false, compactions: 0, last: null };
+  const publish = () =>
+    emit("cli-context", { sessionId, ...snapshot() });
+  function snapshot() {
+    return {
+      source,
+      used: state.used,
+      window: state.window,
+      windowKnown: state.windowKnown,
+      compacting: state.compacting,
+      compactions: state.compactions,
+      ...(state.last ? { lastCompaction: state.last } : {}),
+      updatedAt: now(),
+    };
+  }
+  return {
+    update({ used, window, windowKnown, model }) {
+      if (Number.isFinite(used)) state.used = used;
+      if (Number.isFinite(window)) {
+        state.window = window;
+        state.windowKnown = windowKnown !== false;
+      } else if (state.window === null && source === "claude") {
+        state.window = guessClaudeWindow(model);
+        state.windowKnown = false;
+      }
+      publish();
+    },
+    setWindow(window, known = true) {
+      if (!Number.isFinite(window)) return;
+      state.window = window;
+      state.windowKnown = known;
+      publish();
+    },
+    compacting(value) {
+      if (state.compacting === !!value) return;
+      state.compacting = !!value;
+      publish();
+    },
+    compacted({ pre, post, trigger } = {}) {
+      // O Codex pode avisar a mesma compactação por mais de um evento: conta uma só vez.
+      if (!state.compacting && state.last && now() - state.last.at < 2000) {
+        state.last = {
+          ...state.last,
+          ...(Number.isFinite(pre) ? { pre } : {}),
+          ...(Number.isFinite(post) ? { post } : {}),
+        };
+        if (Number.isFinite(post)) state.used = post;
+        publish();
+        return;
+      }
+      state.compacting = false;
+      state.compactions += 1;
+      state.last = {
+        ...(Number.isFinite(pre) ? { pre } : {}),
+        ...(Number.isFinite(post) ? { post } : {}),
+        ...(trigger ? { trigger: String(trigger) } : {}),
+        at: now(),
+      };
+      if (Number.isFinite(post)) state.used = post;
+      publish();
+    },
+    snapshot,
+    hasData: () => state.used !== null,
+  };
+}
+
+module.exports = {
+  claudeContextUsed,
+  guessClaudeWindow,
+  pickModelWindow,
+  codexContext,
+  createContextTracker,
+};

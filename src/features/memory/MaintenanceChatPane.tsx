@@ -1,17 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { ExternalLink, Send, ShieldCheck, Square, X } from "lucide-react";
+import { ExternalLink, Send, Square, X } from "lucide-react";
+import { ApprovalCard } from "../../components/ApprovalCard";
 import { ChatMessageList } from "../../components/ChatMessageList";
 import type { ChatMessage, ChatSession, UserProfile } from "../../types";
+import type { CliApproval } from "../../types/api";
 
 export interface MaintenanceChat {
   session: ChatSession;
   messages: ChatMessage[];
   executing: boolean;
   stopping: boolean;
-  approvals: any[];
+  approvals: CliApproval[];
   onSend: (text: string) => void;
   onStop: () => void;
-  onResolveApproval: (id: string, decision: "allow" | "deny") => void;
+  onResolveApproval: (id: string, decision: string, message?: string) => void;
   onOpenInChat: () => void;
   onClose: () => void;
 }
@@ -37,7 +39,10 @@ export function MaintenanceChatPane({
     chat.onSend(value);
   };
   return (
-    <div className="flex flex-col h-full min-h-0" data-testid="maintenance-chat">
+    <div
+      className="flex flex-col h-full min-h-0"
+      data-testid="maintenance-chat"
+    >
       <div className="px-3 py-2 border-b border-[#eeeae0] flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-xs font-bold text-[#1c1b18] truncate">
@@ -62,7 +67,10 @@ export function MaintenanceChatPane({
           <X size={14} />
         </button>
       </div>
-      <div ref={scroller} className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
+      <div
+        ref={scroller}
+        className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4"
+      >
         <ChatMessageList
           messages={chat.messages}
           userProfile={userProfile}
@@ -70,32 +78,12 @@ export function MaintenanceChatPane({
         />
       </div>
       {chat.approvals.map((a) => (
-        <div
-          key={a.id}
-          role="group"
-          aria-label="Autorizar ação da CLI"
-          className="mx-3 mb-2 p-3 rounded-xl border border-amber-300 bg-amber-50 space-y-2"
-        >
-          <div className="text-xs font-bold flex items-center gap-1.5">
-            <ShieldCheck size={13} /> Permissão · {a.tool}
-          </div>
-          <pre className="text-[11px] whitespace-pre-wrap break-all max-h-32 overflow-auto bg-white/70 p-2 rounded-lg">
-            {a.input}
-          </pre>
-          <div className="flex gap-2">
-            <button
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 text-white"
-              onClick={() => chat.onResolveApproval(a.id, "allow")}
-            >
-              Autorizar uma vez
-            </button>
-            <button
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-[#ede9de]"
-              onClick={() => chat.onResolveApproval(a.id, "deny")}
-            >
-              Negar
-            </button>
-          </div>
+        <div key={a.id} className="mx-3 mb-2">
+          <ApprovalCard
+            approval={a}
+            onResolve={chat.onResolveApproval}
+            compact
+          />
         </div>
       ))}
       <form

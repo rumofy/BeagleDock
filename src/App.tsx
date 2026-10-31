@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { AppStateProvider, useApp } from "./hooks/AppStateProvider";
+import { useTheme } from "./hooks/useTheme";
 import { ApprovalPrompt } from "./features/approvals/ApprovalPrompt";
 import { ChatHeader } from "./features/chat/ChatHeader";
 import { ChatView } from "./features/chat/ChatView";
@@ -19,7 +20,8 @@ import { TerminalHeader } from "./features/terminal/TerminalHeader";
 import { TerminalTab } from "./features/terminal/TerminalTab";
 
 function AppShell() {
-  const { activeTab, appError, setAppError } = useApp();
+  const { activeTab, appError, setAppError, settings } = useApp();
+  useTheme(settings.theme);
   const chatAreaRef = useRef<HTMLDivElement>(null);
 
   return (

@@ -169,3 +169,18 @@ test("AGY approval IPC authenticates requests, matches the native conversation, 
   bridge.close();
   bridge.close();
 });
+
+test("aprovação pendente não é negada por tempo: espera a decisão", async () => {
+  const { createApprovalBroker } = require("../electron/approvals");
+  const broker = createApprovalBroker();
+  let settled = false;
+  const pending = broker.ask({ sessionId: "s", providerId: "claude", tool: "Bash", input: {} }).then((v) => {
+    settled = v;
+    return v;
+  });
+  await new Promise((r) => setTimeout(r, 60));
+  assert.equal(broker.list().length, 1);
+  assert.equal(settled, false);
+  broker.resolve(broker.list()[0].id, "allow");
+  assert.equal(await pending, true);
+});

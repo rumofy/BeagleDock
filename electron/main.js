@@ -1,8 +1,17 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  ipcMain,
+  Tray,
+  Menu,
+  Notification,
+  nativeImage,
+  powerSaveBlocker,
+  dialog,
+} = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const https = require("https");
 // Migração única de nomes antigos: precisa rodar antes de abrir o banco e de definir userData.
 const { migrateLegacyData } = require("./migration");
 migrateLegacyData({ appData: app.getPath?.("appData") });
@@ -19,7 +28,21 @@ const { resolveAiMemoryScope } = require("./ai-memory-scope");
 const memoryMaintenance = require("./memory-maintenance");
 const { createCatalogs } = require("./catalogs");
 const { createAgyUsage } = require("./agy-usage");
+const { createProviderUsage } = require("./provider-usage");
+const { createMcpAuthWatcher } = require("./codex-mcp-auth");
+const { createBackgroundController } = require("./background");
+const { pickDirectory } = require("./folder-picker");
+const zoom = require("./zoom");
+const { openInEditor } = require("./editor");
 const agyUsage = createAgyUsage();
+const providerUsage = createProviderUsage({
+  // Cada leitura inicia uma CLI: com a janela oculta ou minimizada, consulta bem menos.
+  getRefreshMs: () => (background?.isWindowActive() ? 45000 : 10 * 60000),
+  onUpdate: () => pushToolsUpdate().catch(() => {}),
+});
+const codexMcpAuth = createMcpAuthWatcher({
+  notify: (...args) => ecosystem.notifyOnce(...args),
+});
 const { createCliRunner } = require("./cli-runner");
 const { resolveModelSelection } = require("./model-options");
 const { createSessionService } = require("./session-service");
@@ -29,6 +52,9 @@ const {
   saveUserProfile,
   getUserProfile,
   saveSession,
+  setSessionArchived,
+  setSessionContext,
+  mergeMessageEvents,
   deleteSessionFromDb,
   getSavedSessions,
   saveChatMessage,
@@ -101,90 +127,6 @@ function detectUserIdentity() {
 }
 
 const catalogs = createCatalogs();
-// Consulta oficial de consumo do Claude Code via OAuth token local (~/.claude/.credentials.json)
-let claudeQuotaCache = { at: 0, value: null };
-function fetchClaudeLiveQuota() {
-  // Evita estourar rate limit da API: consulta no máximo 1x por 45s
-  if (Date.now() - claudeQuotaCache.at < 45000)
-    return Promise.resolve(claudeQuotaCache.value);
-  return fetchClaudeLiveQuotaRaw().then((v) => {
-    claudeQuotaCache = {
-      at: Date.now(),
-      value: v
-        ? { ...v, updatedAt: new Date().toISOString(), stale: false }
-        : claudeQuotaCache.value
-          ? { ...claudeQuotaCache.value, stale: true }
-          : null,
-    };
-    return claudeQuotaCache.value;
-  });
-}
-function fetchClaudeLiveQuotaRaw() {
-  return new Promise((resolve) => {
-    try {
-      const credsPath = path.join(
-        process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
-        ".credentials.json",
-      );
-      if (!fs.existsSync(credsPath)) return resolve(null);
-      const creds = JSON.parse(fs.readFileSync(credsPath, "utf-8"));
-      const token = creds?.claudeAiOauth?.accessToken;
-      if (!token) return resolve(null);
-
-      const req = https.request(
-        "https://api.anthropic.com/api/oauth/usage",
-        {
-          method: "GET",
-          timeout: 4500,
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": `BeagleDock/${require("../package.json").version}`,
-          },
-        },
-        (res) => {
-          let body = "";
-          res.on("data", (d) => (body += d));
-          res.on("end", () => {
-            try {
-              if (res.statusCode === 200) {
-                const parsed = JSON.parse(body);
-                resolve({
-                  window5hPercent: Number.isFinite(
-                    parsed?.five_hour?.utilization,
-                  )
-                    ? Math.round(parsed.five_hour.utilization)
-                    : null,
-                  weeklyPercent: Number.isFinite(parsed?.seven_day?.utilization)
-                    ? Math.round(parsed.seven_day.utilization)
-                    : null,
-                  window5hResetAt: parsed?.five_hour?.resets_at || null,
-                  weeklyResetAt: parsed?.seven_day?.resets_at || null,
-                  planType: creds?.claudeAiOauth?.subscriptionType || undefined,
-                  sourceLabel: "Anthropic OAuth Usage API",
-                });
-              } else {
-                resolve(null);
-              }
-            } catch (e) {
-              resolve(null);
-            }
-          });
-        },
-      );
-
-      req.on("error", () => resolve(null));
-      req.on("timeout", () => {
-        req.destroy();
-        resolve(null);
-      });
-      req.end();
-    } catch (e) {
-      resolve(null);
-    }
-  });
-}
-
 // Local logs are parsed off the UI process; no token estimates or invented quotas.
 const localWorkers = new Set();
 function runLocalJob(action, args = []) {
@@ -241,38 +183,13 @@ async function getRealQuotaMetrics() {
         ]),
       ),
     ),
-    fetchClaudeLiveQuota(),
+    providerUsage.get(),
     agyUsage.get(),
   ]);
-  if (live)
-    metrics.claude = {
-      ...metrics.claude,
-      ...live,
-      remainingResetMinutes: live.window5hResetAt
-        ? Math.max(
-            0,
-            Math.ceil(
-              (new Date(live.window5hResetAt).getTime() - Date.now()) / 60000,
-            ),
-          )
-        : null,
-    };
-  if (live) {
-    if (
-      live.window5hResetAt &&
-      new Date(live.window5hResetAt).getTime() <= Date.now()
-    ) {
-      metrics.claude.window5hPercent = null;
-      metrics.claude.stale = true;
-    }
-    if (
-      live.weeklyResetAt &&
-      new Date(live.weeklyResetAt).getTime() <= Date.now()
-    ) {
-      metrics.claude.weeklyPercent = null;
-      metrics.claude.stale = true;
-    }
-  }
+  // Cota vem das próprias CLIs (/usage do Claude Code, limites do app-server do Codex);
+  // os logs locais só fornecem tokens. Nada de leitura por log ou por modelo.
+  for (const id of ["claude", "codex"])
+    metrics[id] = { ...metrics[id], ...live[id] };
   metrics.antigravity = { ...metrics.antigravity, ...liveAgy };
   lastMetrics = metrics;
   return metrics;
@@ -583,7 +500,13 @@ function ensurePtySession(sessionId, cwd, providerId) {
 
 function sendToRenderer(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed())
-    mainWindow.webContents.send(channel, payload);
+    mainWindow.webContents.send(
+      channel,
+      // Carimbo de emissão para medir o atraso do stream até a tela.
+      channel === "cli-stream-chunk" || channel === "cli-activity-event"
+        ? { ...payload, emittedAt: Date.now() }
+        : payload,
+    );
 }
 let refreshTimer;
 let modelTimer;
@@ -605,11 +528,29 @@ async function pushToolsUpdate() {
   });
   return pushing;
 }
+let background;
 const approvals = require("./approvals").createApprovalBroker({
-  emit: sendToRenderer,
+  emit: (channel, payload) => {
+    sendToRenderer(channel, payload);
+    if (channel === "cli-approvals") background?.onApprovalsChanged();
+  },
 });
 const cliRunner = createCliRunner({
   approvals,
+  onMcpAuthError: (line) => codexMcpAuth.inspect(line),
+  // Agentes em segundo plano atualizam a linha do tempo depois do turno: grava no histórico.
+  onLateEvents: (payload) => sessionService.saveLateEvents(payload),
+  onAutoTurn: (payload) => {
+    void sessionService.saveAutoTurn(payload);
+    if (payload.discard) return;
+    const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
+    background.notifyTurnFinished({
+      title: `${names[payload.providerId] || payload.providerId} respondeu`,
+      body: String(payload.ok ? payload.text : payload.error || "Falha na execução.")
+        .replace(/\s+/g, " ")
+        .slice(0, 140),
+    });
+  },
   globalFingerprint: globalPermissions.fingerprint,
   resolveSelection: ({ providerId, model, effort }) =>
     resolveModelSelection(
@@ -624,6 +565,9 @@ const cliRunner = createCliRunner({
 const sessionService = createSessionService({
   store: {
     saveSession,
+    setSessionArchived,
+    setSessionContext,
+    mergeMessageEvents,
     saveChatMessage,
     replaceChatMessages,
     sessionExists,
@@ -645,6 +589,41 @@ function shutdown() {
 }
 module.exports = { shutdown };
 
+// Ambiente de teste: sem bandeja, confirmação nem instância única.
+const smokeRun = !!process.env.BEAGLEDOCK_SMOKE_ROOT;
+background = createBackgroundController({
+  app,
+  Tray,
+  Menu,
+  Notification,
+  nativeImage,
+  powerSaveBlocker,
+  dialog,
+  getWindow: () => mainWindow,
+  iconPath: path.join(__dirname, "../dist/brand/beagledock-logo.png"),
+  // Turnos rodando ou na fila de qualquer sessão.
+  runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()),
+  approvalsList: () => approvals.list(),
+  bypass: smokeRun,
+  onQuit: shutdown,
+});
+// Instância única: abrir de novo só traz a janela de volta; `beagledock --quit` pede para encerrar
+// a instância em execução (com a mesma confirmação da bandeja), útil sem bandeja visível.
+const gotLock = smokeRun || app.requestSingleInstanceLock();
+if (!gotLock) app.exit(0);
+else if (!smokeRun) {
+  app.on("second-instance", (_event, argv) =>
+    argv.includes("--quit") ? background.requestQuit() : background.showWindow(),
+  );
+  if (process.argv.includes("--quit")) app.exit(0); // nada em execução para encerrar
+  // Encerramento do sistema (logout/desligamento) não depende da bandeja.
+  for (const signal of ["SIGTERM", "SIGINT"])
+    process.on(signal, () => {
+      background.allowQuit();
+      app.quit();
+    });
+}
+
 function createWindow() {
   const iconPath = path.join(__dirname, "../dist/brand/beagledock-logo.png");
 
@@ -663,8 +642,33 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
+      // Minimizada ou na bandeja, a interface continua recebendo o stream sem atraso.
+      backgroundThrottling: false,
     },
   });
+  background.attachWindow(mainWindow);
+  // Zoom da interface: atalhos Ctrl +/-/0, persistido nas configurações.
+  const applyZoom = (factor) => {
+    const value = zoom.clamp(factor);
+    mainWindow.webContents.setZoomFactor(value);
+    void saveAppSettings({ zoomFactor: value }).catch(() => {});
+    return value;
+  };
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    const next = zoom.zoomForKey(input, mainWindow.webContents.getZoomFactor());
+    if (next === null) return;
+    event.preventDefault();
+    applyZoom(next);
+  });
+  mainWindow.webContents.once("did-finish-load", () => {
+    getAppSettings()
+      .then((saved) => {
+        if (Number.isFinite(saved?.zoomFactor))
+          mainWindow.webContents.setZoomFactor(zoom.clamp(saved.zoomFactor));
+      })
+      .catch(() => {});
+  });
+  mainWindow.zoomControl = { apply: applyZoom };
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (url !== mainWindow.webContents.getURL()) event.preventDefault();
@@ -681,6 +685,7 @@ function createWindow() {
 }
 
 module.exports.ready = app.whenReady().then(async () => {
+  if (!gotLock) return; // segunda instância: não abre banco nem janela
   await initDatabase();
   try {
     const dropped = await dropUnreadableCredentials(
@@ -720,8 +725,8 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("get-app-version", () => app.getVersion());
   handle("get-cli-approvals", () => approvals.list());
-  handle("resolve-cli-approval", (_event, id, decision) =>
-    approvals.resolve(id, decision),
+  handle("resolve-cli-approval", (_event, id, decision, message) =>
+    approvals.resolve(id, decision, { message }),
   );
   handle("get-global-permissions", () => globalPermissions.all());
   handle("save-global-permissions", (_event, id, changes) => {
@@ -1038,6 +1043,34 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
+  handle("open-in-editor", async (_event, request) => {
+    try {
+      return await openInEditor({
+        cwd: validCwd(request?.cwd),
+        target: request?.target,
+        line: request?.line,
+        column: request?.column,
+      });
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+  handle("get-zoom", () => mainWindow.webContents.getZoomFactor());
+  handle("set-zoom", (_event, factor) => mainWindow.zoomControl.apply(Number(factor)));
+
+  handle("pick-directory", async (_event, options) => {
+    try {
+      return await pickDirectory({
+        dialog,
+        window: mainWindow,
+        defaultPath: options?.defaultPath,
+        title: options?.title,
+      });
+    } catch (e) {
+      return { canceled: true, error: e.message };
+    }
+  });
+
   handle("save-workspace", async (_event, ws) => {
     try {
       validCwd(ws.path);
@@ -1103,6 +1136,25 @@ module.exports.ready = app.whenReady().then(async () => {
     return { ok: true };
   });
 
+  handle("compact-session", async (_event, id, providerId) => {
+    if (typeof id !== "string" || !["claude", "codex", "antigravity"].includes(providerId))
+      return { ok: false, error: "Conversa inválida." };
+    const result = await cliRunner.compact(id, providerId);
+    // A compactação manual acontece fora de turno: grava o contexto resultante.
+    if (result.ok && result.context)
+      await sessionService.setSessionContext(id, result.context).catch(() => {});
+    return { ok: result.ok, error: result.error };
+  });
+
+  handle("set-session-archived", async (_event, id, archived) => {
+    try {
+      if (typeof id !== "string") throw new Error("Conversa inválida.");
+      return await sessionService.setSessionArchived(id, archived === true);
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   handle("replace-chat-messages", async (_event, id, messages) => {
     try {
       return await sessionService.replaceChatMessages(id, messages);
@@ -1118,6 +1170,7 @@ module.exports.ready = app.whenReady().then(async () => {
   );
 
   createWindow();
+  background.start();
 
   refreshTimer = setInterval(() => {
     pushToolsUpdate().catch(() => {});
@@ -1142,7 +1195,7 @@ module.exports.ready = app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", shutdown);
+app.on("before-quit", (event) => background.beforeQuit(event));
 app.on("window-all-closed", () => {
   for (const [, entry] of activePtySessions.entries()) {
     try {

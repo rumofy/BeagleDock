@@ -1,6 +1,11 @@
-import { useRef, useLayoutEffect } from "react";
+import { useCallback, useRef, useLayoutEffect, useState } from "react";
+import { ArrowDown } from "lucide-react";
+import { beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
+import { ApprovalCard } from "../../components/ApprovalCard";
+import { ContextBar } from "../../components/ContextBar";
 import { ChatMessageList } from "../../components/ChatMessageList";
+import type { FileTarget } from "../../components/LinkedText";
 import { ChatComposer } from "./ChatComposer";
 
 export function ChatView() {
@@ -9,38 +14,128 @@ export function ChatView() {
     userProfile,
     activeSessionId,
     currentMessages,
+    currentSession,
+    setAppError,
+    cliApprovals,
+    resolveApproval,
+    contextBySession,
+    compactContext,
+    isExecutingPrompt,
   } = useApp();
+  const pendingApprovals = cliApprovals.filter(
+    (a) => a.sessionId === activeSessionId,
+  );
+  const sessionCwd = currentSession?.cwd;
+  // Identidade estável: a lista de mensagens é memoizada e só re-renderiza o que mudou.
+  const openFile = useCallback(
+    async (target: FileTarget) => {
+      if (!sessionCwd) return;
+      try {
+        const result = await beagleApi.openInEditor({
+          cwd: sessionCwd,
+          target: target.path,
+          line: target.line,
+          column: target.column,
+        });
+        if (!result?.ok)
+          setAppError(result?.error || "Não foi possível abrir o arquivo.");
+      } catch (error) {
+        setAppError((error as Error).message);
+      }
+    },
+    [sessionCwd, setAppError],
+  );
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    if (activeTab !== "chat") return;
+  // Acompanha o fim só enquanto a pessoa está no fim; ao subir para ler, não puxa de volta.
+  const stickRef = useRef(true);
+  const lastSessionRef = useRef(activeSessionId);
+  const lastCountRef = useRef(currentMessages.length);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const scrollToEnd = () => {
     const scroller = chatScrollRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
-  }, [currentMessages, activeSessionId, activeTab]);
+  };
+  useLayoutEffect(() => {
+    if (activeTab !== "chat") return;
+    if (lastSessionRef.current !== activeSessionId) {
+      lastSessionRef.current = activeSessionId;
+      stickRef.current = true;
+    }
+    const last = currentMessages[currentMessages.length - 1];
+    if (
+      currentMessages.length > lastCountRef.current &&
+      last?.sender === "user"
+    )
+      stickRef.current = true;
+    lastCountRef.current = currentMessages.length;
+    if (stickRef.current) scrollToEnd();
+  }, [currentMessages, activeSessionId, activeTab, pendingApprovals.length]);
+  const onScroll = () => {
+    const scroller = chatScrollRef.current;
+    if (!scroller) return;
+    const near =
+      scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80;
+    stickRef.current = near;
+    setAwayFromEnd((prev) => (prev === !near ? prev : !near));
+  };
   return (
-            <div
-              ref={chatScrollRef}
-              data-testid="chat-scroll"
-              className="flex-1 overflow-y-auto p-6 flex flex-col justify-between"
-            >
-              <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between space-y-4">
-                {/* LISTA DE MENSAGENS */}
-                <div className="space-y-6 pt-2 flex-1">
-                  {currentMessages.length === 0 ? (
-                    <div className="text-center py-16 text-[#8c8270] text-sm">
-                      Crie uma conversa no botão + de uma CLI instalada ou abra
-                      o histórico (Ctrl+H). O catálogo é importado das
-                      ferramentas desta máquina.
-                    </div>
-                  ) : (
-                    <ChatMessageList
-                      messages={currentMessages}
-                      userProfile={userProfile}
-                    />
-                  )}
-                </div>
-
-                <ChatComposer />
+    <>
+      <div
+        ref={chatScrollRef}
+        onScroll={onScroll}
+        data-testid="chat-scroll"
+        className="flex-1 overflow-y-auto p-6 flex flex-col justify-between"
+      >
+        <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between space-y-4">
+          {/* LISTA DE MENSAGENS */}
+          <div className="space-y-6 pt-2 flex-1">
+            {currentMessages.length === 0 ? (
+              <div className="text-center py-16 text-[#8c8270] text-sm">
+                Crie uma conversa no botão + de uma CLI instalada ou abra o
+                histórico (Ctrl+H). O catálogo é importado das ferramentas desta
+                máquina.
               </div>
-            </div>
+            ) : (
+              <ChatMessageList
+                messages={currentMessages}
+                userProfile={userProfile}
+                onOpenFile={openFile}
+              />
+            )}
+          </div>
+
+          {currentSession && (
+            <ContextBar
+              info={contextBySession[currentSession.id]}
+              providerId={currentSession.providerId}
+              busy={isExecutingPrompt}
+              onCompact={() => void compactContext(currentSession)}
+            />
+          )}
+          {pendingApprovals.map((approval) => (
+            <ApprovalCard
+              key={approval.id}
+              approval={approval}
+              onResolve={resolveApproval}
+            />
+          ))}
+          <ChatComposer />
+        </div>
+      </div>
+      {awayFromEnd && (
+        <button
+          type="button"
+          onClick={() => {
+            stickRef.current = true;
+            scrollToEnd();
+            setAwayFromEnd(false);
+          }}
+          className="absolute bottom-28 right-8 z-10 flex items-center gap-1.5 rounded-full bg-[#262420] text-amber-100 text-xs font-bold px-3 py-1.5 shadow-lg"
+          data-testid="chat-jump-to-end"
+        >
+          <ArrowDown size={13} /> Ir para o fim
+        </button>
+      )}
+    </>
   );
 }

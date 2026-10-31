@@ -2,6 +2,8 @@ const generic =
   /^(?:nova sess[aã]o(?:\s*#\d+)?|conversa|(?:oi|ol[aá]|bom dia|boa tarde|boa noite|e a[ií]|obrigad[oa]|valeu|tenta agora|conseguindo|continua|sim|ok)[.!?,\s]*)$/i;
 export function conversationTitle(current: string, prompt: string): string {
   if (!generic.test(current.trim())) return current;
+  // Comandos (/compact, /handoff…) não dizem sobre o que é a conversa.
+  if (prompt.trim().startsWith("/")) return current;
   const topic = prompt
     .replace(/^(?:oi|ol[aá]|bom dia|boa tarde|boa noite)[!,.\s]+/i, "")
     .replace(/^(?:por favor[,\s]+|pode\s+)/i, "")

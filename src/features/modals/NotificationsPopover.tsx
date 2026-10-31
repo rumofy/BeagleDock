@@ -142,14 +142,18 @@ export function NotificationsPopover() {
                               className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
                                 notif.category === "ai_memory"
                                   ? "bg-purple-100 text-purple-800"
-                                  : notif.category === "new_model"
+                                  : notif.category === "mcp_auth"
+                                    ? "bg-amber-100 text-amber-800"
+                                    : notif.category === "new_model"
                                     ? "bg-emerald-100 text-emerald-800"
                                     : "bg-blue-100 text-blue-800"
                               }`}
                             >
                               {notif.category === "ai_memory"
                                 ? "ai-memory"
-                                : notif.category === "new_model"
+                                : notif.category === "mcp_auth"
+                                  ? "MCP"
+                                  : notif.category === "new_model"
                                   ? "Novo modelo"
                                   : "CLI Status"}
                             </span>
