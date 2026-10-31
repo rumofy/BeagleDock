@@ -1,0 +1,75 @@
+{
+  "verifiedOn": "2026-10-31",
+  "claude": {
+    "version": "2.1.316",
+    "source": "https://code.claude.com/docs/en/agent-sdk/typescript",
+    "textEvent": {
+      "type": "stream_event",
+      "event": {
+        "delta": {
+          "type": "text_delta",
+          "text": "partial"
+        }
+      }
+    },
+    "approvalRequest": {
+      "type": "control_request",
+      "request_id": "fixture-request",
+      "request": {
+        "subtype": "can_use_tool",
+        "tool_name": "Bash",
+        "input": {
+          "command": "fixture tests"
+        }
+      }
+    },
+    "liveArtifact": "<tmp>/claude-<uid>/<encoded-cwd>/<native-id>/tasks/<task>.output",
+    "regression": "Foreground Bash output can be unlinked immediately before tool_result; keep the descriptor open through final drain. A model-generated tail pipeline buffers test output until exit; append live-output guidance and exercise natural npm-test requests in the native canary."
+  },
+  "antigravity": {
+    "version": "1.4.12",
+    "source": "https://antigravity.google/docs/cli/headless",
+    "textEvent": {
+      "event": "step_update",
+      "step_update": {
+        "step_type": "agent_response",
+        "state": "ACTIVE",
+        "text_delta": "partial"
+      }
+    },
+    "liveArtifact": "<gemini-home>/antigravity-cli/brain/<native-id>/.system_generated/tasks/task-<step>.log",
+    "approvalSource": "https://antigravity.google/docs/hooks",
+    "regression": "stream-json may return tool output snapshots only at completion; tail native task files and suppress repeated manage_task snapshots."
+  },
+  "codex": {
+    "version": "0.166.0",
+    "source": "https://learn.chatgpt.com/docs/app-server",
+    "textEvent": {
+      "method": "item/agentMessage/delta",
+      "params": {
+        "threadId": "fixture-native-123",
+        "turnId": "turn-1",
+        "itemId": "message-1",
+        "delta": "partial"
+      }
+    },
+    "commandEvent": {
+      "method": "item/commandExecution/outputDelta",
+      "params": {
+        "threadId": "fixture-native-123",
+        "turnId": "turn-1",
+        "itemId": "command-1",
+        "delta": "live output\n"
+      }
+    },
+    "approvalRequest": {
+      "id": "fixture-request",
+      "method": "item/commandExecution/requestApproval",
+      "params": {
+        "threadId": "fixture-native-123",
+        "command": "fixture tests"
+      }
+    },
+    "regression": "exec --json is not a complete command-output stream. Use app-server; reconcile an initial buffer when the native version supplies it only in item/completed."
+  }
+}

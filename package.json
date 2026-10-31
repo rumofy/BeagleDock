@@ -1,0 +1,145 @@
+{
+  "name": "beagledock",
+  "version": "0.1.0",
+  "description": "Multi-CLI for Developers — Claude Code, Codex CLI and Antigravity",
+  "main": "electron/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev:vite": "vite",
+    "dev:electron": "electron .",
+    "dev": "concurrently \"vite\" \"wait-on tcp:127.0.0.1:5173 && electron .\"",
+    "build:vite": "vite build",
+    "build:electron": "electron-builder",
+    "preview": "vite preview",
+    "test": "node --test test/*.test.js",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run typecheck && npm run build:vite && npm run build:electron",
+    "postinstall": "electron-builder install-app-deps",
+    "test:desktop": "npm run build:vite && node test/run-desktop-smoke.cjs",
+    "test:cli-live": "node test/native-cli-canary.cjs"
+  },
+  "keywords": [
+    "ai",
+    "cockpit",
+    "claude",
+    "codex",
+    "antigravity",
+    "ai-memory",
+    "mission-control"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/xterm": "^5.5.0",
+    "cross-spawn": "^7.0.6",
+    "lucide-react": "^1.16.0",
+    "node-pty": "^1.1.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "smol-toml": "^1.9.1",
+    "sqlite3": "^6.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^25.3.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.0.0",
+    "concurrently": "^9.2.5",
+    "electron": "^45.1.0",
+    "electron-builder": "^26.7.1",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "dev.capyai.desktop",
+    "productName": "BeagleDock",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "LICENSE",
+      "NOTICE"
+    ],
+    "asarUnpack": [
+      "**/node-pty/**",
+      "**/sqlite3/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "maintainer": "BeagleDock contributors",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "BeagleDock"
+        }
+      },
+      "syncDesktopName": true
+    },
+    "directories": {
+      "output": "release"
+    },
+    "executableName": "beagledock",
+    "icon": "public/brand/beagledock-logo.png",
+    "artifactName": "BeagleDock-${version}-${os}-${arch}.${ext}",
+    "extraResources": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "NOTICE",
+        "to": "NOTICE"
+      },
+      {
+        "from": "CHANGELOG.md",
+        "to": "CHANGELOG.md"
+      },
+      {
+        "from": "public/providers/SOURCES.md",
+        "to": "legal/PROVIDER-ICONS.md"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "license": "LICENSE",
+      "shortcutName": "BeagleDock"
+    },
+    "publish": null
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "private": true,
+  "author": {
+    "name": "Rumofy",
+    "url": "https://github.com/rumofy"
+  },
+  "homepage": "https://github.com/rumofy/BeagleDock",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rumofy/BeagleDock.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rumofy/BeagleDock/issues"
+  },
+  "desktopName": "BeagleDock.desktop"
+}

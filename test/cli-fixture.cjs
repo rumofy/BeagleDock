@@ -1,0 +1,534 @@
+// Offline protocol fixture: never calls a provider or reads user credentials.
+const fs = require("fs"),
+  path = require("path"),
+  { randomUUID } = require("crypto");
+const args = process.argv.slice(2),
+  name = path.basename(process.argv[1]);
+if (args[0] === "update") {
+  fs.writeFileSync(
+    path.join(process.env.CAPYAI_SMOKE_ROOT, "update-" + name + ".json"),
+    JSON.stringify(args),
+  );
+  console.log("Updated fixture.");
+  process.exit(0);
+}
+if (args.includes("--version")) {
+  console.log("fixture 1.4.0");
+  process.exit(0);
+}
+if (args[0] === "models") {
+  console.log(
+    "fixture-orbit-economy\tFixture Orbit (Economy)\nfixture-orbit-standard\tFixture Orbit (Standard)\nfixture-orbit-research\tFixture Orbit (Research)\nfixture-solo-agile\tFixture Solo (Agile)",
+  );
+  process.exit(0);
+}
+if (name === "agy" && args.includes("/usage")) {
+  console.log(
+    JSON.stringify({
+      status: "SUCCESS",
+      num_turns: 0,
+      command: {
+        name: "usage",
+        data: {
+          groups: [
+            {
+              name: "Gemini Models",
+              buckets: [
+                { id: "gemini-5h", window: "5h", remaining_fraction: 0.8 },
+                {
+                  id: "gemini-weekly",
+                  window: "weekly",
+                  remaining_fraction: 0.6,
+                },
+              ],
+            },
+            {
+              name: "Claude and GPT models",
+              buckets: [
+                { id: "3p-5h", window: "5h", remaining_fraction: 0.7 },
+                { id: "3p-weekly", window: "weekly", remaining_fraction: 0.5 },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+  );
+  process.exit(0);
+}
+const root = process.env.CAPYAI_SMOKE_ROOT;
+if (!root) throw new Error("Fixture requires isolated storage.");
+if (name === "codex" && args[0] === "app-server") {
+  let thread,
+    buffer = "",
+    turns = 0,
+    approvalFinish;
+  const emit = (value) => process.stdout.write(JSON.stringify(value) + "\n");
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const m = JSON.parse(line);
+      if (m.id === "codex-approval" && approvalFinish) {
+        approvalFinish(m.result?.decision === "accept");
+        approvalFinish = null;
+        continue;
+      }
+      if (m.method === "initialize") emit({ id: m.id, result: {} });
+      else if (m.method === "thread/start" || m.method === "thread/resume") {
+        thread = m.params.threadId || randomUUID();
+        const file = path.join(root, thread + ".json");
+        if (m.method === "thread/resume" && !fs.existsSync(file)) {
+          emit({ id: m.id, error: { message: "Unknown fixture session" } });
+          continue;
+        }
+        if (!fs.existsSync(file))
+          fs.writeFileSync(file, JSON.stringify({ count: 0 }));
+        emit({ id: m.id, result: { thread: { id: thread } } });
+      } else if (m.method === "turn/start") {
+        const file = path.join(root, thread + ".json"),
+          count = JSON.parse(fs.readFileSync(file)).count + 1;
+        fs.writeFileSync(file, JSON.stringify({ count }));
+        const turnId = "turn-" + ++turns,
+          itemId = "message-" + turns;
+        emit({ id: m.id, result: { turn: { id: turnId } } });
+        emit({
+          method: "turn/started",
+          params: { threadId: thread, turn: { id: turnId } },
+        });
+        fs.appendFileSync(
+          path.join(root, "received-codex.jsonl"),
+          JSON.stringify({ id: thread, text: m.params.input?.[0]?.text }) +
+            "\n",
+        );
+        if (m.params.input?.[0]?.text?.startsWith("smoke-hang")) {
+          emit({
+            method: "item/agentMessage/delta",
+            params: {
+              threadId: thread,
+              turnId,
+              itemId,
+              delta: "PARTIAL_BEFORE_STOP",
+            },
+          });
+          continue;
+        }
+        const text = `codex fixture resposta ${count}`;
+        if (m.params.input?.[0]?.text?.startsWith("smoke-approval")) {
+          approvalFinish = (allow) => {
+            const answer = allow
+              ? "APPROVED_ACTION_DONE"
+              : "DENIED_ACTION_DONE";
+            emit({
+              method: "item/completed",
+              params: {
+                threadId: thread,
+                turnId,
+                item: { id: itemId, type: "agentMessage", text: answer },
+              },
+            });
+            emit({
+              method: "turn/completed",
+              params: {
+                threadId: thread,
+                turn: { id: turnId, status: "completed" },
+              },
+            });
+          };
+          emit({
+            id: "codex-approval",
+            method: "item/commandExecution/requestApproval",
+            params: {
+              threadId: thread,
+              turnId,
+              itemId: "cmd",
+              command: "fixture approval only",
+            },
+          });
+          continue;
+        }
+
+        if (m.params.input?.[0]?.text?.startsWith("smoke-live")) {
+          emit({
+            method: "item/started",
+            params: {
+              threadId: thread,
+              turnId,
+              item: {
+                id: "live-cmd",
+                type: "commandExecution",
+                command: "fixture tests",
+              },
+            },
+          });
+          emit({
+            method: "item/commandExecution/outputDelta",
+            params: {
+              threadId: thread,
+              turnId,
+              itemId: "live-cmd",
+              delta: "LIVE_FIRST while running\n",
+            },
+          });
+          emit({
+            method: "item/agentMessage/delta",
+            params: {
+              threadId: thread,
+              turnId,
+              itemId,
+              delta: "LIVE_CHAT_PARTIAL",
+            },
+          });
+          setTimeout(
+            () =>
+              emit({
+                method: "item/commandExecution/outputDelta",
+                params: {
+                  threadId: thread,
+                  turnId,
+                  itemId: "live-cmd",
+                  delta: "LIVE_MIDDLE while running\n",
+                },
+              }),
+            400,
+          );
+          setTimeout(() => {
+            emit({
+              method: "item/completed",
+              params: {
+                threadId: thread,
+                turnId,
+                item: { id: itemId, type: "agentMessage", text },
+              },
+            });
+            emit({
+              method: "turn/completed",
+              params: {
+                threadId: thread,
+                turn: { id: turnId, status: "completed" },
+              },
+            });
+          }, 1600);
+          continue;
+        }
+
+        emit({
+          method: "item/agentMessage/delta",
+          params: { threadId: thread, turnId, itemId, delta: text },
+        });
+        emit({
+          method: "item/completed",
+          params: {
+            threadId: thread,
+            turnId,
+            item: { id: itemId, type: "agentMessage", text },
+          },
+        });
+        emit({
+          method: "turn/completed",
+          params: {
+            threadId: thread,
+            turn: { id: turnId, status: "completed" },
+          },
+        });
+      }
+    }
+  });
+  process.stdin.on("end", () => process.exit(0));
+  return;
+}
+let id;
+if (name === "codex" && args.includes("resume")) id = args.at(-2);
+if (name === "claude" && args.includes("--resume"))
+  id = args[args.indexOf("--resume") + 1];
+if (name === "agy" && args.includes("--conversation"))
+  id = args[args.indexOf("--conversation") + 1];
+if (id && !fs.existsSync(path.join(root, id + ".json"))) {
+  console.error("Unknown fixture session");
+  process.exit(1);
+}
+id ||= randomUUID();
+fs.writeFileSync(
+  path.join(root, `last-args-${name}.json`),
+  JSON.stringify(args),
+);
+let responsePrompt = "";
+function respond() {
+  const file = path.join(root, id + ".json");
+  const count =
+    (fs.existsSync(file) ? JSON.parse(fs.readFileSync(file)).count : 0) + 1;
+  fs.writeFileSync(file, JSON.stringify({ count }));
+  const emit = (ev) => process.stdout.write(JSON.stringify(ev) + "\n");
+  const text =
+    `${name} fixture resposta ${count}` +
+    (responsePrompt.startsWith("smoke-scroll")
+      ? "\n" +
+        Array(150)
+          .fill("Fixture streaming content for chat scrolling.")
+          .join("\n")
+      : "");
+  if (responsePrompt.startsWith("smoke-live") && name !== "codex") {
+    const project = process.cwd().replace(/[^a-zA-Z0-9]/g, "-");
+    const dir =
+      name === "agy"
+        ? path.join(
+            process.env.HOME,
+            ".gemini",
+            "antigravity-cli",
+            "brain",
+            id,
+            ".system_generated",
+            "tasks",
+          )
+        : path.join(
+            require("os").tmpdir(),
+            `claude-${process.getuid?.() ?? process.env.USERNAME}`,
+            project,
+            id,
+            "tasks",
+          );
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(
+      dir,
+      name === "agy" ? "task-2.log" : "fixture.output",
+    );
+    if (name === "agy") emit({ event: "init", conversation_id: id });
+    else emit({ type: "system", session_id: id });
+    if (name === "agy")
+      emit({
+        event: "step_update",
+        step_update: {
+          step_index: 2,
+          step_type: "tool",
+          state: "ACTIVE",
+          tool_info: { parameters: { CommandLine: "fixture tests" } },
+        },
+      });
+    else
+      emit({
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "live-tool",
+              name: "Bash",
+              input: { command: "fixture tests" },
+            },
+          ],
+        },
+      });
+    fs.writeFileSync(file, "LIVE_FIRST while running\n");
+    const partial = () =>
+      name === "agy"
+        ? emit({
+            event: "step_update",
+            step_update: {
+              step_type: "agent_response",
+              text_delta: "LIVE_CHAT_PARTIAL",
+            },
+          })
+        : emit({
+            type: "stream_event",
+            event: { delta: { type: "text_delta", text: "LIVE_CHAT_PARTIAL" } },
+          });
+    setTimeout(partial, 150);
+    setTimeout(
+      () => fs.appendFileSync(file, "LIVE_MIDDLE while running\n"),
+      400,
+    );
+    setTimeout(() => {
+      fs.appendFileSync(file, "LIVE_LAST done\n");
+      if (name === "agy")
+        emit({
+          event: "result",
+          result: { status: "SUCCESS", response: text },
+        });
+      else {
+        emit({
+          type: "user",
+          message: {
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "live-tool",
+                content:
+                  "LIVE_FIRST while running\nLIVE_MIDDLE while running\nLIVE_LAST done\n",
+              },
+            ],
+          },
+        });
+        fs.unlinkSync(file);
+        emit({ type: "result", result: text });
+      }
+    }, 1600);
+    return;
+  }
+  if (name === "codex") {
+    emit({ type: "thread.started", thread_id: id });
+    emit({
+      type: "item.completed",
+      item: {
+        type: "agent_message",
+        text: text,
+      },
+    });
+    emit({ type: "turn.completed" });
+  } else if (name === "agy") {
+    emit({ event: "init", conversation_id: id, init: {} });
+    emit({
+      event: "step_update",
+      step_update: {
+        conversation_id: id,
+        step_index: count,
+        state: "DONE",
+        step_type: "agent_response",
+        text_delta: text,
+      },
+    });
+    emit({
+      event: "result",
+      result: {
+        conversation_id: id,
+        status: "SUCCESS",
+        response: text,
+      },
+    });
+  } else {
+    emit({ type: "system", session_id: id });
+    emit({ type: "result", result: text });
+  }
+}
+let approvalPending = false;
+let buffer = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  buffer += chunk;
+  if (name === "codex") return;
+  const lines = buffer.split("\n");
+  buffer = lines.pop();
+  for (const line of lines)
+    if (line.trim()) {
+      const input = JSON.parse(line);
+      if (input.type === "control_response" && approvalPending) {
+        approvalPending = false;
+        const answer =
+          input.response?.response?.behavior === "allow"
+            ? "APPROVED_ACTION_DONE"
+            : "DENIED_ACTION_DONE";
+        process.stdout.write(
+          JSON.stringify({ type: "result", result: answer }) + "\n",
+        );
+        continue;
+      }
+      responsePrompt =
+        typeof input.message?.content === "string" ? input.message.content : "";
+      fs.appendFileSync(
+        path.join(root, "received-" + name + ".jsonl"),
+        JSON.stringify({ id, text: responsePrompt }) + "\n",
+      );
+      if (responsePrompt.startsWith("smoke-hang")) {
+        if (name === "agy") {
+          process.stdout.write(
+            JSON.stringify({ event: "init", conversation_id: id }) + "\n",
+          );
+          process.stdout.write(
+            JSON.stringify({
+              event: "step_update",
+              step_update: {
+                step_type: "agent_response",
+                text_delta: "PARTIAL_BEFORE_STOP",
+              },
+            }) + "\n",
+          );
+        } else {
+          process.stdout.write(
+            JSON.stringify({ type: "system", session_id: id }) + "\n",
+          );
+          process.stdout.write(
+            JSON.stringify({
+              type: "stream_event",
+              event: {
+                delta: { type: "text_delta", text: "PARTIAL_BEFORE_STOP" },
+              },
+            }) + "\n",
+          );
+        }
+        continue;
+      }
+      if (name === "agy" && input.event !== "user")
+        throw new Error("Invalid AGY input envelope");
+      if (name === "claude" && input.type !== "user")
+        throw new Error("Invalid Claude input envelope");
+      if (responsePrompt.startsWith("smoke-approval")) {
+        if (name === "claude") {
+          process.stdout.write(
+            JSON.stringify({ type: "system", session_id: id }) + "\n",
+          );
+          approvalPending = true;
+          process.stdout.write(
+            JSON.stringify({
+              type: "control_request",
+              request_id: "claude-approval",
+              request: {
+                subtype: "can_use_tool",
+                tool_name: "Bash",
+                input: { command: "fixture approval only" },
+              },
+            }) + "\n",
+          );
+        } else if (name === "agy") {
+          process.stdout.write(
+            JSON.stringify({ event: "init", conversation_id: id }) + "\n",
+          );
+          setTimeout(() => {
+            const client = require("net").createConnection(
+              process.env.BLEAGLEDOCK_APPROVAL_SOCKET,
+            );
+            let result = "";
+            client.on("connect", () =>
+              client.write(
+                JSON.stringify({
+                  token: process.env.BLEAGLEDOCK_APPROVAL_TOKEN,
+                  request: {
+                    conversationId: id,
+                    toolCall: {
+                      name: "run_command",
+                      args: { CommandLine: "fixture approval only" },
+                    },
+                  },
+                }) + "\n",
+              ),
+            );
+            client.on("data", (c) => (result += c));
+            client.on("close", () => {
+              const allow = JSON.parse(result).decision === "auto_approve";
+              process.stdout.write(
+                JSON.stringify({
+                  event: "result",
+                  result: {
+                    status: "SUCCESS",
+                    response: allow
+                      ? "APPROVED_ACTION_DONE"
+                      : "DENIED_ACTION_DONE",
+                  },
+                }) + "\n",
+              );
+            });
+          }, 50);
+        }
+        continue;
+      }
+      if (responsePrompt.startsWith("smoke-concurrent"))
+        setTimeout(respond, 2500);
+      else if (responsePrompt.startsWith("smoke-queue"))
+        setTimeout(respond, 800);
+      else respond();
+    }
+});
+process.stdin.on("end", () => {
+  if (name === "codex") respond();
+});

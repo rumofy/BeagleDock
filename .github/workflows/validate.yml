@@ -1,0 +1,97 @@
+name: Validate and package BeagleDock
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: windows-2022
+            arch: x64
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Check release tag
+        if: github.ref_type == 'tag'
+        run: node -e "if(process.env.GITHUB_REF_NAME !== 'v'+require('./package.json').version) throw new Error('Tag and package version differ')"
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - name: Install Linux desktop libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2 libgbm1
+      - name: Test desktop with offline CLIs
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:desktop
+      - run: npm run build:vite
+      - name: Validate application bundle
+        if: github.ref_type != 'tag' && github.event_name != 'workflow_dispatch'
+        run: npm run build:electron -- --dir --${{ matrix.arch }} --publish never
+      - name: Build installers
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        run: npm run build:electron -- --${{ matrix.arch }} --publish never
+      - name: Upload installers
+        if: github.ref_type == 'tag' || github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: BeagleDock-${{ runner.os }}-${{ matrix.arch }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+
+  release:
+    name: Prepare draft release
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: BeagleDock-*
+          merge-multiple: true
+          path: installers
+      - name: Prepare notes and checksums
+        run: |
+          cd installers
+          sha256sum * > ../SHA256SUMS
+          mv ../SHA256SUMS .
+          cd ..
+          node -e "const fs=require('fs');const v=require('./package.json').version;const s=fs.readFileSync('CHANGELOG.md','utf8');const section=s.split('## ['+v+']')[1];if(!section)throw new Error('Missing changelog');fs.writeFileSync('release-notes.md','## BeagleDock '+v+'\n'+section.split(/\n## \[/)[0].replace(/^ - [^\n]+\n/,''));"
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" installers/* --verify-tag --draft --title "BeagleDock $GITHUB_REF_NAME" --notes-file release-notes.md

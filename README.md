@@ -1,0 +1,102 @@
+# BeagleDock
+
+**0.1.0 · Multi-CLI for Developers · Apache-2.0**
+
+Toolkit desktop para usar Claude Code, Codex CLI e Antigravity com conversas persistentes, catálogo local de modelos, histórico e consumo registrado pelas ferramentas.
+
+Código: [rumofy/BeagleDock](https://github.com/rumofy/BeagleDock). Mudanças por versão: [CHANGELOG.md](CHANGELOG.md). Licença: [Apache 2.0](LICENSE); avisos de terceiros: [NOTICE](NOTICE).
+
+## Desenvolvimento
+
+Use Node.js 22.12 ou superior, npm e as CLIs instaladas e autenticadas no sistema. O aplicativo descobre executáveis no PATH e nos diretórios comuns de cada plataforma. Windows inclui launchers npm `.cmd`; macOS inclui Homebrew; o terminal usa o shell do sistema.
+
+```sh
+npm ci
+npm run dev
+```
+
+`npm ci` prepara as dependências nativas do Electron. No Linux, compilar `node-pty` pode exigir Python, make e um compilador C++. A pasta de dados é `~/.capyai`; ela não faz parte da distribuição. Use `CAPYAI_DATA_DIR` para um banco isolado de desenvolvimento/teste. Não aponte testes para seus dados pessoais.
+
+A aplicação inicia sem perfil, conversas ou projetos de exemplo. Cadastre os projetos pela interface. Em desenvolvimento, o diretório atual pode ser oferecido como workspace inicial.
+
+## Conversas e permissões
+
+O SQLite guarda a associação entre a conversa do aplicativo e o ID nativo da CLI. Claude e AGY reutilizam um processo com stream-json; após reiniciar ou trocar modelo/permissão, retomam o ID salvo. Codex usa um app-server persistente, retomando o ID salvo com `thread/resume` após reiniciar. Abrir uma conversa pelo histórico importa seu ID e diretório originais, incluindo AGY. O chat acompanha automaticamente perguntas enviadas e a resposta recebida, incluindo atualizações de streaming. Uma conversa iniciada fica associada ao projeto original; crie outra para mudar de projeto. Falha ao retomar nunca dispara uma conversa nova silenciosamente.
+
+As CLIs precisam oferecer os argumentos usados (confira `--help`): Claude com stream-json e controle stdio de permissões, Codex com `app-server`, AGY com stream-json, `--conversation` e hooks. O adaptador AGY usa seu protocolo `event: user` / `init` / `step_update` / `result`; Claude usa envelopes `type`. A consulta não interativa de cotas exige AGY 1.1.11 ou superior.
+
+- **Plano/restrito:** modo de planejamento em Claude/AGY e sandbox read-only no Codex. Ações bloqueadas pelo modo de somente leitura não são liberadas automaticamente.
+- **Aceitar edições:** acceptEdits/accept-edits nas CLIs correspondentes e workspace-write no Codex.
+- **Acesso total:** exige escolha explícita na interface; permite o modo sem aprovações da CLI.
+
+Essas políticas seguem as garantias de cada CLI; modo de planejamento não equivale a isolamento do sistema operacional. Envios para a mesma conversa entram em fila automática; outras conversas continuam independentes. Anexos não são enviados silenciosamente: enquanto a integração de anexos não estiver disponível, informe o caminho do arquivo no projeto.
+
+## Modelos e consumo
+
+O aplicativo importa IDs dos caches do Claude e Codex e consulta `agy models`. Os seletores de modelo e nível são separados e vêm dos metadados das CLIs: `thinking.effort_options`/`runtime.effort_levels` do Claude, `supported_reasoning_levels` do Codex e variantes rotuladas pelo `agy models`. Não há lista fixa de níveis. Alterações no catálogo substituem as opções disponíveis; sem metadados, o nível fica no padrão da CLI. O backend valida a seleção atual e converte modelo + nível no ID nativo correto do AGY. Respeita `CLAUDE_CONFIG_DIR` e `CODEX_HOME`; sem catálogo, permite usar o modelo padrão da CLI. Não distribui listas inventadas nem baixa pesos de modelos: os provedores usados são os das CLIs autenticadas. Atualize/autentique a CLI para preencher seu catálogo local.
+
+Ferramentas e consumo são atualizados a cada 15 segundos e após uma execução; o catálogo remoto do AGY é consultado no máximo uma vez por minuto. Histórico e skills atualizam a cada 30 segundos. Logs são processados fora do processo da interface.
+
+Claude consulta sua API de uso quando as credenciais OAuth locais estão disponíveis. Codex mostra o último rate-limit registrado com data e indicação de leitura antiga. AGY consulta `agy -p /usage --output-format json` a cada 45 segundos, sem gerar conversa, e mostra cotas separadas por grupo de modelos. O resumo do AGY usa sempre o grupo Gemini Models, independentemente do modelo do chat; os demais grupos permanecem visíveis nos detalhes. Buckets ausentes, desabilitados ou vencidos ficam como **N/D**. Prompts/tokens vêm dos logs locais; tokens em cache são um subconjunto da entrada e não são somados novamente. Os totais de tokens cobrem os últimos sete dias de registros disponíveis, com deduplicação de snapshots. Uma falha de consulta marca dados antigos como desatualizados. Configuração MCP é apresentada como configurada, sem presumir conexão ativa.
+
+## Credenciais e navegador
+
+Chaves cadastradas são criptografadas com `safeStorage` do Electron. O backend Linux `basic_text` é recusado. Quando não há cofre disponível, novas chaves não são salvas. Credenciais antigas em texto puro são migradas quando o desktop abre com o cofre disponível; o SQLite usa secure_delete e uma compactação após a migração. Isso não apaga cópias de segurança anteriores do banco. O renderer recebe apenas indicadores de chave cadastrada. As CLIs continuam usando a própria autenticação; cadastrar uma chave não configura as CLIs nem habilita um provedor API adicional.
+
+A ponte HTTP fica desligada no fluxo desktop, evitando dois backends concorrentes. Para desenvolver exclusivamente no navegador, ative a variável antes de executar `npm run dev:vite`:
+
+```sh
+# Linux/macOS
+CAPYAI_BROWSER_BRIDGE=1 npm run dev:vite
+```
+
+```powershell
+# Windows PowerShell
+$env:CAPYAI_BROWSER_BRIDGE = '1'
+npm run dev:vite
+```
+
+Abra **http://127.0.0.1:5173**. A ponte exige origem local, token temporário e corpo JSON limitado. Não exponha a porta em túneis ou proxies. O navegador não dispõe do cofre do Electron para cadastrar chaves. O contrato local está em [docs/openapi.json](docs/openapi.json).
+
+## Verificação e pacotes
+
+```sh
+npm test
+npm run typecheck
+npm run build:vite
+npm run build:electron -- --dir
+# Linux com sessão gráfica: teste Electron com CLIs offline
+npm run test:desktop
+```
+
+Os testes usam bancos temporários, logs de exemplo, processos CLI simulados e um servidor HTTP local sem acesso a contas reais. Eles cobrem retomada, permissões, concorrência, erros, métricas, catálogos, criptografia e proteção da ponte.
+
+`npm run build` gera o frontend e o pacote da plataforma atual em `release/`. Os alvos configurados são NSIS para Windows, DMG/ZIP para macOS e AppImage/DEB para Linux. Gere e valide pacotes nativamente em cada sistema; assinatura e notarização precisam das credenciais da equipe. Testes automatizados de argumentos/plataforma não substituem validar as CLIs reais nos três sistemas.
+
+O workflow **Validate and package BeagleDock** verifica o código e o empacotamento em Linux x64, Windows x64 e macOS Intel/Apple Silicon. A integração Electron com CLIs offline roda no Linux. Executar o workflow manualmente gera os instaladores como artefatos do Actions. Uma tag `v` com a mesma versão de `package.json` gera os instaladores, checksums SHA-256 e um **rascunho** de release com o changelog; a publicação é manual. A primeira versão é `0.1.0`. Não há atualização automática do aplicativo nem assinatura de código configurada; os botões de atualização da interface atualizam apenas as CLIs.
+
+Referência do protocolo Codex: [documentação oficial de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+Referências do AGY: [relatório de uso](https://antigravity.google/docs/cli/commands/usage/) e [protocolo headless](https://antigravity.google/docs/cli/headless).
+
+Os ícones de provedores são arquivos dos sites oficiais, empacotados para uso offline; as fontes e hashes estão em [public/providers/SOURCES.md](public/providers/SOURCES.md).
+
+As configurações mostram as permissões globais nativas de cada CLI. Salvar altera somente os campos escolhidos, preservando regras e demais opções. No chat, “Global da CLI” herda esses padrões nas próximas execuções; uma seleção específica vale apenas para a conversa. O chat apresenta pedidos elegíveis de aprovação por ação. No AGY, plano/restrito aplicam regras explícitas para bloquear comandos, MCP e acesso web e escrita. Aceitar edições pode solicitar aprovação de comandos pelo painel. Regras globais de negação são preservadas.
+
+O sino guarda avisos de novos modelos detectados nos catálogos sincronizados, novas instalações das três CLIs suportadas e versões estáveis publicadas. A consulta de versões ocorre a cada hora e pode ser acionada manualmente; falhas ficam visíveis. Fontes: releases oficiais de Claude Code/Codex no GitHub e manifesto oficial do atualizador AGY. Nenhuma lista de modelos é fornecida por esses avisos.
+
+“Atualizar CLI” executa `claude update` ou `agy update`; para Codex identifica instalações npm ou Homebrew. No npm mantém o prefixo da instalação detectada. Instalações não reconhecidas exigem seu gerenciador original. Atualizações aguardam as execuções terminarem, encerram processos ociosos e preservam os identificadores das conversas para retomada. Não executam elevação automática de privilégios.
+
+Referências: [permissões do Claude](https://code.claude.com/docs/en/permissions), [configurações Codex](https://learn.chatgpt.com/docs/config-file/config-reference), [schema AGY](https://antigravity.google/schemas/v1/settings.json) e [atualização AGY](https://antigravity.google/docs/cli/commands/changelog).
+
+Durante uma resposta, o chat continua aceitando mensagens. Elas entram em uma fila por conversa e seguem automaticamente, na ordem, após o turno atual, mantendo o identificador nativo. A fila de execução fica no processo atual; mensagens já salvas continuam no histórico depois de reiniciar. Excluir uma conversa cancela também seus envios pendentes.
+
+O shell usa xterm, preserva cores ANSI e mostra comandos, diagnósticos e resultados incrementais recebidos da CLI. Quando o provedor só publica a saída de uma ferramenta ao terminar, o shell recebe essa saída nesse momento; o aplicativo não consegue antecipar bytes que a CLI não transmite. Títulos de saudações são substituídos pelo primeiro pedido com assunto identificável, inclusive no histórico salvo.
+
+A marca é **BeagleDock**, com [mascote beagle](public/brand/beagledock-logo.png). O banco e as identidades internas de armazenamento da versão anterior são preservados para manter conversas e credenciais. `BEAGLEDOCK_DATA_DIR` configura um diretório alternativo; `BLEAGLEDOCK_DATA_DIR` e `CAPYAI_DATA_DIR` continuam aceitos, nessa ordem de precedência. Detalhes e prompt do logo: [identidade visual](docs/brand/LOGO.md).
+
+O chat agora apresenta pedidos de permissão por ação nos três provedores. Claude usa o protocolo de controle stdio; Codex usa os pedidos do app-server; AGY usa um hook `PreToolUse` com socket autenticado, ativo apenas quando lançado pelo BeagleDock. O hook preserva as outras configurações e guarda uma cópia anterior de `hooks.json`; fora do BeagleDock delega à política original. Autorizar uma vez não cria uma liberação global nem remove regras explícitas de bloqueio.
+
+O streaming lê artefatos de tarefas da sessão nativa para Claude/AGY e usa os deltas do app-server para Codex. O chat mostra atividade e tempo decorrido durante ferramentas. Cenários, versões verificadas e diagnóstico opcional com CLIs reais: [contratos de CLI](test/PROTOCOLS.md).
+
+**Parar** interrompe a execução e os comandos filhos da CLI, cancela os envios já na fila e as aprovações pendentes daquela conversa. O identificador nativo, as mensagens e o texto parcial da resposta são mantidos. Novas mensagens podem retomar a mesma conversa; os outros chats continuam independentes. Com uma execução ativa, `para`, `parar`, `pare`, `cancela`, `cancelar`, `stop` e `/stop` também acionam a interrupção imediatamente, sem entrar na fila.

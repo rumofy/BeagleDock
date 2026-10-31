@@ -1,0 +1,15 @@
+# Contratos de CLI
+
+As versões e os formatos verificados estão em [fixtures/cli-protocol-versions.json](fixtures/cli-protocol-versions.json). São registros sanitizados: não contêm prompts de projetos, credenciais nem caminhos pessoais.
+
+- `npm test`: contratos, retomada, erros, concorrência, permissões, arquivos incrementais, UTF-8, restrições de leitura e snapshots finais.
+- `npm run test:desktop`: Electron real com CLIs offline. Nos três provedores verifica texto parcial no chat e saída intermediária no shell enquanto o turno ainda está ativo; aprova e nega ações pela interface; confere retomada após reiniciar.
+- `npm run test:cli-live`: diagnóstico **opcional com as CLIs reais e suas autenticações locais**. Executa um comando Node inofensivo que imprime por quatro segundos, em pasta temporária, e retoma cada conversa. Pode consumir cota. Para uma CLI: `npm run test:cli-live -- --providers=claude` (também aceita `codex` e `antigravity`). Não integra o teste offline nem o CI padrão.
+
+Diagnóstico nativo nesta implementação: Claude mostrou bytes do arquivo `.output` antes do `tool_result`; AGY mostrou saída intermediária de tarefa antes do resultado final; Codex mostrou deltas de texto e de comando antes de `turn/completed`. Na versão Codex 0.166.0, o primeiro buffer de um comando pode aparecer somente no snapshot final; o adaptador preserva esse trecho e mostra os deltas seguintes imediatamente. Logs e indicadores de atividade não inventam texto ou progresso do modelo.
+
+Regressão Claude 2.1.316: o modelo escolheu `npm test 2>&1 | tail -60`, que retém a saída até o encerramento. O contexto adicional do launcher orienta execução direta de testes, builds e instalações, respeitando pedidos explícitos de filtragem. Não altera comandos autorizados nem permissões. Para testar a escolha de comando pelo modelo, `npm run test:cli-live -- --providers=claude --npm-test` cria um projeto npm temporário com saída por oito segundos e usa um pedido comum de testes, sem ditar o comando completo. Verifica saída intermediária e continuidade da conversa. Programas que internamente retêm stdout ainda podem exigir configuração própria para emitir progresso.
+
+Aprovações nativas de Claude (`stdio`) e AGY (hook com canal autenticado) foram exercitadas com uma gravação inofensiva em diretório temporário. O teste de interface dos três protocolos cobre os botões Autorizar uma vez e Negar. Os testes de contrato verificam cancelamento, ids de uso único e isolamento de conversa. Uma solicitação que exige campos adicionais de entrada não deve ser tratada como uma autorização genérica.
+
+Interrupção: nos três provedores, o teste integrado cria uma execução que não termina sozinha, envia duas mensagens à fila, aciona Parar e verifica que elas nunca chegam à CLI. Confere texto parcial salvo, retomada com o mesmo ID e interrupção digitando `para`. Testes unitários cobrem envios que chegam atrasados depois de Parar e isolamento entre conversas; um teste com processos Node reais verifica que o comando filho para enquanto outro grupo de processos continua ativo.

@@ -1,0 +1,14 @@
+BeagleDock
+Copyright 2026 Rumofy and BeagleDock contributors
+
+This project is licensed under the Apache License, Version 2.0.
+https://github.com/rumofy/BeagleDock
+
+Third-party dependencies retain their own licenses and notices, included with
+their packages. Electron includes its own license and Chromium notices.
+
+Claude, OpenAI/Codex and Antigravity names and logos are trademarks of their
+respective owners. Their brand assets are not relicensed under Apache-2.0.
+Sources and hashes are documented in public/providers/SOURCES.md in the source
+distribution and legal/PROVIDER-ICONS.md in packaged applications.
+BeagleDock is an independent project and is not endorsed by these providers.
