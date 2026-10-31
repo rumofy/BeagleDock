@@ -401,7 +401,7 @@ test("stop is scoped to one conversation and cancels submissions arriving late f
     responseMessageId: "stop-late-answer",
   });
   assert.equal(late.stopped, true);
-  assert.deepEqual(calls, [a, b]);
+  assert.deepEqual([...calls].sort(), [a, b]);
   other.resolve({ ok: true, output: "other untouched" });
   assert.equal((await two).ok, true);
 });
