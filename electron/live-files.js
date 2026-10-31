@@ -69,7 +69,7 @@ function createLiveFiles({
     if (stopped) return;
     if (pending) return pending;
     pending = (async () => {
-      for (const { dir, pattern, base = dir } of directories) {
+      for (const { dir, pattern, base = dir, conversationId } of directories) {
         try {
           const expected = path.join(
             await fs.promises.realpath(base),
@@ -109,8 +109,9 @@ function createLiveFiles({
             }
             files.set(filename, {
               name: entry.name,
+              conversationId,
               handle,
-              offset: baseline && !initialized ? stat.size : 0,
+              offset: baseline && !initialized && !conversationId ? stat.size : 0,
               decoder: new StringDecoder("utf8"),
             });
           } catch {
@@ -120,10 +121,14 @@ function createLiveFiles({
       }
       // Keep descriptors open: Claude may unlink its temporary output immediately at completion.
       // The final bytes remain readable through this descriptor, even after unlink.
-      for (const tracked of files.values()) {
+      // Drena os logs incrementais antes do snapshot do transcript, para não repetir a saída.
+      for (const tracked of [...files.values()].sort((a, b) => Number(a.name === "transcript.jsonl") - Number(b.name === "transcript.jsonl"))) {
         try {
           const stat = await tracked.handle.stat();
-          if (stat.size < tracked.offset) {
+          if (
+            stat.size < tracked.offset ||
+            (tracked.name === "transcript.jsonl" && stat.size !== tracked.offset)
+          ) {
             tracked.offset = 0;
             tracked.decoder = new StringDecoder("utf8");
           }
@@ -142,7 +147,7 @@ function createLiveFiles({
             tracked.offset += bytesRead;
             budget -= bytesRead;
             const text = tracked.decoder.write(buffer.subarray(0, bytesRead));
-            if (text) onData(text, metadata(tracked.name));
+            if (text) onData(text, { ...metadata(tracked.name), ...(tracked.conversationId ? { conversationId: tracked.conversationId } : {}) });
           }
         } catch {}
       }
@@ -156,6 +161,11 @@ function createLiveFiles({
   return {
     ready,
     poll,
+    addDirectories(extra) {
+      for (const directory of extra)
+        if (!directories.some((d) => d.dir === directory.dir)) directories.push(directory);
+      return poll();
+    },
     hasFile: (name) => [...files.values()].some((f) => f.name === name),
     async stop() {
       stopped = true;

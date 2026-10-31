@@ -4,6 +4,16 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-31
+
+### Corrigido
+
+- A caixa de processamento mantém a altura durante a execução, sem oscilar quando mudam a atividade, o raciocínio, os tempos e os detalhes das ferramentas.
+- O Codex e o Antigravity mantêm as etapas de cada subagente agrupadas durante todo o trabalho, sem encerrar o agente antes de concluir nem pedir confirmação para criar subagentes ou entregar a resposta final ao agente pai.
+- No modo “Global da CLI”, a ponte de permissões do Antigravity respeita a política global configurada na CLI em vez de pedir confirmação manual para cada ferramenta.
+- Pedidos de permissão de subagentes do Codex e do Antigravity aparecem na conversa que os lançou, em vez de serem negados silenciosamente.
+- O shell mostra os comandos e a saída dos subagentes do Codex e do Antigravity; quando a CLI só registra o resultado ao concluir o comando, ele aparece assim que fica disponível.
+
 ## [0.2.0] - 2026-10-31
 
 ### Adicionado
@@ -95,7 +105,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rumofy/BeagleDock/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rumofy/BeagleDock/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/rumofy/BeagleDock/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/rumofy/BeagleDock/compare/v0.1.0...v0.1.1

@@ -102,7 +102,7 @@ function send(socket, message) {
     c.on("close", () => resolve(text ? JSON.parse(text) : null));
   });
 }
-test("AGY approval IPC authenticates requests, matches the native conversation, delegates outside approved modes and never rewrites commands", async (t) => {
+test("AGY approval IPC authenticates the process tree, routes child approvals to its session and never rewrites commands", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-approval-ipc-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const asks = [];
@@ -132,7 +132,7 @@ test("AGY approval IPC authenticates requests, matches the native conversation, 
     (
       await send(socket, {
         token,
-        request: { ...request, conversationId: "other-session-123" },
+        request: { ...request, conversationId: "../invalid-session" },
       })
     ).decision,
     "deny",
@@ -141,6 +141,12 @@ test("AGY approval IPC authenticates requests, matches the native conversation, 
   assert.equal(allowed.decision, "auto_approve");
   assert.equal(allowed.overwrite, undefined);
   assert.equal(asks[0].input.CommandLine, "npm test");
+  const child = { ...request, conversationId: "child-session-456" };
+  assert.equal(await send(socket, { token: "another-session-token", request: child }), null);
+  assert.equal((await send(socket, { token, request: child })).decision, "auto_approve");
+  assert.equal(asks.at(-1).sessionId, "local-session");
+  assert.equal(asks.at(-1).input.agentConversationId, "child-session-456");
+  assert.equal(asks.at(-1).input.CommandLine, "npm test");
   assert.equal(
     (
       await send(socket, {
@@ -153,6 +159,46 @@ test("AGY approval IPC authenticates requests, matches the native conversation, 
     ).decision,
     "deny",
   );
+  // Ferramentas de coordenação de subagentes e leitura do ai-memory não pedem confirmação manual.
+  for (const toolCall of [
+    { name: "invoke_subagent", args: { TypeName: "self", Role: "Test Runner" } },
+    { name: "send_message", args: { Recipient: "native-session-123", Message: "DONE" } },
+    { name: "call_mcp_tool", args: { ServerName: "ai-memory", ToolName: "memory_query" } },
+  ]) {
+    const before = asks.length;
+    const res = await send(socket, {
+      token,
+      request: { conversationId: "child-session-456", toolCall },
+    });
+    assert.equal(res.decision, "allow");
+    assert.equal(asks.length, before);
+  }
+  // No modo "inherit" ("Global da CLI"), respeita toolPermission: "always-proceed" do settings.json.
+  const settingsFile = path.join(home, ".gemini/antigravity-cli/settings.json");
+  fs.mkdirSync(path.dirname(settingsFile), { recursive: true });
+  fs.writeFileSync(settingsFile, JSON.stringify({ toolPermission: "always-proceed" }));
+  const inheritBridge = await createAgyApprovalBridge({
+    home,
+    env: {},
+    node: "/fixture/node",
+    script: "/fixture/hook.cjs",
+    sessionId: "inherit-session",
+    permission: "inherit",
+    getNativeId: () => "native-session-123",
+    ask: async (p) => {
+      asks.push(p);
+      return false;
+    },
+  });
+  t.after(() => inheritBridge.close());
+  const inheritRes = await send(inheritBridge.env.BEAGLEDOCK_APPROVAL_SOCKET, {
+    token: inheritBridge.env.BEAGLEDOCK_APPROVAL_TOKEN,
+    request: {
+      conversationId: "child-session-456",
+      toolCall: { name: "run_command", args: { CommandLine: "npm test" } },
+    },
+  });
+  assert.equal(inheritRes.decision, "allow");
   const policy = agyPermissionSettings(
     "edits",
     { deny: ["command(private)"] },

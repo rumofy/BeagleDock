@@ -32,36 +32,44 @@ export function ChatActivity({
         ? `recebendo eventos, sem progresso há ${formatDuration(progressAge)}`
         : `último evento há ${formatDuration(eventAge)}`;
   return (
-    <div role="status" className="pt-2 space-y-0.5">
-      <div className="text-[11px] text-[#7d7565] flex items-center gap-2 flex-wrap">
+    <div
+      role="status"
+      data-testid="chat-activity"
+      className="pt-2 space-y-0.5 min-w-0"
+    >
+      <div className="h-4 leading-4 text-[11px] text-[#7d7565] flex items-center gap-2 min-w-0">
         <span
-          className={`w-1.5 h-1.5 rounded-full animate-pulse ${stalled ? "bg-rose-500" : "bg-amber-500"}`}
+          className={`w-1.5 h-1.5 shrink-0 rounded-full animate-pulse ${stalled ? "bg-rose-500" : "bg-amber-500"}`}
         />
-        <span className="font-medium">{text || "Aguardando a CLI…"}</span>
-        {text && inActivity >= 2000 && (
-          <span className="font-mono text-[#938b7a]">
-            há {formatDuration(inActivity)}
-          </span>
-        )}
-        <span className="font-mono">
+        <span
+          className="font-medium truncate min-w-0 flex-1"
+          title={text || "Aguardando a CLI…"}
+        >
+          {text || "Aguardando a CLI…"}
+        </span>
+        <span
+          className={`font-mono tabular-nums shrink-0 text-[#938b7a] ${text && inActivity >= 2000 ? "" : "invisible"}`}
+        >
+          há {formatDuration(inActivity)}
+        </span>
+        <span className="font-mono tabular-nums shrink-0">
           {Math.floor(total / 60000)}:
           {String(Math.floor(total / 1000) % 60).padStart(2, "0")}
         </span>
-        <span
-          className={`font-mono text-[10px] ${stalled ? "text-rose-700" : "text-[#938b7a]"}`}
-          data-testid="chat-liveness"
-        >
-          · {liveness}
-        </span>
       </div>
-      {detail && (
-        <div
-          className="text-[11px] font-mono text-[#8c8270] truncate"
-          title={detail}
-        >
-          {detail}
-        </div>
-      )}
+      <div
+        className={`h-4 leading-4 truncate font-mono tabular-nums text-[10px] ${stalled ? "text-rose-700" : "text-[#938b7a]"}`}
+        data-testid="chat-liveness"
+        title={liveness}
+      >
+        {liveness}
+      </div>
+      <div
+        className="h-4 leading-4 text-[11px] font-mono text-[#8c8270] truncate"
+        title={detail}
+      >
+        {detail}
+      </div>
     </div>
   );
 }

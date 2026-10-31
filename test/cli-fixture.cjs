@@ -152,7 +152,11 @@ if (name === "codex" && args[0] === "app-server") {
         }
         const text = `codex fixture resposta ${count}`;
         if (m.params.input?.[0]?.text?.startsWith("smoke-approval")) {
+          const childApproval = m.params.input[0].text.includes("-child");
+          const approvalThread = childApproval ? `child-${thread}` : thread;
+          if (childApproval) emit({ method: "item/started", params: { threadId: thread, turnId, item: { id: "spawn", type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: [approvalThread] } } });
           approvalFinish = (allow) => {
+            const finish = () => {
             const answer = allow
               ? "APPROVED_ACTION_DONE"
               : "DENIED_ACTION_DONE";
@@ -171,12 +175,22 @@ if (name === "codex" && args[0] === "app-server") {
                 turn: { id: turnId, status: "completed" },
               },
             });
+            };
+            if (childApproval && allow) {
+              emit({ method: "item/started", params: { threadId: approvalThread, item: { id: "child-cmd", type: "commandExecution", command: "fixture child tests" } } });
+              emit({ method: "item/commandExecution/outputDelta", params: { threadId: approvalThread, itemId: "child-cmd", delta: "CHILD_FIRST\n" } });
+              setTimeout(() => {
+                emit({ method: "item/completed", params: { threadId: approvalThread, item: { id: "child-cmd", type: "commandExecution", status: "completed", aggregatedOutput: "CHILD_FIRST\nCHILD_LAST\n" } } });
+                emit({ method: "item/completed", params: { threadId: thread, turnId, item: { id: "child-done", type: "subAgentActivity", agentThreadId: approvalThread, kind: "completed" } } });
+                finish();
+              }, 650);
+            } else finish();
           };
           emit({
             id: "codex-approval",
             method: "item/commandExecution/requestApproval",
             params: {
-              threadId: thread,
+              threadId: approvalThread,
               turnId,
               itemId: "cmd",
               command: "fixture approval only",
@@ -186,6 +200,11 @@ if (name === "codex" && args[0] === "app-server") {
         }
 
         if (m.params.input?.[0]?.text?.startsWith("smoke-live")) {
+          setTimeout(() => {
+            emit({ method: "item/started", params: { threadId: thread, turnId, item: { id: "live-reason", type: "reasoning" } } });
+            emit({ method: "item/reasoning/summaryTextDelta", params: { threadId: thread, turnId, itemId: "live-reason", delta: "Analisando um comando com argumentos extensos e acompanhando o agente. ".repeat(12) } });
+          }, 250);
+          setTimeout(() => emit({ method: "item/completed", params: { threadId: thread, turnId, item: { id: "live-reason", type: "reasoning", summary: ["Análise concluída."] } } }), 850);
           emit({
             method: "item/started",
             params: {
@@ -528,7 +547,7 @@ process.stdin.on("data", (chunk) => {
                 JSON.stringify({
                   token: process.env.BEAGLEDOCK_APPROVAL_TOKEN,
                   request: {
-                    conversationId: id,
+                    conversationId: responsePrompt.includes("-child") ? `child-${id}` : id,
                     toolCall: {
                       name: "run_command",
                       args: { CommandLine: "fixture approval only" },
@@ -540,6 +559,7 @@ process.stdin.on("data", (chunk) => {
             client.on("data", (c) => (result += c));
             client.on("close", () => {
               const allow = JSON.parse(result).decision === "auto_approve";
+              const finish = () => {
               process.stdout.write(
                 JSON.stringify({
                   event: "result",
@@ -551,6 +571,16 @@ process.stdin.on("data", (chunk) => {
                   },
                 }) + "\n",
               );
+              };
+              if (responsePrompt.includes("-child") && allow) {
+                const base = path.join(process.env.GEMINI_CLI_HOME || path.join(require("os").homedir(), ".gemini"), "antigravity-cli", "brain", `child-${id}`, ".system_generated");
+                fs.mkdirSync(path.join(base, "tasks"), { recursive: true });
+                fs.mkdirSync(path.join(base, "logs"), { recursive: true });
+                fs.writeFileSync(path.join(base, "logs", "transcript.jsonl"), JSON.stringify({ step_index: 2, type: "PLANNER_RESPONSE", tool_calls: [{ name: "run_command", args: { CommandLine: JSON.stringify("fixture child tests") } }] }) + "\n");
+                const log = path.join(base, "tasks", "task-3.log");
+                fs.writeFileSync(log, "CHILD_FIRST\n");
+                setTimeout(() => { fs.appendFileSync(log, "CHILD_LAST\n"); finish(); }, 650);
+              } else finish();
             });
           }, 50);
         }

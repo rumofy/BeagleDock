@@ -785,3 +785,112 @@ test("Claude: turno espontâneo sem texto é descartado e uma mensagem sua esper
   child.event({ type: "result", session_id: "claude-native-123", result: "resposta à outra", is_error: false });
   assert.equal((await p2).output, "resposta à outra");
 });
+
+test("AGY: step_type subagent registra o filho, mantém o agente ativo durante o trabalho e aninha comandos do transcript", async (t) => {
+  const fs = require("node:fs"),
+    os = require("node:os"),
+    path = require("node:path");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-agy-subagent-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const oldHome = process.env.GEMINI_CLI_HOME;
+  process.env.GEMINI_CLI_HOME = path.join(home, ".gemini");
+  t.after(() => {
+    if (oldHome === undefined) delete process.env.GEMINI_CLI_HOME;
+    else process.env.GEMINI_CLI_HOME = oldHome;
+  });
+  const childId = "child-subagent-999";
+  const logsDir = path.join(
+    process.env.GEMINI_CLI_HOME,
+    "antigravity-cli",
+    "brain",
+    childId,
+    ".system_generated",
+    "logs",
+  );
+  fs.mkdirSync(logsDir, { recursive: true });
+  const transcript = path.join(logsDir, "transcript.jsonl");
+  fs.writeFileSync(
+    transcript,
+    JSON.stringify({
+      step_index: 2,
+      type: "PLANNER_RESPONSE",
+      status: "DONE",
+      tool_calls: [{ name: "run_command", args: { CommandLine: JSON.stringify("npm test") } }],
+    }) + "\n",
+  );
+  const h = harness();
+  const runner = h.make();
+  const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "resp-sub" });
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ event: "init", conversation_id: "agy-parent-123", init: {} });
+  child.event({
+    event: "step_update",
+    step_update: {
+      conversation_id: "agy-parent-123",
+      step_index: 3,
+      state: "ACTIVE",
+      step_type: "tool",
+      tool_name: "invoke_subagent",
+      tool_info: { name: "invoke_subagent", parameters: { Role: "Test Runner", TypeName: "self" } },
+    },
+  });
+  child.event({
+    event: "step_update",
+    step_update: {
+      conversation_id: "agy-parent-123",
+      step_index: 3,
+      state: "DONE",
+      step_type: "subagent",
+      tool_name: "invoke_subagent",
+      subagent_info: {
+        subagents: [
+          {
+            type_name: "self",
+            role: "Test Runner",
+            initial_prompt: "Execute npm test",
+            conversation_id: childId,
+          },
+        ],
+      },
+    },
+  });
+  await new Promise((r) => setTimeout(r, 220));
+  const liveAgent = h.emitted
+    .filter((e) => e.ch === "cli-activity-event" && e.data.event.id === "step-3")
+    .map((e) => e.data.event)
+    .at(-1);
+  assert.equal(liveAgent.kind, "agent");
+  assert.equal(liveAgent.status, "running", "continua ativo enquanto o subagente trabalha");
+  assert.equal(liveAgent.detail, "Execute npm test");
+  fs.appendFileSync(
+    transcript,
+    JSON.stringify({
+      step_index: 3,
+      type: "GENERIC",
+      status: "DONE",
+      content: "Created At: now\nCommand output:\nSUBAGENT_TEST_OK\n",
+    }) +
+      "\n" +
+      JSON.stringify({
+        step_index: 4,
+        type: "PLANNER_RESPONSE",
+        status: "DONE",
+        content: "Testes concluídos.",
+      }) +
+      "\n",
+  );
+  child.event({
+    event: "result",
+    result: { conversation_id: "agy-parent-123", status: "SUCCESS", response: "Pronto" },
+  });
+  const result = await pending;
+  assert.equal(result.ok, true);
+  const agentEvent = result.events.find((e) => e.id === "step-3");
+  const cmdEvent = result.events.find((e) => e.kind === "command" && e.parentId === "step-3");
+  assert.equal(agentEvent.status, "done");
+  assert.ok(cmdEvent, "comando do subagente fica aninhado no agente pai");
+  assert.equal(cmdEvent.detail, "npm test");
+  assert.equal(cmdEvent.status, "done");
+  runner.shutdown();
+});

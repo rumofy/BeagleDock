@@ -299,6 +299,21 @@ async function send(win, text, expected) {
         win,
         `window.__liveOutput.includes('LIVE_FIRST') && document.body.innerText.includes('LIVE_CHAT_PARTIAL')`,
       );
+      await win.webContents.executeJavaScript(`(()=>{
+        const steps=document.querySelector('[data-testid="chat-timeline-steps"]');
+        const activity=document.querySelector('[data-testid="chat-activity"]');
+        window.__boxSizes=[];
+        const record=()=>{
+          if (!activity.isConnected || !steps.isConnected) return;
+          window.__boxSizes.push({steps:steps.getBoundingClientRect().height,activity:activity.getBoundingClientRect().height,overflow:steps.scrollWidth>steps.clientWidth});
+        };
+        record();
+        window.__boxObserver=new ResizeObserver(record);
+        window.__boxObserver.observe(steps);window.__boxObserver.observe(activity);
+        window.__boxMutation=new MutationObserver(record);
+        window.__boxMutation.observe(steps,{subtree:true,childList:true,characterData:true,attributes:true});
+        window.__boxMutation.observe(activity,{subtree:true,childList:true,characterData:true,attributes:true});
+      })()`);
       assert.equal(
         await win.webContents.executeJavaScript(
           `document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
@@ -306,6 +321,7 @@ async function send(win, text, expected) {
         true,
       );
       await waitFor(win, `window.__liveOutput.includes('LIVE_MIDDLE')`);
+      if (index === 1) await waitFor(win, `document.body.innerText.includes('Analisando um comando com argumentos extensos')`);
       assert.equal(
         await win.webContents.executeJavaScript(
           `document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
@@ -324,6 +340,13 @@ async function send(win, text, expected) {
         win,
         `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
       );
+      const boxSizes = await win.webContents.executeJavaScript("window.__boxObserver.disconnect();window.__boxMutation.disconnect();window.__boxSizes");
+      assert.ok(boxSizes.length > 1);
+      for (const size of ["steps", "activity"]) {
+        const values = boxSizes.map((s) => s[size]);
+        assert.ok(Math.max(...values) - Math.min(...values) < 1, `caixa ${size} mantém a altura durante a execução`);
+      }
+      assert.ok(boxSizes.every((s) => !s.overflow), "etapas não criam barra horizontal");
       win.show();
       assert.equal(win.isVisible(), true);
       await win.webContents.executeJavaScript(
@@ -367,7 +390,12 @@ async function send(win, text, expected) {
       for (const [prompt, button, answer] of [
         ["smoke-approval allow", "Permitir uma vez", "APPROVED_ACTION_DONE"],
         ["smoke-approval deny", "Negar", "DENIED_ACTION_DONE"],
+        ...(index > 0 ? [
+          ["smoke-approval-child allow", "Permitir uma vez", "APPROVED_ACTION_DONE"],
+          ["smoke-approval-child deny", "Negar", "DENIED_ACTION_DONE"],
+        ] : []),
       ]) {
+        if (prompt.includes("-child")) await win.webContents.executeJavaScript("window.__liveOutput='';window.__unsubscribeLive?.();window.__unsubscribeLive=window.beagleAPI.on('pty-data',p=>{window.__liveOutput+=p.data;});void 0");
         await win.webContents.executeJavaScript(
           `(()=>{const input=document.querySelector('input[placeholder^="Mensagem"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(prompt)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
         );
@@ -415,6 +443,10 @@ async function send(win, text, expected) {
         await win.webContents.executeJavaScript(
           `[...document.querySelectorAll('[aria-label="Autorizar ação da CLI"] button')].find(b=>b.textContent.startsWith(${JSON.stringify(button)})).click()`,
         );
+        if (prompt === "smoke-approval-child allow") {
+          await waitFor(win, `window.__liveOutput.includes('CHILD_FIRST')`);
+          assert.equal(await win.webContents.executeJavaScript(`document.querySelector('header').innerText.includes('EXECUTANDO CLI')`), true, "saída do subagente chega ao shell antes da conclusão");
+        }
         await waitFor(
           win,
           `document.body.innerText.includes(${JSON.stringify(answer)}) && !document.querySelector('[aria-label="Autorizar ação da CLI"]')`,
@@ -423,6 +455,11 @@ async function send(win, text, expected) {
           win,
           `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`,
         );
+        if (prompt === "smoke-approval-child allow") {
+          await waitFor(win, `window.__liveOutput.includes('CHILD_LAST')`);
+          assert.equal(await win.webContents.executeJavaScript(`window.__liveOutput.split('CHILD_FIRST').length-1`), 1);
+        }
+        if (prompt.includes("-child")) await win.webContents.executeJavaScript("void window.__unsubscribeLive()");
       }
       console.log(
         `Desktop streaming and allow/deny: provider ${index} passed before completion.`,

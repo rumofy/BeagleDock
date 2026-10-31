@@ -89,6 +89,66 @@ const payload = {
   effort: "high",
   responseMessageId: "response-1",
 };
+test("Codex: espera e mensagens não criam agentes nem mudam o pai; saída do filho chega antes da conclusão", async (t) => {
+  const h = harness(), runner = h.make();
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload);
+  await tick();
+  const child = h.calls[0].child;
+  const sub = (method, params) => child.event({ method, params: { threadId: "child-1", turnId: "child-turn", ...params } });
+  const spawn = { id: "spawn", type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: ["child-1"], agentsStates: { "child-1": { status: "running", message: null } } };
+  h.notify("item/started", { item: spawn });
+  h.notify("item/completed", { item: { ...spawn, status: "completed" } });
+  for (const tool of ["wait", "sendMessage", "wait"]) {
+    const item = { id: `${tool}-${child.messages.length}-${h.events.length}`, type: "collabAgentToolCall", tool, receiverThreadIds: ["child-1"] };
+    h.notify("item/started", { item });
+    h.notify("item/completed", { item: { ...item, status: "completed" } });
+  }
+  h.notify("item/started", { item: { id: "interacted", type: "subAgentActivity", kind: "interacted", agentThreadId: "child-1" } });
+  sub("item/started", { item: { id: "cmd", type: "commandExecution", command: "npm test" } });
+  sub("item/commandExecution/outputDelta", { itemId: "cmd", delta: "CHILD_FIRST\n" });
+  const shell = () => h.events.filter((e) => e.channel === "pty-data").map((e) => e.data.data).join("");
+  assert.match(shell(), /\$ npm test/);
+  assert.match(shell(), /CHILD_FIRST/);
+  assert.equal(runner.isBusy(payload.sessionId), true);
+  const lastAgent = () => h.events.filter((e) => e.channel === "cli-activity-event" && e.data.event.id === "spawn").at(-1).data.event;
+  assert.equal(lastAgent().status, "running", "fim de spawn é só a criação, não o fim do trabalho");
+  sub("item/completed", { item: { id: "cmd", type: "commandExecution", status: "completed", aggregatedOutput: "CHILD_FIRST\nCHILD_LAST\n" } });
+  h.notify("item/completed", { item: { id: "done", type: "subAgentActivity", kind: "completed", agentThreadId: "child-1" } });
+  assert.equal(lastAgent().status, "done");
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.events.filter((e) => e.kind === "agent").length, 1);
+  assert.equal(result.events.find((e) => e.id === "child-1:cmd").parentId, "spawn");
+  assert.equal(shell().split("CHILD_FIRST").length - 1, 1, "snapshot final não duplica o stream");
+  assert.match(shell(), /CHILD_LAST/);
+});
+
+test("Codex: permissões do filho conhecido aguardam o usuário; conversas alheias continuam negadas", async (t) => {
+  const h = harness(), asked = [];
+  let decide;
+  const approvals = { askDetailed: (request) => (asked.push(request), new Promise((r) => (decide = r))), cancelSession() {}, shutdown() {} };
+  const runner = h.make({ approvals });
+  t.after(() => runner.shutdown());
+  const pending = runner.execute({ ...payload, permission: "edits" });
+  await tick();
+  const child = h.calls[0].child;
+  h.notify("item/started", { item: { id: "spawn", type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: ["child-1"] } });
+  child.event({ id: 91, method: "item/commandExecution/requestApproval", params: { threadId: "child-1", command: "npm test" } });
+  await tick();
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0].sessionId, payload.sessionId);
+  assert.equal(asked[0].input.threadId, "child-1");
+  assert.equal(child.messages.some((m) => m.id === 91), false);
+  decide({ allow: true, native: { decision: "acceptForSession" } });
+  await tick();
+  assert.deepEqual(child.messages.find((m) => m.id === 91).result, { decision: "acceptForSession" });
+  child.event({ id: 92, method: "item/commandExecution/requestApproval", params: { threadId: "unrelated", command: "npm test" } });
+  assert.deepEqual(child.messages.find((m) => m.id === 92).result, { decision: "decline" });
+  assert.equal(asked.length, 1);
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+});
 test("Codex app-server emits command and chat deltas before turn completion, with no repeated final output", async () => {
   const h = harness(),
     runner = h.make(),
@@ -528,7 +588,7 @@ test("Codex: agente ainda em andamento no fim do turno segue rodando e as etapas
   // depois do turno
   sub("item/completed", { item: { id: "cmd-a", type: "commandExecution", status: "completed", durationMs: 40000 } });
   sub("item/started", { item: { id: "cmd-b", type: "commandExecution", command: "git status" } });
-  h.notify("item/completed", { item: { id: "collab-9", type: "collabAgentToolCall", tool: "spawn_agent", receiverThreadIds: ["sub-thread-9"], status: "completed" } });
+  h.notify("item/completed", { item: { id: "collab-9", type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: ["sub-thread-9"], status: "completed", agentsStates: { "sub-thread-9": { status: "completed", message: "Terminou" } } } });
   const emitted = h.events.filter((e) => e.channel === "cli-activity-event").map((e) => e.data).filter((d) => d.responseMessageId === payload.responseMessageId);
   assert.equal(emitted.filter((d) => d.event.id === "collab-9").at(-1).event.status, "done");
   assert.equal(emitted.filter((d) => d.event.id === "sub-thread-9:cmd-a").at(-1).event.status, "done");

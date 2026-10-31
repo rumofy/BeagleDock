@@ -76,6 +76,13 @@ function codexItemActivity(item) {
     case "plan":
       return { kind: "plan", title: "Plano", activity: "Atualizando o plano…" };
     case "collabAgentToolCall":
+      if (!["spawnAgent", "spawn_agent"].includes(item.tool))
+        return {
+          kind: "tool",
+          title: ({ wait: "Aguardando agente", sendMessage: "Mensagem ao agente", sendInput: "Instrução ao agente", followupTask: "Nova tarefa do agente", closeAgent: "Encerrando agente", listAgents: "Consultando agentes", interruptAgent: "Interrompendo agente", resumeAgent: "Retomando agente" })[item.tool] || `Agente: ${item.tool || "operação"}`,
+          activity: "Coordenando agentes…",
+          detail: oneLine(item.prompt),
+        };
       return {
         kind: "agent",
         title: `Agente ${item.tool || ""}`.trim(),
