@@ -18,7 +18,7 @@ O aplicativo se chama BeagleDock e usa a licença Apache-2.0. A versão existe *
 - Nunca editar à mão as seções de versões já lançadas, a data nem os links do rodapé.
 - Lançar versão: `npm version patch|minor|major` (correção / funcionalidade / quebra de compatibilidade). O script move o `Unreleased` para `## [x.y.z] - AAAA-MM-DD`, atualiza os links de comparação e o `docs/openapi.json`. Ele não faz commit nem tag; isso só quando o usuário pedir. Os nomes antigos (CapyAI, Bleagle/BleagleDock) não são usados em código, identidades ou documentação; a migração única de dados, configurações e hooks antigos para as identidades BeagleDock deve continuar funcionando sem perder sessões nem duplicar aprovações.
 
-A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). Não criar pipelines de CI nem alvos de empacotamento para outras plataformas sem pedido explícito.
+A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). O CI (`.github/workflows/`) só roda tipos, testes e build do frontend nos PRs e publica a release no GitHub quando a tag `vX.Y.Z` é enviada, com as notas do `CHANGELOG.md` e sem pacotes anexados. Não adicionar empacotamento no CI nem alvos para outras plataformas sem pedido explícito. Depois de integrar a versão na `main`, a release sai ao enviar a tag do commit da versão (`git tag vX.Y.Z <commit> && git push origin vX.Y.Z`), só quando o usuário pedir.
 
 ## Estrutura do frontend
 
