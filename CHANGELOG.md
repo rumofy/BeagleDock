@@ -4,6 +4,14 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-31
+
+### Adicionado
+
+- Autocomplete de comandos no campo de mensagem: ao digitar “/”, aparecem os comandos e as skills nativos da CLI da conversa, lidos da própria CLI a cada consulta, e por isso acompanham as atualizações dela. No Codex aparecem só as skills, porque ele não informa os comandos internos.
+- Os comandos “/model”, “/effort” e “/permissions” abrem o seletor correspondente do app, que mantém o modelo, o esforço e a permissão da conversa.
+- Endereços web (http e https) nas respostas viram links clicáveis e abrem no navegador padrão; links dentro do app também abrem fora dele, sem que a janela do BeagleDock navegue.
+
 ## [0.2.1] - 2026-10-31
 
 ### Corrigido
@@ -105,7 +113,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/rumofy/BeagleDock/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rumofy/BeagleDock/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rumofy/BeagleDock/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/rumofy/BeagleDock/compare/v0.1.1...v0.1.2

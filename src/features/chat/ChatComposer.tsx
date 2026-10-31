@@ -9,7 +9,11 @@ import {
   Wand2,
   Clock,
 } from "lucide-react";
+import { useState } from "react";
 import { useApp } from "../../hooks/AppStateProvider";
+import { useNativeCommands } from "../../hooks/useNativeCommands";
+import { controlForCommand, openSessionControl } from "../../lib/sessionControls";
+import { CommandSuggestions } from "./CommandSuggestions";
 
 export function ChatComposer() {
   const {
@@ -31,6 +35,36 @@ export function ChatComposer() {
     removeAttachment,
     handleSendMessage,
   } = useApp();
+  const suggestions = useNativeCommands(
+    currentProvider?.id,
+    currentSession?.cwd,
+    inputMessage,
+  );
+  const [picked, setPicked] = useState(0);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const open = suggestions.active && dismissed !== inputMessage;
+  const selected = Math.min(picked, Math.max(0, suggestions.items.length - 1));
+  const complete = (name: string) => {
+    // Comando que muda o contexto da sessão: abre o seletor do app, que é quem guarda o estado.
+    if (controlForCommand(`/${name}`) && openSessionControl(controlForCommand(`/${name}`)!)) {
+      setInputMessage("");
+      setPicked(0);
+      return;
+    }
+    setInputMessage(`/${name} `);
+    setPicked(0);
+  };
+  const submit = (event: React.FormEvent) => {
+    const control = controlForCommand(inputMessage);
+    const known =
+      control && suggestions.items.some((c) => `/${c.name}` === inputMessage.trim());
+    if (control && known && openSessionControl(control)) {
+      event.preventDefault();
+      setInputMessage("");
+      return;
+    }
+    handleSendMessage(event);
+  };
   return (
                 <div className="sticky bottom-0 pt-4 bg-gradient-to-t from-[#fcfbfa] via-[#fcfbfa] to-transparent">
                   {attachments.length > 0 && (
@@ -68,9 +102,20 @@ export function ChatComposer() {
                   )}
 
                   <form
-                    onSubmit={handleSendMessage}
-                    className="flex items-center gap-2 bg-[#ffffff] border border-[#dcd6c7] focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition"
+                    onSubmit={submit}
+                    className="relative flex items-center gap-2 bg-[#ffffff] border border-[#dcd6c7] focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition"
                   >
+                    {open && (
+                      <CommandSuggestions
+                        items={suggestions.items}
+                        selected={selected}
+                        loading={suggestions.loading}
+                        error={suggestions.error}
+                        limitation={suggestions.limitation}
+                        onPick={(command) => complete(command.name)}
+                        onHover={setPicked}
+                      />
+                    )}
                     <input
                       type="file"
                       ref={fileInputRef}
@@ -109,7 +154,37 @@ export function ChatComposer() {
                     <input
                       type="text"
                       value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
+                      role="combobox"
+                      aria-expanded={open}
+                      aria-autocomplete="list"
+                      onChange={(e) => {
+                        setInputMessage(e.target.value);
+                        setPicked(0);
+                      }}
+                      onKeyDown={(e) => {
+                        if (!open) return;
+                        const count = suggestions.items.length;
+                        if (e.key === "Escape") {
+                          e.preventDefault();
+                          setDismissed(inputMessage);
+                        } else if (count && e.key === "ArrowDown") {
+                          e.preventDefault();
+                          setPicked((selected + 1) % count);
+                        } else if (count && e.key === "ArrowUp") {
+                          e.preventDefault();
+                          setPicked((selected - 1 + count) % count);
+                        } else if (
+                          count &&
+                          (e.key === "Tab" ||
+                            (e.key === "Enter" &&
+                              inputMessage.slice(1).toLowerCase() !==
+                                suggestions.items[selected].name.toLowerCase()))
+                        ) {
+                          // Enter completa o nome; com o nome já completo, envia o comando.
+                          e.preventDefault();
+                          complete(suggestions.items[selected].name);
+                        }
+                      }}
                       onPaste={handlePaste}
                       placeholder={`Mensagem para ${currentSession?.currentModel || currentProvider?.name}... (Ctrl+K skills, Ctrl+H histórico)`}
                       className="flex-1 px-2 py-2 text-sm bg-transparent outline-none text-[#1c1b18] placeholder-[#9c9381]"
