@@ -778,6 +778,19 @@ function createCliRunner({
                 post: ev.compact_metadata?.post_tokens,
                 trigger: ev.compact_metadata?.trigger,
               });
+            } else if (
+              ev.subtype === "task_started" &&
+              ev.tool_use_id &&
+              ev.task_type &&
+              ev.task_type !== "local_agent" &&
+              !ev.subagent_type
+            ) {
+              // Comando em segundo plano (Bash) também abre uma tarefa, mas não é um agente: segue
+              // como comando e não entra na contagem de agentes.
+              if (current.events.get(ev.tool_use_id))
+                current.events.upsert(ev.tool_use_id, {
+                  meta: { taskId: ev.task_id },
+                });
             } else if (ev.subtype === "task_started" && ev.tool_use_id) {
               // Ciclo de tarefa do subagente (Claude Code 2.1.316, verificado): o `Agent` lançado
               // aparece como uma etapa de agente, e as etapas internas ficam aninhadas nela.

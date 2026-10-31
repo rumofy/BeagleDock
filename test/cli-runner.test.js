@@ -567,6 +567,24 @@ test("AGY real: etapas de pedido e prompt de sistema não viram eventos; ferrame
   assert.equal(result.context.source, "antigravity");
 });
 
+test("Claude: comando Bash em segundo plano (task local_bash) continua comando e não conta como agente", async () => {
+  const h = harness();
+  const runner = h.make();
+  const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-bash-task" });
+  await tick();
+  const child = h.calls[0].child;
+  const BASH = "toolu_bash_bg_1";
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-123" });
+  child.event({ type: "assistant", message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: BASH, name: "Bash", input: { command: "sleep 5", description: "Block until test process exits", run_in_background: true } }] } });
+  child.event({ type: "system", subtype: "task_started", task_id: "b1", tool_use_id: BASH, description: "Block until test process exits", task_type: "local_bash" });
+  child.event({ type: "result", session_id: "claude-native-123", result: "ok", is_error: false });
+  child.close(0);
+  const result = await pending;
+  const ev = result.events.find((e) => e.id === BASH);
+  assert.equal(ev.kind, "command");
+  assert.equal(result.events.filter((e) => e.kind === "agent").length, 0);
+});
+
 // Sequência capturada do Claude Code 2.1.316 real: ferramenta `Agent`, ciclo task_* e etapas internas.
 test("Claude real: o subagente vira uma etapa de agente com as etapas internas aninhadas e o resumo final", async () => {
   const h = harness();

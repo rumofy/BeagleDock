@@ -32,6 +32,9 @@ type RowProps = {
 // Só a mensagem em streaming muda de identidade a cada pedaço; as demais não re-renderizam.
 const MessageRow = memo(
   function MessageRow({ msg, userProfile, compact, onOpenFile }: RowProps) {
+    const backgroundAgents =
+      msg.events?.filter((e) => e.kind === "agent" && e.status === "running")
+        .length ?? 0;
     return (
       <div key={msg.id} className="flex gap-3">
         {msg.sender === "user" ? (
@@ -90,6 +93,18 @@ const MessageRow = memo(
                 lastEventAt={msg.lastEventAt}
                 lastProgressAt={msg.lastProgressAt}
               />
+            )}
+            {!msg.isStreaming && backgroundAgents > 0 && (
+              <div
+                role="status"
+                data-testid="background-agents"
+                className="flex items-center gap-2 text-[11px] font-medium text-amber-700"
+              >
+                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />
+                {backgroundAgents === 1
+                  ? "1 agente ainda trabalhando em segundo plano"
+                  : `${backgroundAgents} agentes ainda trabalhando em segundo plano`}
+              </div>
             )}
             {msg.attachments && msg.attachments.length > 0 && (
               <div className="flex flex-wrap gap-2.5 pt-1">
