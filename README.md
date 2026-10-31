@@ -1,6 +1,6 @@
 # BeagleDock
 
-**0.1.0 · Multi-CLI for Developers · Apache-2.0**
+**Multi-CLI for Developers · Apache-2.0**
 
 Toolkit desktop para usar Claude Code, Codex CLI e Antigravity com conversas persistentes, catálogo local de modelos, histórico e consumo registrado pelas ferramentas.
 
@@ -15,7 +15,7 @@ npm ci
 npm run dev
 ```
 
-`npm ci` prepara as dependências nativas do Electron. No Linux, compilar `node-pty` pode exigir Python, make e um compilador C++. A pasta de dados é `~/.capyai`; ela não faz parte da distribuição. Use `CAPYAI_DATA_DIR` para um banco isolado de desenvolvimento/teste. Não aponte testes para seus dados pessoais.
+`npm ci` compila as dependências nativas para o Electron e a plataforma atual. Instale Python e ferramentas C++: make/GCC no Linux, Xcode Command Line Tools no macOS ou Visual Studio Build Tools com C++ no Windows. A compilação local evita carregar binários SQLite que exijam uma glibc mais nova que o sistema Linux de destino. A pasta de dados é `~/.beagledock` (banco `beagledock.db`); ela não faz parte da distribuição. Use `BEAGLEDOCK_DATA_DIR` para um banco isolado de desenvolvimento/teste. Não aponte testes para seus dados pessoais.
 
 A aplicação inicia sem perfil, conversas ou projetos de exemplo. Cadastre os projetos pela interface. Em desenvolvimento, o diretório atual pode ser oferecido como workspace inicial.
 
@@ -47,16 +47,20 @@ A ponte HTTP fica desligada no fluxo desktop, evitando dois backends concorrente
 
 ```sh
 # Linux/macOS
-CAPYAI_BROWSER_BRIDGE=1 npm run dev:vite
+BEAGLEDOCK_BROWSER_BRIDGE=1 npm run dev:vite
 ```
 
 ```powershell
 # Windows PowerShell
-$env:CAPYAI_BROWSER_BRIDGE = '1'
+$env:BEAGLEDOCK_BROWSER_BRIDGE = '1'
 npm run dev:vite
 ```
 
 Abra **http://127.0.0.1:5173**. A ponte exige origem local, token temporário e corpo JSON limitado. Não exponha a porta em túneis ou proxies. O navegador não dispõe do cofre do Electron para cadastrar chaves. O contrato local está em [docs/openapi.json](docs/openapi.json).
+
+## Explorador do ai-memory
+
+A aba de memória lista os projetos do servidor ai-memory, agrupa as páginas por pasta, mostra a saúde da base (órfãs, duplicadas, obsoletas) e renderiza cada página em Markdown, com `[[links]]` navegáveis. A **Manutenção Assistida** abre uma conversa na CLI escolhida (modelo e nível como no chat) com um roteiro para consolidar páginas fragmentadas; por padrão ela apresenta o plano e aguarda a sua aprovação antes de qualquer exclusão. Páginas em `decisions/` nunca são excluídas pelo roteiro, e excluir um projeto exige digitar `workspace/projeto`. O servidor e o token são lidos de `AI_MEMORY_SERVER_URL`/`AI_MEMORY_AUTH_TOKEN` ou dos arquivos de `~/.config/ai-memory` e `~/.local/share/ai-memory`; o token nunca chega à interface.
 
 ## Verificação e pacotes
 
@@ -71,9 +75,36 @@ npm run test:desktop
 
 Os testes usam bancos temporários, logs de exemplo, processos CLI simulados e um servidor HTTP local sem acesso a contas reais. Eles cobrem retomada, permissões, concorrência, erros, métricas, catálogos, criptografia e proteção da ponte.
 
-`npm run build` gera o frontend e o pacote da plataforma atual em `release/`. Os alvos configurados são NSIS para Windows, DMG/ZIP para macOS e AppImage/DEB para Linux. Gere e valide pacotes nativamente em cada sistema; assinatura e notarização precisam das credenciais da equipe. Testes automatizados de argumentos/plataforma não substituem validar as CLIs reais nos três sistemas.
+## Instalação local (Linux)
 
-O workflow **Validate and package BeagleDock** verifica o código e o empacotamento em Linux x64, Windows x64 e macOS Intel/Apple Silicon. A integração Electron com CLIs offline roda no Linux. Executar o workflow manualmente gera os instaladores como artefatos do Actions. Uma tag `v` com a mesma versão de `package.json` gera os instaladores, checksums SHA-256 e um **rascunho** de release com o changelog; a publicação é manual. A primeira versão é `0.1.0`. Não há atualização automática do aplicativo nem assinatura de código configurada; os botões de atualização da interface atualizam apenas as CLIs.
+O pacote é gerado e instalado na própria máquina; não há pipeline de CI nem instaladores publicados.
+
+```sh
+npm ci
+npm run build          # typecheck + frontend + pacotes em release/
+npm run install:local  # instala o .deb gerado (pede sudo)
+```
+
+O `release/` recebe `BeagleDock-<versão>-linux-amd64.deb` e `BeagleDock-<versão>-linux-x86_64.AppImage`.
+
+**Debian/Ubuntu (recomendado):**
+
+Instala em `/opt/BeagleDock`, cria o comando `beagledock` e o atalho no menu de aplicativos. Para atualizar, gere o pacote novo (`npm run build`) e rode `npm run install:local` de novo; para remover, `sudo apt remove beagledock`. Conversas e credenciais ficam em `~/.beagledock` e não são apagadas na remoção.
+
+**AppImage (sem instalar):**
+
+```sh
+chmod +x release/BeagleDock-*-linux-x86_64.AppImage
+./release/BeagleDock-*-linux-x86_64.AppImage
+```
+
+Se o AppImage reclamar de FUSE, instale `libfuse2` (no Debian 13: `sudo apt install libfuse2t64`).
+
+### Versões e changelog
+
+A versão do aplicativo existe só em `package.json`. As mudanças perceptíveis ao usuário são registradas em `CHANGELOG.md` (seção `Unreleased`) e, para lançar, use `npm version patch|minor|major`: o script move o `Unreleased` para a nova versão e sincroniza links e `docs/openapi.json`, sem commit nem tag. As regras completas estão em `AGENTS.md`.
+
+Para só testar o empacotamento sem gerar instaladores, use `npm run build:electron -- --dir` e execute `release/linux-unpacked/beagledock`. Não há atualização automática do aplicativo nem assinatura de código; os botões de atualização da interface atualizam apenas as CLIs.
 
 Referência do protocolo Codex: [documentação oficial de modo não interativo](https://learn.chatgpt.com/docs/non-interactive-mode).
 
@@ -93,7 +124,7 @@ Durante uma resposta, o chat continua aceitando mensagens. Elas entram em uma fi
 
 O shell usa xterm, preserva cores ANSI e mostra comandos, diagnósticos e resultados incrementais recebidos da CLI. Quando o provedor só publica a saída de uma ferramenta ao terminar, o shell recebe essa saída nesse momento; o aplicativo não consegue antecipar bytes que a CLI não transmite. Títulos de saudações são substituídos pelo primeiro pedido com assunto identificável, inclusive no histórico salvo.
 
-A marca é **BeagleDock**, com [mascote beagle](public/brand/beagledock-logo.png). O banco e as identidades internas de armazenamento da versão anterior são preservados para manter conversas e credenciais. `BEAGLEDOCK_DATA_DIR` configura um diretório alternativo; `BLEAGLEDOCK_DATA_DIR` e `CAPYAI_DATA_DIR` continuam aceitos, nessa ordem de precedência. Detalhes e prompt do logo: [identidade visual](docs/brand/LOGO.md).
+A marca é **BeagleDock**, com [mascote beagle](public/brand/beagledock-logo.png). Na primeira execução após a renomeação, o aplicativo migra automaticamente os dados e as configurações da versão anterior (pasta de dados, banco, perfil do Electron e hook de aprovação do AGY) sem perder conversas. As chaves de API cadastradas no app, cifradas pelo cofre do sistema com o nome antigo, podem precisar ser recadastradas; as CLIs mantêm a própria autenticação. `BEAGLEDOCK_DATA_DIR` configura um diretório alternativo. Detalhes e prompt do logo: [identidade visual](docs/brand/LOGO.md).
 
 O chat agora apresenta pedidos de permissão por ação nos três provedores. Claude usa o protocolo de controle stdio; Codex usa os pedidos do app-server; AGY usa um hook `PreToolUse` com socket autenticado, ativo apenas quando lançado pelo BeagleDock. O hook preserva as outras configurações e guarda uma cópia anterior de `hooks.json`; fora do BeagleDock delega à política original. Autorizar uma vez não cria uma liberação global nem remove regras explícitas de bloqueio.
 

@@ -6,7 +6,7 @@ if (process.platform !== "linux")
   throw new Error(
     "Desktop smoke currently runs on Linux; use unit tests elsewhere.",
   );
-const root = fs.mkdtempSync(path.join(os.tmpdir(), "capyai-desktop-smoke-"));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-desktop-smoke-"));
 const bin = path.join(root, ".local", "bin");
 fs.mkdirSync(bin, { recursive: true });
 const fixture = fs.readFileSync(
@@ -21,10 +21,10 @@ for (const name of ["claude", "codex", "agy"]) {
 const env = {
   ...process.env,
   HOME: root,
-  CAPYAI_DATA_DIR: path.join(root, "data"),
+  BEAGLEDOCK_DATA_DIR: path.join(root, "data"),
   CODEX_HOME: path.join(root, ".codex"),
   CLAUDE_CONFIG_DIR: path.join(root, ".claude"),
-  CAPYAI_SMOKE_ROOT: root,
+  BEAGLEDOCK_SMOKE_ROOT: root,
   PATH: bin + path.delimiter + process.env.PATH,
 };
 delete env.ELECTRON_RUN_AS_NODE;

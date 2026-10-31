@@ -4,6 +4,29 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-31
+
+### Corrigido
+
+- Indicador do ai-memory no chat mostra o projeto de memória do workspace e o estado real do servidor, em vez de sempre “OFF”.
+
+## [0.1.1] - 2026-10-31
+
+### Adicionado
+
+- Versão do aplicativo exibida na barra lateral.
+- Explorador do ai-memory redesenhado em três painéis (projetos, páginas agrupadas com saúde da base e leitor em Markdown com `[[links]]`), exclusão de páginas e projetos com confirmação e **Manutenção Assistida**: uma conversa em Claude, Codex ou Antigravity, acompanhada no próprio painel, que planeja e executa a limpeza da wiki com aprovação e limite de exclusões.
+
+### Alterado
+
+- Todos os nomes antigos (CapyAI, Bleagle/BleagleDock) foram renomeados para BeagleDock: pasta de dados `~/.beagledock` com banco `beagledock.db`, perfil do Electron e appId `dev.beagledock.desktop`, API `window.beagleAPI`, rotas `/__beagledock/` e variáveis `BEAGLEDOCK_*` (as variáveis `CAPYAI_*` e `BLEAGLEDOCK_*` deixam de ser aceitas). Na primeira execução, os dados antigos são migrados automaticamente (sem sobrescrever dados já existentes) e o hook de aprovação do AGY antigo é removido de `~/.gemini/config/hooks.json` para não duplicar aprovações. As chaves de API cadastradas no app dependem do cofre do sistema ligado ao nome antigo: se não puderem ser lidas, são descartadas e uma notificação pede o recadastro; as CLIs mantêm a própria autenticação.
+- A verificação com CLIs reais (`npm run test:cli-live`) usa diretórios `beagledock-*-probe-*` com `.ai-memory.toml` apontando para o projeto único `beagledock-probes`.
+- Distribuição apenas local: removido o workflow de CI que empacotava para Linux, Windows e macOS; o README documenta como gerar e instalar o `.deb`/AppImage na própria máquina.
+
+### Corrigido
+
+- Ícone do aplicativo no menu e na barra de tarefas do Linux.
+
 ## [0.1.0] - 2026-10-31
 
 Primeira versão do **BeagleDock — Multi-CLI for Developers**.
@@ -33,11 +56,14 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Títulos de conversas baseados no primeiro pedido com assunto, evitando saudações como título permanente.
 - Posicionamento do painel de notificações dentro dos limites da janela.
 
-### Distribuição
+### Alterado
 
 - Licença Apache-2.0, avisos de terceiros e changelog incluídos nos pacotes.
+- Dependências nativas compiladas na plataforma de destino, evitando binários SQLite com exigência de glibc superior à do sistema de build.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/rumofy/BeagleDock/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/rumofy/BeagleDock/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/rumofy/BeagleDock/releases/tag/v0.1.0

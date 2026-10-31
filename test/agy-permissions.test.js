@@ -50,7 +50,7 @@ test("AGY per-session policies override global automatic approval and retain exp
   assert.equal(full.args.includes("auto"), false);
 });
 test("reading global rules never writes settings or imports unrelated values/grants", (t) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "capyai-policy-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-policy-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const file = path.join(home, ".gemini", "antigravity-cli", "settings.json");
   fs.mkdirSync(path.dirname(file), { recursive: true });

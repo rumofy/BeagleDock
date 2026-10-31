@@ -13,7 +13,7 @@ const {
 } = require("../electron/secure-settings");
 const { binaryDirs, shellSpec, findBinary } = require("../electron/platform");
 function fixture(t) {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "capyai-test-"));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-test-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   return home;
 }
@@ -339,7 +339,7 @@ test("secrets are encrypted, never returned to renderer, and unavailable/basic-t
 test("database persists native links across processes and initializes before first save", (t) => {
   const home = fixture(t);
   const database = path.resolve("electron/database.js");
-  const env = { ...process.env, CAPYAI_DATA_DIR: home };
+  const env = { ...process.env, BEAGLEDOCK_DATA_DIR: home };
   const first = `const db=require(${JSON.stringify(database)});(async()=>{await db.saveSession({id:'app-session',providerId:'claude',cwd:'/project',title:'saved'});await db.setNativeSession('app-session','claude','native-id-123','/project');await new Promise((r,j)=>db.db.close(e=>e?j(e):r()));})().catch(e=>{console.error(e.message);process.exit(1)});`;
   execFileSync(process.execPath, ["-e", first], { env });
   const second = `const db=require(${JSON.stringify(database)});(async()=>{const sessions=await db.getSavedSessions();console.log(JSON.stringify(sessions));await new Promise((r,j)=>db.db.close(e=>e?j(e):r()));})().catch(e=>{console.error(e.message);process.exit(1)});`;

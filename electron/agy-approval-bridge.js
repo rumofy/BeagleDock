@@ -3,6 +3,7 @@ const fs = require("fs"),
   os = require("os"),
   net = require("net"),
   crypto = require("crypto");
+const { removeLegacyHooks } = require("./migration");
 const READ_TOOLS = new Set([
   "read_file",
   "view_file",
@@ -60,18 +61,20 @@ function ensureHook({
       { matcher: ".*", hooks: [{ type: "command", command, timeout: 130 }] },
     ],
   };
+  const legacy = removeLegacyHooks(hooks);
   if (
-    JSON.stringify(hooks["bleagledock-permissions"]) === JSON.stringify(config)
+    !legacy.length &&
+    JSON.stringify(hooks["beagledock-permissions"]) === JSON.stringify(config)
   )
     return;
-  hooks["bleagledock-permissions"] = config;
+  hooks["beagledock-permissions"] = config;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  if (text && !fs.existsSync(file + ".before-bleagledock"))
-    fs.writeFileSync(file + ".before-bleagledock", text, {
+  if (text && !fs.existsSync(file + ".before-beagledock"))
+    fs.writeFileSync(file + ".before-beagledock", text, {
       mode: 0o600,
       flag: "wx",
     });
-  const temp = file + ".bleagledock.tmp";
+  const temp = file + ".beagledock.tmp";
   fs.writeFileSync(temp, JSON.stringify(hooks, null, 2) + "\n", {
     mode: 0o600,
   });
@@ -101,10 +104,10 @@ async function createAgyApprovalBridge({
   const token = crypto.randomBytes(32).toString("hex");
   const socket =
     process.platform === "win32"
-      ? `\\\\.\\pipe\\bleagledock-${crypto.randomUUID()}`
+      ? `\\\\.\\pipe\\beagledock-${crypto.randomUUID()}`
       : path.join(
           os.tmpdir(),
-          `bleagle-${process.pid}-${crypto.randomBytes(8).toString("hex")}.sock`,
+          `beagledock-${process.pid}-${crypto.randomBytes(8).toString("hex")}.sock`,
         );
   const clients = new Set();
   let closed = false;
@@ -177,8 +180,8 @@ async function createAgyApprovalBridge({
   if (process.platform !== "win32") fs.chmodSync(socket, 0o600);
   return {
     env: {
-      BLEAGLEDOCK_APPROVAL_SOCKET: socket,
-      BLEAGLEDOCK_APPROVAL_TOKEN: token,
+      BEAGLEDOCK_APPROVAL_SOCKET: socket,
+      BEAGLEDOCK_APPROVAL_TOKEN: token,
     },
     close() {
       if (closed) return;

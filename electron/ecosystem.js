@@ -117,10 +117,7 @@ function updateCommand(id, bin, find = findBinary) {
 }
 function createEcosystem({
   file = path.join(
-    process.env.BEAGLEDOCK_DATA_DIR ||
-  process.env.BLEAGLEDOCK_DATA_DIR ||
-      process.env.CAPYAI_DATA_DIR ||
-      path.join(os.homedir(), ".capyai"),
+    process.env.BEAGLEDOCK_DATA_DIR || path.join(os.homedir(), ".beagledock"),
     "ecosystem.json",
   ),
   request = getJson,
@@ -317,6 +314,10 @@ function createEcosystem({
     }
   }
   return {
+    notifyOnce(id, category, title, description) {
+      notify(id, category, title, description);
+      persist();
+    },
     observe,
     check,
     update,

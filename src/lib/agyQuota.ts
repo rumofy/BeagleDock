@@ -1,4 +1,4 @@
-import type { AIProviderStatus } from "./types";
+import type { AIProviderStatus } from "../types";
 
 export function quotaForGeminiModels(
   quota: AIProviderStatus["quota"],

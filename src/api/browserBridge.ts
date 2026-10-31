@@ -1,11 +1,11 @@
 // Quando rodando no navegador (sem Electron), conecta ao backend real via bridge HTTP do Vite.
-const w = window as any;
+const w = window as unknown as { beagleAPI?: unknown };
 const token = document.querySelector<HTMLMetaElement>(
-  'meta[name="capy-bridge-token"]',
+  'meta[name="beagledock-bridge-token"]',
 )?.content;
-if (!w.capyAPI && (import.meta as any).env?.DEV && token) {
-  const call = async (method: string, args: any[]) => {
-    const res = await fetch("/__capy/invoke", {
+if (!w.beagleAPI && import.meta.env.DEV && token) {
+  const call = async (method: string, args: unknown[]) => {
+    const res = await fetch("/__beagledock/invoke", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -31,10 +31,18 @@ if (!w.capyAPI && (import.meta as any).env?.DEV && token) {
     "listAIMemoryPages",
     "readAIMemoryPage",
     "runAIMemoryCommand",
+    "getAIMemoryScope",
+    "listAIMemoryProjects",
+    "listAIMemoryProjectPages",
+    "getAIMemoryProjectOverview",
+    "listAIMemoryProjectSessions",
+    "getAIMemoryMaintenancePrompt",
+    "getAIMemoryMaintenanceCwd",
     "getInstalledSkills",
     "getCliHistory",
     "loadFullConversation",
     "getUserProfile",
+    "getAppVersion",
     "getSavedState",
     "saveSession",
     "deleteSession",
@@ -49,15 +57,15 @@ if (!w.capyAPI && (import.meta as any).env?.DEV && token) {
     "executeCliPrompt",
     "interruptCliSession",
   ];
-  const api: any = {};
+  const api: Record<string, unknown> = {};
   methods.forEach((m) => {
-    api[m] = (...args: any[]) => call(m, args);
+    api[m] = (...args: unknown[]) => call(m, args);
   });
-  const subs = new Map<string, Set<(...a: any[]) => void>>();
+  const subs = new Map<string, Set<(payload: unknown) => void>>();
   let es: EventSource | null = null;
-  api.on = (channel: string, cb: (...a: any[]) => void) => {
+  api.on = (channel: string, cb: (payload: unknown) => void) => {
     if (!es) {
-      es = new EventSource(`/__capy/events?token=${encodeURIComponent(token)}`);
+      es = new EventSource(`/__beagledock/events?token=${encodeURIComponent(token)}`);
       es.onmessage = (ev) => {
         try {
           const { channel: ch, payload } = JSON.parse(ev.data);
@@ -75,6 +83,6 @@ if (!w.capyAPI && (import.meta as any).env?.DEV && token) {
       }
     };
   };
-  w.capyAPI = api;
+  w.beagleAPI = api;
 }
 export {};

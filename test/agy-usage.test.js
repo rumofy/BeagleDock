@@ -6,7 +6,7 @@ const fs = require("node:fs"),
 const { parseUsageReport, createAgyUsage } = require("../electron/agy-usage");
 const ts = require("typescript");
 const compiled = ts.transpileModule(
-  fs.readFileSync(path.resolve("src/agyQuota.ts"), "utf8"),
+  fs.readFileSync(path.resolve("src/lib/agyQuota.ts"), "utf8"),
   { compilerOptions: { module: ts.ModuleKind.CommonJS } },
 ).outputText;
 const moduleContext = { exports: {} };

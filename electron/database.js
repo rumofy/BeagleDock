@@ -2,14 +2,15 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
-const { protectSettings, publicSettings } = require("./secure-settings");
+const {
+  protectSettings,
+  publicSettings,
+  dropUnreadableSecrets,
+} = require("./secure-settings");
 const dbDir =
-  process.env.BEAGLEDOCK_DATA_DIR ||
-  process.env.BLEAGLEDOCK_DATA_DIR ||
-  process.env.CAPYAI_DATA_DIR ||
-  path.join(os.homedir(), ".capyai");
+  process.env.BEAGLEDOCK_DATA_DIR || path.join(os.homedir(), ".beagledock");
 fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
-const dbPath = path.join(dbDir, "capyai.db");
+const dbPath = path.join(dbDir, "beagledock.db");
 const db = new sqlite3.Database(dbPath);
 try {
   fs.chmodSync(dbPath, 0o600);
@@ -314,7 +315,7 @@ async function saveWorkspace(ws) {
       ws.name,
       ws.path,
       ws.hasAIMemory ? 1 : 0,
-      ws.aiMemoryDaemonActive ? 1 : 0,
+      0,
     ],
   );
   return { success: true, workspace: ws };
@@ -328,7 +329,6 @@ async function getWorkspaces() {
     name: r.name,
     path: r.path,
     hasAIMemory: !!r.has_ai_memory,
-    aiMemoryDaemonActive: !!r.ai_memory_daemon,
   }));
 }
 async function rawSettings() {
@@ -354,6 +354,14 @@ function saveAppSettings(settings) {
   });
   settingsQueue = operation.catch(() => {});
   return operation;
+}
+// Descarta credenciais que o cofre atual não consegue decifrar (ex.: troca de identidade do app).
+async function dropUnreadableCredentials(storage) {
+  await initDatabase();
+  const current = await rawSettings();
+  const { settings, dropped } = dropUnreadableSecrets(current, storage);
+  if (dropped.length) await writeSettings(settings);
+  return dropped;
 }
 async function getAppSettings() {
   await initDatabase();
@@ -393,4 +401,5 @@ module.exports = {
   getWorkspaces,
   saveAppSettings,
   getAppSettings,
+  dropUnreadableCredentials,
 };

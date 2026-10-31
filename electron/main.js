@@ -3,6 +3,9 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 const https = require("https");
+// Migração única de nomes antigos: precisa rodar antes de abrir o banco e de definir userData.
+const { migrateLegacyData } = require("./migration");
+migrateLegacyData({ appData: app.getPath?.("appData") });
 const { execFileSync, spawn } = require("child_process");
 const {
   findBinary,
@@ -11,6 +14,9 @@ const {
   validCwd,
   cliEnv,
 } = require("./platform");
+const aiMemoryApi = require("./ai-memory-api");
+const { resolveAiMemoryScope } = require("./ai-memory-scope");
+const memoryMaintenance = require("./memory-maintenance");
 const { createCatalogs } = require("./catalogs");
 const { createAgyUsage } = require("./agy-usage");
 const agyUsage = createAgyUsage();
@@ -34,6 +40,7 @@ const {
   getWorkspaces,
   saveAppSettings,
   getAppSettings,
+  dropUnreadableCredentials,
   getNativeSession,
   setNativeSession,
 } = require("./database");
@@ -41,11 +48,9 @@ const {
 const globalPermissions =
   require("./global-permissions").createGlobalPermissions();
 const ecosystem = require("./ecosystem").createEcosystem();
-// Preserve the existing OS vault identity and Chromium profile after the display-name change.
-// These identifiers are compatibility keys; window titles and package names use BeagleDock.
-app.setName?.("capyai");
+app.setName?.("beagledock");
 app.commandLine?.appendSwitch("class", "BeagleDock");
-app.setPath?.("userData", path.join(app.getPath("appData"), "capyai"));
+app.setPath?.("userData", path.join(app.getPath("appData"), "beagledock"));
 let updatingCli = false;
 let mainWindow;
 let ptyModule = null;
@@ -304,13 +309,13 @@ function parseAiMemoryJsonOutput(stdout) {
   }
 }
 
-function runAiMemoryJson(args, cwd) {
+function runAiMemoryJson(args, cwd, timeout = 10000) {
   return new Promise((resolve) => {
     const aiMemoryBin = findBinary("ai-memory");
     if (!aiMemoryBin)
       return resolve({ ok: false, error: "ai-memory binary not found" });
 
-    execCli(aiMemoryBin, args, { cwd: cwd || process.cwd(), timeout: 10000 })
+    execCli(aiMemoryBin, args, { cwd: cwd || process.cwd(), timeout })
       .then(({ stdout, stderr }) => {
         const parsed = parseAiMemoryJsonOutput(stdout);
         if (parsed !== null) {
@@ -344,7 +349,20 @@ async function checkAIMemoryServer() {
   }
 
   const projectsList = [];
-  if (projectsRes.rawText) {
+  let httpProjects = null;
+  try {
+    httpProjects = await aiMemoryApi.listProjects();
+  } catch {}
+  if (httpProjects) {
+    for (const p of httpProjects)
+      projectsList.push({
+        workspace: p.workspace,
+        project: p.project,
+        projectId: p.projectId,
+        pages: p.pageCount,
+        lastUpdated: p.lastUpdated,
+      });
+  } else if (projectsRes.rawText) {
     const lines = projectsRes.rawText.trim().split("\n");
     for (const line of lines) {
       if (
@@ -451,7 +469,6 @@ function discoverLocalWorkspaces() {
       name: path.basename(cwd),
       path: cwd,
       hasAIMemory: fs.existsSync(path.join(cwd, ".ai-memory.toml")),
-      aiMemoryDaemonActive: false,
     },
   ];
 }
@@ -665,6 +682,24 @@ function createWindow() {
 
 module.exports.ready = app.whenReady().then(async () => {
   await initDatabase();
+  try {
+    const dropped = await dropUnreadableCredentials(
+      require("electron").safeStorage,
+    );
+    if (dropped.length) {
+      console.warn(
+        `[migração] credenciais ilegíveis removidas: ${dropped.join(", ")}`,
+      );
+      ecosystem.notifyOnce(
+        "migration:credentials",
+        "cli_update",
+        "Recadastre as chaves de API",
+        "Chaves de API cadastradas no app precisam ser recadastradas após a renomeação para BeagleDock. As CLIs (Claude Code, Codex e Antigravity) mantêm a própria autenticação.",
+      );
+    }
+  } catch (error) {
+    console.warn("[migração] verificação de credenciais falhou:", error.message);
+  }
   const registerHandler = ipcMain.handle.bind(ipcMain);
   const handle = (channel, handler) =>
     registerHandler(channel, (event, ...args) => {
@@ -683,6 +718,7 @@ module.exports.ready = app.whenReady().then(async () => {
     return pushToolsUpdate();
   });
 
+  handle("get-app-version", () => app.getVersion());
   handle("get-cli-approvals", () => approvals.list());
   handle("resolve-cli-approval", (_event, id, decision) =>
     approvals.resolve(id, decision),
@@ -775,16 +811,135 @@ module.exports.ready = app.whenReady().then(async () => {
   handle(
     "ai-memory-read-page",
     async (_event, pagePath, workspace, project) => {
-      const args = ["read-page", "--path", pagePath, "--json"];
       if (!workspace || !project)
         return {
           ok: false,
           error: "Workspace e projeto são obrigatórios para ler uma página.",
         };
-      args.push("--workspace", workspace, "--project", project);
-      return await runAiMemoryJson(args);
+      try {
+        const page = await aiMemoryApi.getPage(workspace, project, pagePath);
+        return { ok: true, data: { ...page, workspace, project } };
+      } catch (err) {
+        if (err && err.status === 404)
+          return { ok: false, notFound: true, error: "Página não encontrada." };
+        // Fallback para a CLI (servidor HTTP indisponível ou resposta inesperada).
+        try {
+          aiMemoryApi.validName(workspace, "workspace");
+          aiMemoryApi.validName(project, "projeto");
+          aiMemoryApi.validPagePath(pagePath);
+        } catch (e) {
+          return { ok: false, error: e.message };
+        }
+        return await runAiMemoryJson([
+          "read-page",
+          "--path",
+          pagePath,
+          "--json",
+          "--workspace",
+          workspace,
+          "--project",
+          project,
+        ]);
+      }
     },
   );
+
+  const httpCall = async (fn) => {
+    try {
+      return { ok: true, data: await fn() };
+    } catch (err) {
+      return { ok: false, status: err.status, error: err.message };
+    }
+  };
+  let projectsCache = { at: 0, list: null };
+  const reachableProjects = async () => {
+    if (Date.now() - projectsCache.at < 15000) return projectsCache.list;
+    let list = null;
+    try {
+      list = await aiMemoryApi.listProjects({ timeoutMs: 3000 });
+    } catch {}
+    projectsCache = { at: Date.now(), list };
+    return list;
+  };
+  handle("ai-memory-scope", async (_e, cwd) => {
+    const scope = await resolveAiMemoryScope(validCwd(cwd));
+    const list = await reachableProjects();
+    const found = list?.find(
+      (x) => x.workspace === scope.workspace && x.project === scope.project,
+    );
+    return {
+      ...scope,
+      serverOnline: !!list,
+      projectExists: !!found,
+      pages: found ? found.pageCount : null,
+    };
+  });
+  handle("ai-memory-projects", () => httpCall(() => aiMemoryApi.listProjects()));
+  handle("ai-memory-project-pages", (_e, ws, p) =>
+    httpCall(() => aiMemoryApi.listPages(ws, p)),
+  );
+  handle("ai-memory-project-overview", (_e, ws, p) =>
+    httpCall(() => aiMemoryApi.getOverview(ws, p)),
+  );
+  handle("ai-memory-project-sessions", (_e, ws, p) =>
+    httpCall(() => aiMemoryApi.listSessions(ws, p)),
+  );
+  handle("ai-memory-delete-page", async (_e, ws, p, pagePath, confirmProtected) => {
+    try {
+      aiMemoryApi.validName(ws, "workspace");
+      aiMemoryApi.validName(p, "projeto");
+      aiMemoryApi.validPagePath(pagePath);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    const denied = memoryMaintenance.deleteConfirmationError(
+      pagePath,
+      confirmProtected,
+    );
+    if (denied) return { ok: false, error: denied };
+    return await runAiMemoryJson(
+      ["delete-page", "--path", pagePath, "--workspace", ws, "--project", p],
+      undefined,
+      120000,
+    );
+  });
+  handle("ai-memory-purge-project", async (_e, ws, p, confirmName) => {
+    try {
+      aiMemoryApi.validName(ws, "workspace");
+      aiMemoryApi.validName(p, "projeto");
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+    if (!memoryMaintenance.canPurgeProject(ws, p))
+      return { ok: false, error: "Este projeto não pode ser excluído." };
+    if (confirmName !== `${ws}/${p}`)
+      return { ok: false, error: "Confirmação não confere com workspace/projeto." };
+    return await runAiMemoryJson(
+      ["purge-project", "--workspace", ws, "--project", p, "--confirm"],
+      undefined,
+      120000,
+    );
+  });
+  handle("ai-memory-maintenance-prompt", (_e, opts) => {
+    const { workspace, project, mode, maxDeletions } = opts || {};
+    aiMemoryApi.validName(workspace, "workspace");
+    aiMemoryApi.validName(project, "projeto");
+    return memoryMaintenance.buildMaintenancePrompt({
+      workspace,
+      project,
+      mode: mode === "execute" ? "execute" : "plan",
+      maxDeletions,
+    });
+  });
+  handle("ai-memory-maintenance-cwd", () => {
+    const dir = path.join(
+      process.env.BEAGLEDOCK_DATA_DIR ||
+        path.join(os.homedir(), ".beagledock"),
+      "maintenance",
+    );
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    return validCwd(dir);
+  });
 
   handle("ai-memory-command", async (_event, subcmdArgs, cwd) => {
     if (
@@ -889,7 +1044,6 @@ module.exports.ready = app.whenReady().then(async () => {
       const enriched = {
         ...ws,
         hasAIMemory: fs.existsSync(path.join(ws.path, ".ai-memory.toml")),
-        aiMemoryDaemonActive: false,
       };
       await saveWorkspace(enriched);
       return enriched;

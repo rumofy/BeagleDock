@@ -1,4 +1,4 @@
-import type { ModelOption } from "./types";
+import type { ModelOption } from "../types";
 export function modelSelection(
   options: ModelOption[],
   model: string,

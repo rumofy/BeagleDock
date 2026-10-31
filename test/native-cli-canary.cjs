@@ -10,7 +10,7 @@ const selected = process.argv
   .find((a) => a.startsWith("--providers="))
   ?.split("=")[1]
   .split(",") || ["claude", "codex", "antigravity"];
-const command = `node -e "console.log('BLEAGLE_CANARY_FIRST');let n=0;const t=setInterval(()=>{console.log('BLEAGLE_CANARY_TICK_'+(++n));if(n===4){clearInterval(t);console.log('BLEAGLE_CANARY_LAST')}},1000)"`;
+const command = `node -e "console.log('BEAGLEDOCK_CANARY_FIRST');let n=0;const t=setInterval(()=>{console.log('BEAGLEDOCK_CANARY_TICK_'+(++n));if(n===4){clearInterval(t);console.log('BEAGLEDOCK_CANARY_LAST')}},1000)"`;
 const npmScenario = process.argv.includes("--npm-test");
 (async () => {
   const catalogs = createCatalogs();
@@ -26,18 +26,23 @@ const npmScenario = process.argv.includes("--npm-test");
       continue;
     }
     const cwd = fs.mkdtempSync(
-        path.join(os.tmpdir(), "bleagledock-live-canary-"),
+        path.join(os.tmpdir(), "beagledock-canary-probe-"),
       ),
       links = new Map(),
       times = {},
       start = Date.now();
+    // Concentra todas as sessões de sonda em um único projeto do ai-memory.
+    fs.writeFileSync(
+      path.join(cwd, ".ai-memory.toml"),
+      'workspace = "default"\nproject = "beagledock-probes"\n',
+    );
     if (npmScenario) {
       fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({
-        name: "bleagledock-stream-fixture", private: true,
+        name: "beagledock-stream-fixture", private: true,
         scripts: { test: "node tests.cjs" },
       }));
       fs.writeFileSync(path.join(cwd, "tests.cjs"),
-        "console.log('BLEAGLE_CANARY_FIRST');let n=0;const t=setInterval(()=>{console.log('BLEAGLE_CANARY_TICK_'+(++n));if(n===8){clearInterval(t);console.log('BLEAGLE_CANARY_LAST')}},1000);");
+        "console.log('BEAGLEDOCK_CANARY_FIRST');let n=0;const t=setInterval(()=>{console.log('BEAGLEDOCK_CANARY_TICK_'+(++n));if(n===8){clearInterval(t);console.log('BEAGLEDOCK_CANARY_LAST')}},1000);");
     }
     const options = local[providerId]?.modelOptions || [];
     const option =
@@ -59,9 +64,9 @@ const npmScenario = process.argv.includes("--npm-test");
           times.chat = Date.now() - start;
         if (channel !== "pty-data" || payload.data.startsWith("$")) return;
         for (const [key, marker] of Object.entries({
-          first: "BLEAGLE_CANARY_FIRST",
-          tick: "BLEAGLE_CANARY_TICK_",
-          last: "BLEAGLE_CANARY_LAST",
+          first: "BEAGLEDOCK_CANARY_FIRST",
+          tick: "BEAGLEDOCK_CANARY_TICK_",
+          last: "BEAGLEDOCK_CANARY_LAST",
         }))
           if (payload.data.includes(marker) && times[key] === undefined)
             times[key] = Date.now() - start;

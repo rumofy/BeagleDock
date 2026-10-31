@@ -166,7 +166,7 @@ function createGlobalPermissions({
       output = JSON.stringify(data, null, 2) + "\n";
     }
     fs.mkdirSync(path.dirname(files[id]), { recursive: true, mode: 0o700 });
-    const temp = files[id] + `.bleagledock-${process.pid}-${Date.now()}.tmp`;
+    const temp = files[id] + `.beagledock-${process.pid}-${Date.now()}.tmp`;
     try {
       fs.writeFileSync(temp, output, { mode: 0o600, flag: "wx" });
       let current = "";

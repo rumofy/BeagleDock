@@ -92,7 +92,7 @@ function createCodexStream({
         child.stdin.write(JSON.stringify(message) + "\n");
       const request = (method, params) =>
         new Promise((resolve, reject) => {
-          const id = `bleagle-${++sequence}`;
+          const id = `beagledock-${++sequence}`;
           const timer = setTimeout(() => {
             current.requests.delete(id);
             reject(new Error(`Tempo limite no protocolo Codex (${method}).`));

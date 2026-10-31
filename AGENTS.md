@@ -8,7 +8,21 @@ Manter testes de contrato dos três protocolos, testes unitários das regras e t
 
 ## Versões e distribuição
 
-O aplicativo se chama BeagleDock e usa a licença Apache-2.0. Registrar funcionalidades, correções e mudanças de distribuição em `CHANGELOG.md`, na seção `Unreleased` até a próxima versão. Manter a versão do aplicativo sincronizada entre `package.json`, lockfile e contrato local. Preservar as identidades de armazenamento e hooks legados para não perder sessões, credenciais ou duplicar aprovações.
+O aplicativo se chama BeagleDock e usa a licença Apache-2.0. A versão existe **só** em `package.json`: nunca escrever o número da versão em README, docs, código ou nomes de arquivo fixos. Quem precisa dela lê de `package.json`/`app.getVersion()`; `docs/openapi.json` é sincronizado pelo script de versão e verificado nos testes.
+
+### Changelog
+
+`CHANGELOG.md` segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e [SemVer](https://semver.org/lang/pt-BR/):
+
+- Toda mudança perceptível ao usuário entra em `## [Unreleased]` no mesmo trabalho que a introduz, numa destas seções, nesta ordem: `Adicionado`, `Alterado`, `Descontinuado`, `Removido`, `Corrigido`, `Segurança`. Uma linha por mudança, em pt-BR, escrita para o usuário (o quê e por quê), sem nomes de arquivos internos nem detalhes de implementação. Refatorações e testes sem efeito visível não entram.
+- Nunca editar à mão as seções de versões já lançadas, a data nem os links do rodapé.
+- Lançar versão: `npm version patch|minor|major` (correção / funcionalidade / quebra de compatibilidade). O script move o `Unreleased` para `## [x.y.z] - AAAA-MM-DD`, atualiza os links de comparação e o `docs/openapi.json`. Ele não faz commit nem tag; isso só quando o usuário pedir. Os nomes antigos (CapyAI, Bleagle/BleagleDock) não são usados em código, identidades ou documentação; a migração única de dados, configurações e hooks antigos para as identidades BeagleDock deve continuar funcionando sem perder sessões nem duplicar aprovações.
+
+A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). Não criar pipelines de CI nem alvos de empacotamento para outras plataformas sem pedido explícito.
+
+## Estrutura do frontend
+
+`src/App.tsx` só compõe o layout. Cada área fica em `src/features/<área>/` (componentes, hooks e utilitários próprios); estado compartilhado e chamadas ao backend ficam em hooks (`src/hooks/`) e no cliente tipado da API (`src/api/`), nunca via `(window as any)`. Componentes de interface reutilizáveis ficam em `src/components/`.
 
 ## Git
 

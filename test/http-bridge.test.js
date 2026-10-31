@@ -36,7 +36,7 @@ test("local bridge authenticates, rejects cross-origin/malformed/oversized calls
     Origin: origin,
   };
   const call = (body, extra = {}, method = "POST") =>
-    fetch(origin + "/__capy/invoke", {
+    fetch(origin + "/__beagledock/invoke", {
       method,
       headers: { ...headers, ...extra },
       body: method === "GET" ? undefined : body,
@@ -71,9 +71,9 @@ test("local bridge authenticates, rejects cross-origin/malformed/oversized calls
   assert.equal(res.status, 200);
   assert.equal((await res.json()).result.method, "getSavedState");
   assert.equal(invocations, 1);
-  assert.equal((await fetch(origin + "/__capy/events")).status, 401);
+  assert.equal((await fetch(origin + "/__beagledock/events")).status, 401);
   const controller = new AbortController();
-  const stream = await fetch(origin + "/__capy/events?token=test-secret", {
+  const stream = await fetch(origin + "/__beagledock/events?token=test-secret", {
     headers: { Origin: origin },
     signal: controller.signal,
   });

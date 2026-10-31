@@ -2,12 +2,12 @@
   "openapi": "3.1.0",
   "info": {
     "title": "BeagleDock local development bridge",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "license": {
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
     },
-    "description": "Disabled by default. Enable CAPYAI_BROWSER_BRIDGE=1 only for local browser development. Desktop uses IPC. The HTML receives an ephemeral per-process token; credentials and encrypted values are never returned by getSavedState. This is a local development interface, not a public API."
+    "description": "Disabled by default. Enable BEAGLEDOCK_BROWSER_BRIDGE=1 only for local browser development. Desktop uses IPC. The HTML receives an ephemeral per-process token; credentials and encrypted values are never returned by getSavedState. This is a local development interface, not a public API."
   },
   "servers": [
     {
@@ -15,7 +15,7 @@
     }
   ],
   "paths": {
-    "/__capy/invoke": {
+    "/__beagledock/invoke": {
       "post": {
         "operationId": "invokeLocalMethod",
         "description": "Requires the local bearer token, application/json, a matching Host, and same origin when Origin or Sec-Fetch-Site is present. Body limit: 1 MiB. CLI invocations can execute commands in the selected workspace. executeCliPrompt returns ok, output/error and nativeSessionId; it does not create a replacement conversation when resume fails. loadFullConversation returns messages, cwd, model and nativeSessionId. saveAppSettings returns success/settings or success=false/error; plaintext secret inputs are encrypted by the desktop OS vault and omitted from returned settings. Some methods return domain errors inside HTTP 200; callers must inspect ok/success/error. replaceChatMessages(sessionId, messages) atomically replaces the saved history in the supplied order and rejects imports during an active turn. Deletion cancels and waits for the pending turn before removing the session; an interrupted response returns cancelled=true and is not persisted. Messages for nonexistent sessions are rejected. Assistant responses are persisted by the backend only. detectTools returns modelOptions per CLI: id, label, aliases and advertised efforts; AGY effort entries carry nativeModel. Clients store base model plus effort separately. Empty effort means the CLI default where supported. executeCliPrompt validates against the current local catalog and maps AGY variants to the native id without a conflicting effort flag. No model or effort capabilities are supplied from a bundled list. getGlobalPermissions returns only editable permission fields, without unrelated config values. saveGlobalPermissions(providerId, changes) validates native values and preserves other settings. permission=inherit omits per-session policy overrides; CLI/project/managed settings apply. updateCli(providerId) runs a fixed updater for recognized installations; no arbitrary shell input or automatic elevation. checkCliUpdates compares official stable releases, while synchronized catalogs detect new models. readNotifications marks stored notices as read. Concurrent executeCliPrompt calls for one session are accepted into an ordered queue and execute automatically in the same native conversation. Each streaming event carries responseMessageId. Deletion cancels both active and queued turns. Shell events forward stderr and incremental tool output as soon as provided by the native CLI; completed output snapshots are deduplicated. getCliApprovals returns pending one-action requests scoped by opaque id and sessionId. resolveCliApproval(id, allow|deny) resolves an existing request once; stale ids do not grant access. cli-approvals pushes updated lists. cli-stream-chunk can carry activity without fullText; clients retain prior text in that case. Codex uses native app-server thread/start or thread/resume plus turn/start, and item deltas. Claude/AGY additionally tail bounded native task artifacts from the exact native session. Explicit native deny rules remain enforced. interruptCliSession(sessionId) interrupts that conversation immediately, cancels its existing queue and permission requests, preserves native links, and records partial/canceled replies. Other conversations continue. executeCliPrompt returns stopped=true and cancelled=true with saved interruption text; a cancelled=true submission is recorded without invoking a CLI, covering sends overtaken by a stop during renderer persistence. New submissions after interruption can resume the same native id.",
@@ -125,7 +125,7 @@
         }
       }
     },
-    "/__capy/events": {
+    "/__beagledock/events": {
       "get": {
         "operationId": "subscribeLocalEvents",
         "security": [
