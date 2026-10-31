@@ -4,7 +4,7 @@ import {
   Move,
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
-import { LiveShell } from "../../components/LiveShell";
+import { SessionShell } from "./SessionShell";
 
 export function FloatingTerminal({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
   const {
@@ -185,13 +185,7 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
                 </div>
               </div>
 
-              <LiveShell
-                sessionId={currentSession.id}
-                text={
-                  currentSession.ptyRaw ||
-                  (currentSession.ptyLog || []).join("\r\n")
-                }
-              />
+              <SessionShell sessionId={currentSession.id} />
 
               {/* BARRA INFERIOR PARA RESIZE */}
               <div

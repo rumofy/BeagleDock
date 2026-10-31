@@ -462,6 +462,34 @@ async function saveWorkspace(ws) {
   );
   return { success: true, workspace: ws };
 }
+// Manutenção: só mexe no cadastro. As conversas guardam a própria pasta (cwd) e o vínculo com a sessão
+// nativa da CLI, então editar ou remover um workspace nunca altera nem apaga conversas.
+async function updateWorkspace(id, { name, path: dir, hasAIMemory }) {
+  await initDatabase();
+  const current = await get("SELECT id FROM workspaces WHERE id=?", [id]);
+  if (!current) throw new Error("Workspace não encontrado.");
+  const clash = await get("SELECT id FROM workspaces WHERE path=? AND id<>?", [dir, id]);
+  if (clash) throw new Error("Já existe outro workspace com esta pasta.");
+  await run(
+    "UPDATE workspaces SET name=?,path=?,has_ai_memory=? WHERE id=?",
+    [name, dir, hasAIMemory ? 1 : 0, id],
+  );
+  return { id, name, path: dir, hasAIMemory: !!hasAIMemory };
+}
+async function deleteWorkspace(id) {
+  await initDatabase();
+  const result = await run("DELETE FROM workspaces WHERE id=?", [id]);
+  return { success: true, removed: (result?.changes ?? 1) > 0 };
+}
+async function workspaceSessionCounts() {
+  await initDatabase();
+  const counts = {};
+  for (const row of await all(
+    "SELECT cwd, COUNT(*) AS total FROM sessions GROUP BY cwd",
+  ))
+    counts[row.cwd] = row.total;
+  return counts;
+}
 async function getWorkspaces() {
   await initDatabase();
   return (
@@ -543,6 +571,9 @@ module.exports = {
   getChatMessages,
   getAllChatMessagesGrouped,
   saveWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
+  workspaceSessionCounts,
   getWorkspaces,
   saveAppSettings,
   getAppSettings,

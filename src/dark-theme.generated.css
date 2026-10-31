@@ -105,6 +105,7 @@
 :root[data-theme="dark"] .bg-\[\#262420\] { background-color: #dfddd9; }
 :root[data-theme="dark"] .bg-\[\#27272a\] { background-color: #d5d5d8; }
 :root[data-theme="dark"] .bg-\[\#2c2822\] { background-color: #dcd9d4; }
+:root[data-theme="dark"] .bg-\[\#3f3f46\] { background-color: #bababf; }
 :root[data-theme="dark"] .bg-\[\#a39b8b\] { background-color: #726b5e; }
 :root[data-theme="dark"] .bg-\[\#d7d0bc\] { background-color: #413b2a; }
 :root[data-theme="dark"] .bg-\[\#dfdacd\] { background-color: #312c21; }
@@ -155,10 +156,12 @@
 :root[data-theme="dark"] .from-\[\#fcfbfa\] { --tw-gradient-from: #16120e; }
 :root[data-theme="dark"] .hover\:bg-\[\#2e2e33\]:hover { background-color: #ccccd1; }
 :root[data-theme="dark"] .hover\:bg-\[\#32302b\]:hover { background-color: #d3d2ce; }
+:root[data-theme="dark"] .hover\:bg-\[\#52525b\]:hover { background-color: #a5a5ac; }
 :root[data-theme="dark"] .hover\:bg-\[\#d6cfbe\]:hover { background-color: #3f392b; }
 :root[data-theme="dark"] .hover\:bg-\[\#dfdacd\]:hover { background-color: #312c21; }
 :root[data-theme="dark"] .hover\:bg-\[\#e2dcce\]:hover { background-color: #302a1f; }
 :root[data-theme="dark"] .hover\:bg-\[\#e4dec9\]:hover { background-color: #342f1d; }
+:root[data-theme="dark"] .hover\:bg-\[\#e6e0d0\]:hover { background-color: #2d281b; }
 :root[data-theme="dark"] .hover\:bg-\[\#eae4d5\]:hover { background-color: #282317; }
 :root[data-theme="dark"] .hover\:bg-\[\#ede9de\]:hover { background-color: #201c13; }
 :root[data-theme="dark"] .hover\:bg-\[\#f3efe4\]:hover { background-color: #1a160d; }
@@ -169,6 +172,7 @@
 :root[data-theme="dark"] .hover\:text-\[\#181715\]:hover { color: #eae9e7; }
 :root[data-theme="dark"] .hover\:text-\[\#1c1b18\]:hover { color: #e6e6e4; }
 :root[data-theme="dark"] .hover\:text-\[\#221f1a\]:hover { color: #e4e2de; }
+:root[data-theme="dark"] .hover\:text-\[\#2c2822\]:hover { color: #dbd9d5; }
 :root[data-theme="dark"] .hover\:text-\[\#443e33\]:hover { color: #c9c5be; }
 :root[data-theme="dark"] .hover\:text-\[\#b45309\]:hover { color: #dfa171; }
 :root[data-theme="dark"] .ring-\[\#d4cdbd\] { --tw-ring-color: #403a2d; }
@@ -196,6 +200,7 @@
 :root[data-theme="dark"] .text-\[\#5d5648\] { color: #b4afa5; }
 :root[data-theme="dark"] .text-\[\#665e4f\] { color: #b0aba1; }
 :root[data-theme="dark"] .text-\[\#686050\] { color: #b0aba0; }
+:root[data-theme="dark"] .text-\[\#6b3d09\] { color: #e7c7a3; }
 :root[data-theme="dark"] .text-\[\#6b6251\] { color: #b1aba0; }
 :root[data-theme="dark"] .text-\[\#6d6657\] { color: #afaba1; }
 :root[data-theme="dark"] .text-\[\#6e6656\] { color: #b0aba1; }

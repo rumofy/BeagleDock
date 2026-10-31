@@ -9,6 +9,7 @@ const {
 const { createLiveFiles, liveDirectories } = require("./live-files");
 const { createAgyChildOutput } = require("./agy-child-output");
 const { createCodexStream } = require("./codex-stream");
+const { saveAttachments, findMentions, buildInput, dataRoot } = require("./attachments");
 const {
   claudeToolActivity,
   reasoningTail,
@@ -123,6 +124,8 @@ function createCliRunner({
   // Turno espontâneo da CLI (o agente principal recebeu o resultado de um agente em segundo plano
   // e responde sozinho): o app o guarda e avisa, em vez de descartar.
   onAutoTurn = () => {},
+  // Pasta onde os anexos de cada conversa são gravados.
+  attachmentsRoot = dataRoot(),
 }) {
   const codex = createCodexStream({
     spawn,
@@ -138,8 +141,10 @@ function createCliRunner({
   const busy = new Set();
   const cancelled = new Set();
   let closed = false;
-  const output = (sessionId, data, pid) =>
-    emit("pty-data", { sessionId, data, pid });
+  // `shellId` é o id do evento da linha do tempo do comando ou da ferramenta que produziu a saída;
+  // sem ele, a saída não pôde ser atribuída a uma origem e fica só na visão geral.
+  const output = (sessionId, data, pid, shellId) =>
+    emit("pty-data", { sessionId, data, pid, ...(shellId ? { shellId } : {}) });
   function kill(sessionId) {
     approvals?.cancelSession(sessionId);
     codex.kill(sessionId);
@@ -218,9 +223,26 @@ function createCliRunner({
       if (cancelled.has(sessionId) || closed)
         return { ok: false, cancelled: true, error: "Execução interrompida." };
       const nativeId = link?.nativeId;
+      // Anexos e @arquivos viram a entrada nativa de cada CLI; o que a CLI não suporta vira aviso.
+      const built = buildInput(providerId, {
+        prompt,
+        files: saveAttachments({
+          sessionId,
+          attachments: payload.attachments,
+          root: attachmentsRoot,
+        }),
+        mentions: findMentions(prompt, cwd),
+      });
+      if (built.warnings.length)
+        emit("cli-notice", {
+          sessionId,
+          responseMessageId: payload.responseMessageId,
+          message: built.warnings.join(" "),
+        });
       if (providerId === "codex")
         return await codex.execute({
           ...payload,
+          input: built.input,
           bin,
           cwd,
           model,
@@ -329,13 +351,18 @@ function createCliRunner({
           if (current.liveFiles) {
             if (providerId === "antigravity" && id !== current.nativeId && !current.childOutputs.has(id)) {
               current.childOutputs.set(id, createAgyChildOutput({
-                onCommand: (command) => {
+                onCommand: (command, key) => {
                   activity("Executando comando…", oneLine(command));
-                  output(sessionId, `$ ${command}\r\n`, child.pid);
+                  output(sessionId, `$ ${command}\r\n`, child.pid, `child-${id}-${key}`);
                 },
-                onOutput: (text) => {
+                onOutput: (text, key) => {
                   activity("Recebendo saída do comando…");
-                  output(sessionId, text, child.pid);
+                  output(
+                    sessionId,
+                    text,
+                    child.pid,
+                    key ? `child-${id}-${key}` : undefined,
+                  );
                 },
                 onToolStart: ({ id: key, name, command, args: toolArgs }) => {
                   if (["send_message", "manage_inbox"].includes(name)) return;
@@ -403,7 +430,17 @@ function createCliRunner({
               }
               current.hasLiveOutput = true;
               activity("Recebendo saída do comando…");
-              output(sessionId, data, child.pid);
+              // Antigravity: o log da tarefa é do passo. Claude: só dá para atribuir com uma
+              // ferramenta em andamento; com várias, a origem é ambígua e não é inventada.
+              const liveShell =
+                meta.stepIndex && !meta.conversationId
+                  ? `step-${meta.stepIndex}`
+                  : providerId === "claude" &&
+                      current.tools?.size === 1 &&
+                      current.events.get([...current.tools][0])?.kind === "command"
+                    ? [...current.tools][0]
+                    : undefined;
+              output(sessionId, data, child.pid, liveShell);
             },
           });
         };
@@ -605,11 +642,21 @@ function createCliRunner({
                 current.agyTools ||= new Map();
                 const previous = current.agyTools.get(step.step_index);
                 const info = step.tool_info || {};
+                // manage_task devolve a saída de um comando assíncrono: o TaskId termina em `task-N`, em que
+                // N é o passo do run_command que o iniciou, e a saída pertence à aba desse comando.
+                const taskStep = /\/?task-(\d+)$/.exec(
+                  String(info.parameters?.TaskId || ""),
+                )?.[1];
                 const command =
                   info.parameters?.CommandLine || info.parameters?.command;
+                // Só comandos têm shell; ler arquivo, MCP e outras ferramentas ficam só na visão geral.
+                const shellId =
+                  command || taskStep
+                    ? `step-${taskStep ?? step.step_index}`
+                    : undefined;
                 if (command && !previous) {
                   activity("Executando comando…", oneLine(command));
-                  output(sessionId, `$ ${command}\r\n`, child.pid);
+                  output(sessionId, `$ ${command}\r\n`, child.pid, shellId);
                 }
                 const value =
                   typeof info.output === "string" ? info.output : "";
@@ -624,14 +671,16 @@ function createCliRunner({
                     sessionId,
                     value.startsWith(old) ? value.slice(old.length) : value,
                     child.pid,
+                    shellId,
                   );
                 if (step.state === "DONE" && previous?.state !== "DONE") {
-                  if (value) output(sessionId, "\r\n", child.pid);
+                  if (value) output(sessionId, "\r\n", child.pid, shellId);
                   if (info.error)
                     output(
                       sessionId,
                       `Erro: ${info.error.message || "Falha na ferramenta."}\r\n`,
                       child.pid,
+                      shellId,
                     );
                 }
                 current.agyTools.set(step.step_index, {
@@ -891,7 +940,12 @@ function createCliRunner({
                   block.input?.command ||
                   block.input?.description ||
                   block.name;
-                output(sessionId, `$ ${command}\r\n`, child.pid);
+                output(
+                  sessionId,
+                  `$ ${command}\r\n`,
+                  child.pid,
+                  current.events.get(block.id)?.kind === "command" ? block.id : undefined,
+                );
               }
             }
             if (turn) turn.hasDeltas = false;
@@ -921,7 +975,14 @@ function createCliRunner({
               if (seen && text.startsWith(seen)) text = text.slice(seen.length);
               current.liveTexts?.delete(block.tool_use_id);
               if (text)
-                output(sessionId, text.slice(0, 16000) + "\r\n", child.pid);
+                output(
+                  sessionId,
+                  text.slice(0, 16000) + "\r\n",
+                  child.pid,
+                  current.events.get(block.tool_use_id)?.kind === "command"
+                    ? block.tool_use_id
+                    : undefined,
+                );
             }
           } else if (
             ev.type === "item.completed" &&
@@ -932,7 +993,7 @@ function createCliRunner({
             ev.type === "item.started" &&
             ev.item?.type === "command_execution"
           )
-            output(sessionId, `$ ${ev.item.command}\r\n`, child.pid);
+            output(sessionId, `$ ${ev.item.command}\r\n`, child.pid, ev.item.id);
           else if (
             ["item.updated", "item.completed"].includes(ev.type) &&
             ev.item?.type === "command_execution"
@@ -945,9 +1006,10 @@ function createCliRunner({
                 sessionId,
                 text.startsWith(old) ? text.slice(old.length) : text,
                 child.pid,
+                ev.item.id,
               );
             if (ev.type === "item.completed") {
-              output(sessionId, "\r\n", child.pid);
+              output(sessionId, "\r\n", child.pid, ev.item.id);
               current.commandOutputs.delete(ev.item.id);
             } else current.commandOutputs.set(ev.item.id, text);
           } else if (ev.type === "error" || ev.type === "turn.failed") {
@@ -1081,15 +1143,15 @@ function createCliRunner({
         };
         try {
           current.activity?.("Aguardando a CLI…");
-          if (providerId === "codex") current.child.stdin.end(prompt);
+          if (providerId === "codex") current.child.stdin.end(built.text);
           else
             current.child.stdin.write(
               JSON.stringify(
                 providerId === "antigravity"
-                  ? { event: "user", message: { content: prompt } }
+                  ? { event: "user", message: { content: built.text } }
                   : {
                       type: "user",
-                      message: { role: "user", content: prompt },
+                      message: { role: "user", content: built.content },
                     },
               ) + "\n",
             );

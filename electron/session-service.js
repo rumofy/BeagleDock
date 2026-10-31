@@ -176,6 +176,7 @@ function createSessionService({ store, runner }) {
     isBusy: () => turns.size > 0,
     // Sessões com turno rodando ou na fila (a fila aguarda dentro de `turns`).
     activeCount: () => turns.size,
+    activeIds: () => [...turns.keys()],
     remove,
     // Turno que a CLI começou sozinha (agente principal respondendo depois de um agente em segundo
     // plano): grava como uma resposta nova da conversa.

@@ -4,11 +4,13 @@ import { useTheme } from "./hooks/useTheme";
 import { ApprovalPrompt } from "./features/approvals/ApprovalPrompt";
 import { ChatHeader } from "./features/chat/ChatHeader";
 import { ChatView } from "./features/chat/ChatView";
+import { PermissionShortcuts } from "./features/chat/PermissionShortcuts";
 import { MemoryHeader } from "./features/memory/MemoryHeader";
 import { MemoryTab } from "./features/memory/MemoryTab";
 import { HistoryModal } from "./features/modals/HistoryModal";
 import { SkillsModal } from "./features/modals/SkillsModal";
 import { WorkspaceModal } from "./features/modals/WorkspaceModal";
+import { WorkspaceManager } from "./features/modals/WorkspaceManager";
 import { SettingsHeader } from "./features/settings/SettingsHeader";
 import { SettingsTab } from "./features/settings/SettingsTab";
 import { ProviderList } from "./features/sidebar/ProviderList";
@@ -68,8 +70,10 @@ function AppShell() {
         </div>
       </main>
 
+      <PermissionShortcuts />
       <ApprovalPrompt />
       <WorkspaceModal />
+      <WorkspaceManager />
       <SkillsModal />
       <HistoryModal />
     </div>

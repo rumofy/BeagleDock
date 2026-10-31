@@ -37,6 +37,9 @@ const zoom = require("./zoom");
 const { openInEditor } = require("./editor");
 const { openExternalUrl, parseExternalUrl } = require("./external-links");
 const { createNativeCommands } = require("./native-commands");
+const { setAutostart } = require("./autostart");
+const { listFiles, searchFiles } = require("./project-files");
+const { inspectWorkspace, validateWorkspaceEdit } = require("./workspace-status");
 const nativeCommands = createNativeCommands();
 const agyUsage = createAgyUsage();
 const providerUsage = createProviderUsage({
@@ -67,6 +70,9 @@ const {
   getChatMessages,
   getAllChatMessagesGrouped,
   saveWorkspace,
+  updateWorkspace,
+  deleteWorkspace,
+  workspaceSessionCounts,
   getWorkspaces,
   saveAppSettings,
   getAppSettings,
@@ -533,6 +539,9 @@ async function pushToolsUpdate() {
   return pushing;
 }
 let background;
+// Título e CLI de cada conversa, para o menu da bandeja listar as que estão rodando.
+const sessionInfo = new Map();
+const providerNames = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
 const approvals = require("./approvals").createApprovalBroker({
   emit: (channel, payload) => {
     sendToRenderer(channel, payload);
@@ -549,6 +558,7 @@ const cliRunner = createCliRunner({
     if (payload.discard) return;
     const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
     background.notifyTurnFinished({
+      sessionId: payload.sessionId,
       title: `${names[payload.providerId] || payload.providerId} respondeu`,
       body: String(payload.ok ? payload.text : payload.error || "Falha na execução.")
         .replace(/\s+/g, " ")
@@ -608,6 +618,14 @@ background = createBackgroundController({
   // Turnos rodando ou na fila de qualquer sessão.
   runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()),
   approvalsList: () => approvals.list(),
+  runningSessions: () =>
+    sessionService.activeIds().map((id) => ({
+      id,
+      title: sessionInfo.get(id)?.title,
+      providerName: providerNames[sessionInfo.get(id)?.providerId],
+    })),
+  // A interface leva o chat até a conversa (clique no menu da bandeja ou na notificação).
+  openSession: (sessionId) => sendToRenderer("open-session", { sessionId }),
   bypass: smokeRun,
   onQuit: shutdown,
 });
@@ -637,6 +655,8 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: "#f7f5ef",
+    // Aberto com o sistema (--hidden) e com a bandeja funcionando, começa só na bandeja.
+    show: false,
     title: "BeagleDock - Multi-AI Cockpit",
     icon: iconPath,
     autoHideMenuBar: true,
@@ -651,6 +671,10 @@ function createWindow() {
     },
   });
   background.attachWindow(mainWindow);
+  mainWindow.once("ready-to-show", () => {
+    if (process.argv.includes("--hidden") && background.trayReady() && !smokeRun) return;
+    mainWindow.show();
+  });
   // Zoom da interface: atalhos Ctrl +/-/0, persistido nas configurações.
   const applyZoom = (factor) => {
     const value = zoom.clamp(factor);
@@ -1004,7 +1028,10 @@ module.exports.ready = app.whenReady().then(async () => {
   // IPC: Sessões e Mensagens no SQLite
   handle("save-session", async (_event, session) => {
     try {
-      return await sessionService.saveSession(session);
+      const saved = await sessionService.saveSession(session);
+      if (session?.id)
+        sessionInfo.set(session.id, { title: session.title, providerId: session.providerId });
+      return saved;
     } catch (e) {
       return { success: false, error: e.message };
     }
@@ -1035,6 +1062,9 @@ module.exports.ready = app.whenReady().then(async () => {
           getAppSettings(),
         ]);
 
+      for (const saved of sessions)
+        sessionInfo.set(saved.id, { title: saved.title, providerId: saved.providerId });
+      background.setRunInBackground(appSettings?.runInBackground !== false);
       let workspaces = savedWorkspaces;
       if (!workspaces || workspaces.length === 0) {
         workspaces = discoverLocalWorkspaces();
@@ -1108,9 +1138,66 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
+  // Lista do projeto guardada por poucos segundos: o autocomplete consulta a cada tecla.
+  const projectFileCache = new Map();
+  handle("search-project-files", async (_event, request) => {
+    try {
+      const cwd = validCwd(request?.cwd);
+      let entry = projectFileCache.get(cwd);
+      if (!entry || Date.now() - entry.at > 10000) {
+        entry = { at: Date.now(), files: await listFiles(cwd) };
+        projectFileCache.set(cwd, entry);
+      }
+      return { success: true, files: searchFiles(entry.files, request?.query) };
+    } catch (e) {
+      return { success: false, error: e.message, files: [] };
+    }
+  });
+
+  handle("list-workspace-status", async () => {
+    try {
+      const counts = await workspaceSessionCounts();
+      return {
+        success: true,
+        workspaces: (await getWorkspaces()).map((ws) => inspectWorkspace(ws, counts)),
+      };
+    } catch (e) {
+      return { success: false, error: e.message, workspaces: [] };
+    }
+  });
+
+  handle("update-workspace", async (_event, request) => {
+    try {
+      const edit = validateWorkspaceEdit(request || {}, { validCwd });
+      const hasAIMemory = fs.existsSync(path.join(edit.path, ".ai-memory.toml"));
+      return {
+        success: true,
+        workspace: await updateWorkspace(String(request.id), { ...edit, hasAIMemory }),
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  handle("delete-workspace", async (_event, id) => {
+    try {
+      return await deleteWorkspace(String(id));
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
   handle("save-app-settings", async (_event, settingsObj) => {
     try {
-      return await saveAppSettings(settingsObj);
+      // Iniciar com o sistema mexe em um arquivo do usuário: se falhar, nada é gravado.
+      if (Object.hasOwn(settingsObj || {}, "launchAtLogin")) {
+        const auto = setAutostart(!!settingsObj.launchAtLogin);
+        if (!auto.ok) return { success: false, error: auto.error };
+      }
+      const result = await saveAppSettings(settingsObj);
+      if (Object.hasOwn(settingsObj || {}, "runInBackground"))
+        background.setRunInBackground(settingsObj.runInBackground !== false);
+      return result;
     } catch (e) {
       return { success: false, error: e.message };
     }

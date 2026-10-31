@@ -11,7 +11,7 @@ function friendlyTool(tool) {
   return name || "uma ferramenta";
 }
 
-function describeState({ running = 0, waiting = 0 } = {}) {
+function describeState({ running = 0, waiting = 0, sessions = [] } = {}) {
   const parts = [];
   if (running > 0)
     parts.push(`${running} ${running === 1 ? "sessão rodando" : "sessões rodando"}`);
@@ -24,13 +24,54 @@ function describeState({ running = 0, waiting = 0 } = {}) {
     status,
     summary: parts.length ? parts.join(" · ") : "Nenhuma sessão em execução",
     tooltip: parts.length ? `BeagleDock · ${parts.join(" · ")}` : "BeagleDock",
+    sessions,
   };
+}
+
+// Selo de estado no canto do ícone da bandeja: âmbar rodando, vermelho aguardando permissão.
+// `bitmap` é BGRA (o formato do nativeImage no Linux); ocioso fica sem selo.
+const BADGES = { running: [245, 158, 11], waiting: [225, 29, 72] };
+function drawBadge(bitmap, size, status) {
+  const color = BADGES[status];
+  if (!color) return bitmap;
+  const out = Buffer.from(bitmap);
+  const radius = Math.max(3, Math.round(size * 0.24));
+  const cx = size - radius - 1;
+  const cy = size - radius - 1;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const distance = Math.hypot(x - cx, y - cy);
+      if (distance > radius + 1) continue;
+      const offset = (y * size + x) * 4;
+      // Contorno branco de 1 px e miolo colorido, para o selo aparecer em qualquer fundo de painel.
+      const [r, g, b] = distance > radius - 0.5 ? [255, 255, 255] : color;
+      out[offset] = b;
+      out[offset + 1] = g;
+      out[offset + 2] = r;
+      out[offset + 3] = 255;
+    }
+  return out;
+}
+
+const SESSION_LIMIT = 8;
+// Itens do menu para as sessões em andamento, com a que aguarda permissão primeiro.
+function sessionMenuItems(sessions, open) {
+  const ordered = [...sessions].sort((a, b) => Number(!!b.waiting) - Number(!!a.waiting));
+  const items = ordered.slice(0, SESSION_LIMIT).map((s) => ({
+    label: `${s.waiting ? "⚠ " : "● "}${String(s.title || "Conversa").slice(0, 48)}${s.providerName ? ` · ${s.providerName}` : ""}`,
+    click: () => open(s.id),
+  }));
+  if (ordered.length > SESSION_LIMIT)
+    items.push({ label: `… e mais ${ordered.length - SESSION_LIMIT}`, enabled: false });
+  return items;
 }
 
 // Fechar nunca encerra o app. Sem bandeja funcional (alguns desktops Linux não a exibem),
 // minimiza em vez de esconder, para a janela não ficar inalcançável.
-function closeAction({ quitting, trayReady }) {
+function closeAction({ quitting, trayReady, runInBackground = true }) {
   if (quitting) return "allow";
+  // Com o segundo plano desligado, fechar a janela é pedir para sair (com confirmação se houver sessão).
+  if (!runInBackground) return "quit";
   return trayReady ? "hide" : "minimize";
 }
 
@@ -51,6 +92,10 @@ function createBackgroundController({
   iconPath,
   runningCount,
   approvalsList,
+  // Sessões em andamento para o menu: [{ id, title, providerName }].
+  runningSessions = () => [],
+  // Avisa a interface para abrir uma conversa (clique no menu ou na notificação).
+  openSession = () => {},
   bypass = false,
   onQuit = () => {},
   intervalMs = 2000,
@@ -61,6 +106,8 @@ function createBackgroundController({
   let timer = null;
   let lastKey = "";
   let shutDown = false;
+  let runInBackground = true;
+  const iconCache = new Map();
   const runShutdown = () => {
     if (shutDown) return;
     shutDown = true;
@@ -75,6 +122,28 @@ function createBackgroundController({
     win.show();
     win.focus();
   };
+  // Traz a janela e leva a interface até a conversa.
+  const showSession = (sessionId) => {
+    showWindow();
+    if (sessionId) openSession(sessionId);
+  };
+
+  // Ícone por estado, gerado do ícone do app com o selo; guardado para não redesenhar.
+  function iconFor(status) {
+    if (!baseImage) return null;
+    if (!iconCache.has(status)) {
+      const size = 22;
+      const resized = baseImage.resize({ width: size, height: size });
+      iconCache.set(
+        status,
+        BADGES[status]
+          ? nativeImage.createFromBitmap(drawBadge(resized.toBitmap(), size, status), { width: size, height: size })
+          : resized,
+      );
+    }
+    return iconCache.get(status);
+  }
+  let baseImage = null;
 
   function confirmQuit() {
     const running = runningCount();
@@ -102,9 +171,13 @@ function createBackgroundController({
   }
 
   function refresh(force = false) {
+    const approvals = approvalsList();
+    const waitingIds = new Set(approvals.map((a) => a.sessionId));
+    const sessions = runningSessions().map((s) => ({ ...s, waiting: waitingIds.has(s.id) }));
     const state = describeState({
       running: runningCount(),
-      waiting: approvalsList().length,
+      waiting: approvals.length,
+      sessions,
     });
     // Enquanto há sessão rodando, o sistema não suspende o app (a tela pode apagar).
     if (state.status !== "idle" && blockerId === null)
@@ -113,15 +186,19 @@ function createBackgroundController({
       powerSaveBlocker.stop(blockerId);
       blockerId = null;
     }
-    const key = `${state.status}|${state.summary}`;
+    const key = `${state.status}|${state.summary}|${sessions.map((s) => `${s.id}:${s.title}:${s.waiting}`).join(",")}`;
     if (!tray || (!force && key === lastKey)) return state;
     lastKey = key;
     tray.setToolTip(state.tooltip);
+    const icon = iconFor(state.status);
+    if (icon) tray.setImage(icon);
+    const items = sessionMenuItems(sessions, showSession);
     tray.setContextMenu(
       Menu.buildFromTemplate([
         { label: "Abrir BeagleDock", click: showWindow },
         { type: "separator" },
         { label: state.summary, enabled: false },
+        ...items,
         { type: "separator" },
         { label: "Sair", click: requestQuit },
       ]),
@@ -143,7 +220,7 @@ function createBackgroundController({
         title: "BeagleDock · permissão pendente",
         body: `${approval.providerId} quer ${/^(executar|editar|uma)/.test(friendlyTool(approval.tool)) ? friendlyTool(approval.tool) : `usar ${friendlyTool(approval.tool)}`}`,
       });
-      note.on("click", showWindow);
+      note.on("click", () => showSession(approval.sessionId));
       note.show();
     }
   }
@@ -154,7 +231,8 @@ function createBackgroundController({
         const image = nativeImage.createFromPath(iconPath);
         // Sem imagem (ex.: dist/ não gerado) a bandeja ficaria invisível: não conta como pronta.
         if (image.isEmpty()) throw new Error("ícone da bandeja ausente");
-        tray = new Tray(image.resize({ width: 22, height: 22 }));
+        baseImage = image;
+        tray = new Tray(iconFor("idle"));
         tray.on("click", showWindow);
       } catch {
         tray = null;
@@ -167,10 +245,11 @@ function createBackgroundController({
     trayReady: () => !!tray,
     attachWindow(win) {
       win.on("close", (event) => {
-        const action = closeAction({ quitting, trayReady: !!tray });
+        const action = closeAction({ quitting, trayReady: !!tray, runInBackground });
         if (action === "allow") return;
         event.preventDefault();
         if (action === "hide") win.hide();
+        else if (action === "quit") requestQuit();
         else win.minimize();
       });
     },
@@ -203,15 +282,21 @@ function createBackgroundController({
     },
     onApprovalsChanged: notifyNewApprovals,
     // Resposta espontânea da CLI: avisa só se a janela não está à frente.
-    notifyTurnFinished({ title, body }) {
+    notifyTurnFinished({ title, body, sessionId }) {
       const win = getWindow();
       const visible = win && !win.isDestroyed() && win.isVisible() && win.isFocused();
       if (visible || !Notification.isSupported()) return;
       const note = new Notification({ title, body });
-      note.on("click", showWindow);
+      note.on("click", () => showSession(sessionId));
       note.show();
     },
     showWindow,
+    showSession,
+    // Preferência "manter na bandeja ao fechar a janela".
+    setRunInBackground(value) {
+      runInBackground = value !== false;
+    },
+    getRunInBackground: () => runInBackground,
     refresh,
     dispose() {
       clearInterval(timer);
@@ -225,6 +310,8 @@ module.exports = {
   createBackgroundController,
   describeState,
   closeAction,
+  drawBadge,
+  sessionMenuItems,
   quitAction,
   friendlyTool,
 };

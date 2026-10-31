@@ -35,6 +35,13 @@ export interface WorkspaceItem {
   hasAIMemory: boolean;
 }
 
+/** Cadastro mais o estado atual da pasta no disco, para a tela de manutenção. */
+export interface WorkspaceStatus extends WorkspaceItem {
+  exists: boolean;
+  isGitRepo: boolean;
+  conversations: number;
+}
+
 /** Quanto da janela de contexto do modelo está ocupado (e a última compactação). */
 export interface ContextInfo {
   source?: string;
@@ -62,6 +69,8 @@ export interface ChatSession {
   cwd: string;
   ptyLog?: string[];
   ptyRaw?: string;
+  /** Saída de cada comando ou ferramenta, por id do evento da linha do tempo. */
+  shellRaw?: Record<string, string>;
   nativeSessionId?: string;
   /** Fora da lista principal, com o histórico preservado. */
   archived?: boolean;
@@ -232,6 +241,14 @@ export interface AppSettings {
   theme: "cream" | "dark" | "system";
   /** Fator de zoom da interface (0,7 a 1,6). */
   zoomFactor?: number;
+  /** Manter o app na bandeja ao fechar a janela (padrão: ligado). */
+  runInBackground?: boolean;
+  /** Iniciar junto com o sistema, já na bandeja (Linux). */
+  launchAtLogin?: boolean;
+  /** Fecha sozinha a aba de um comando concluído com sucesso (padrão: ligado). */
+  shellAutoClose?: boolean;
+  /** Segundos desde a última vez que a aba esteve na tela (padrão: 120). */
+  shellAutoCloseSeconds?: number;
   workspaces: WorkspaceItem[];
 }
 

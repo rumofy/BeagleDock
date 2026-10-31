@@ -7,6 +7,7 @@ import type {
   AIProviderId,
   AppNotification,
   AppSettings,
+  ChatAttachment,
   ChatEvent,
   ChatMessage,
   ContextInfo,
@@ -15,6 +16,7 @@ import type {
   SkillItem,
   UserProfile,
   WorkspaceItem,
+  WorkspaceStatus,
   AIProviderStatus,
 } from "./index";
 
@@ -111,6 +113,8 @@ export interface ExecutePromptPayload {
   effort: string;
   permission: string;
   cancelled: boolean;
+  /** Imagens e arquivos anexados, como data URL; o backend os grava e normaliza para cada CLI. */
+  attachments?: ChatAttachment[];
 }
 export interface NativeCommand {
   name: string;
@@ -187,8 +191,12 @@ export type PtyPayload = Record<string, unknown>;
 
 export interface StreamEvents {
   "tools-update": ToolsUpdate;
-  "pty-data": { sessionId: string; data: string; pid?: number };
+  "pty-data": { sessionId: string; data: string; pid?: number; shellId?: string };
   "pty-exit": { sessionId: string; [key: string]: unknown };
+  /** Pedido do backend (bandeja, notificação) para abrir uma conversa. */
+  "open-session": { sessionId: string };
+  /** Aviso do backend sobre o envio (ex.: a CLI não tem campo nativo para o anexo). */
+  "cli-notice": { sessionId: string; responseMessageId?: string; message: string };
   "cli-stream-chunk": {
     sessionId: string;
     responseMessageId?: string;
@@ -264,6 +272,10 @@ export interface BeagleAPI {
   setSessionArchived(id: string, archived: boolean): Promise<OkResult & { success?: boolean }>;
   pickDirectory(options?: { defaultPath?: string; title?: string }): Promise<PickDirectoryResult>;
   openInEditor(request: OpenInEditorRequest): Promise<OkResult>;
+  searchProjectFiles(request: { cwd: string; query: string }): Promise<{ success: boolean; error?: string; files: string[] }>;
+  listWorkspaceStatus(): Promise<{ success: boolean; error?: string; workspaces: WorkspaceStatus[] }>;
+  updateWorkspace(request: { id: string; name: string; path: string }): Promise<{ success: boolean; error?: string; workspace?: WorkspaceItem }>;
+  deleteWorkspace(id: string): Promise<{ success: boolean; error?: string; removed?: boolean }>;
   /** Abre um endereço http(s) no navegador padrão do sistema. */
   openExternalUrl(url: string): Promise<OkResult>;
   /** Comandos e skills lidos da própria CLI (`refresh` ignora o cache curto). */

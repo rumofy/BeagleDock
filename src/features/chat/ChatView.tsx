@@ -7,6 +7,7 @@ import { ContextBar } from "../../components/ContextBar";
 import { ChatMessageList } from "../../components/ChatMessageList";
 import type { FileTarget } from "../../components/LinkedText";
 import { ChatComposer } from "./ChatComposer";
+import { ContinuationBanner } from "./ContinueInCli";
 
 export function ChatView() {
   const {
@@ -119,6 +120,7 @@ export function ChatView() {
               onResolve={resolveApproval}
             />
           ))}
+          <ContinuationBanner />
           <ChatComposer />
         </div>
       </div>

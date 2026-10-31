@@ -9,7 +9,10 @@ app.on("web-contents-created", (_event, contents) => {
     failures.push(error.message),
   );
   contents.on("console-message", (details) => {
-    if (details.message?.includes("Uncaught")) failures.push(details.message);
+    if (details.message?.includes("Uncaught")) {
+      failures.push(details.message);
+      console.error(`[renderer] ${details.message}`);
+    }
   });
   contents.on("render-process-gone", (_event, details) =>
     failures.push(details.reason),
@@ -161,13 +164,101 @@ async function send(win, text, expected) {
   const state = await win.webContents.executeJavaScript(
     "window.beagleAPI.getSavedState()",
   );
-  assert.equal(state.sessions.length, 3);
-  assert.equal(new Set(state.sessions.map((s) => s.nativeSessionId)).size, 3);
+  // A conversa criada por "Continuar em outra CLI" no primeiro estágio sobrevive à reinicialização.
+  const expectedSessions = stage === "restart" ? 4 : 3;
+  assert.equal(state.sessions.length, expectedSessions);
+  assert.equal(new Set(state.sessions.map((s) => s.nativeSessionId)).size, expectedSessions);
   assert.ok(state.sessions.every((s) => s.nativeSessionId));
   await waitFor(
     win,
     `!!document.querySelector('[data-testid="live-shell"] .xterm')`,
   );
+  // Manutenção de workspaces: estado da pasta, renomear (persistido) e remover só do cadastro.
+  {
+    const click = (expr) => win.webContents.executeJavaScript(`(${expr}).click()`);
+    await click(`document.querySelector('button[aria-label="Gerenciar workspaces"]')`);
+    await waitFor(win, `document.querySelectorAll('[data-testid="workspace-list"] li').length>=1 && document.querySelector('[data-testid="workspace-list"]').innerText.includes('pasta encontrada')`);
+    const before = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>[x.id,x.cwd,x.nativeSessionId].join('|')).sort())`);
+    await click(`document.querySelector('[data-testid="workspace-list"] button[aria-label^="Editar"]')`);
+    await win.webContents.executeJavaScript(`(()=>{const input=document.querySelector('input[aria-label="Nome do workspace"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Renomeado ${stage}');input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await click(`[...document.querySelectorAll('[role="dialog"] button')].find(b=>b.innerText.trim()==='Salvar')`);
+    await waitFor(win, `document.querySelector('[data-testid="workspace-list"]').innerText.includes('Renomeado ${stage}')`);
+    assert.deepEqual(
+      await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>[x.id,x.cwd,x.nativeSessionId].join('|')).sort())`),
+      before,
+      "renomear o workspace não altera as conversas nem os ids nativos",
+    );
+    await click(`document.querySelector('[role="dialog"] button[aria-label="Fechar"]')`);
+    await waitFor(win, `!document.querySelector('[role="dialog"]')`);
+  }
+  if (stage === "first") {
+    // Continuar em outra CLI: conversa nova com o resumo; a original e o id nativo ficam intactos.
+    const before = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
+    const origin = before.sessions.find((x) => x.status !== "archived");
+    await win.webContents.executeJavaScript(`document.querySelector('button[title^="Continuar esta tarefa em outra CLI"]').click()`);
+    await waitFor(win, `document.querySelectorAll('[role="menuitem"]').length>=2`);
+    await win.webContents.executeJavaScript(`document.querySelector('[role="menuitem"]').click()`);
+    await waitFor(win, `document.querySelector('header').innerText.includes('Continuação:')`);
+    await waitFor(win, `document.body.innerText.includes('Pedido atual: confira o estado real do projeto')`);
+    const after = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
+    assert.equal(after.sessions.length, before.sessions.length + 1, "criou uma conversa nova");
+    const created = after.sessions.find((x) => !before.sessions.some((y) => y.id === x.id));
+    assert.match(created.title, /^Continuação: /);
+    assert.notEqual(created.providerId, after.sessions.find((x) => x.id === origin.id).providerId === created.providerId ? "igual" : "x");
+    for (const old of before.sessions) {
+      const same = after.sessions.find((x) => x.id === old.id);
+      assert.equal(same.nativeSessionId, old.nativeSessionId, "o id nativo da conversa original não muda");
+      assert.equal(same.title, old.title);
+    }
+    assert.equal(created.cwd, origin.cwd);
+    await waitFor(win, `!document.body.innerText.includes('EXECUTANDO CLI')`);
+    // Volta para a conversa original: os passos seguintes partem dela.
+    await win.webContents.executeJavaScript(`document.querySelector('[data-session-id="${origin.id}"]').click()`);
+    await waitFor(win, `!document.querySelector('header').innerText.includes('Continuação:')`);
+  }
+  // Anexos: soltar uma imagem e um arquivo no compositor e enviar; cada CLI recebe no formato dela.
+  if (stage === "restart") {
+    const provider = await win.webContents.executeJavaScript(
+      `window.beagleAPI.getSavedState().then(s=>{const el=document.querySelector('header');return el.innerText})`,
+    );
+    await win.webContents.executeJavaScript(`(()=>{
+      const form=document.querySelector('button[type="submit"]').form;
+      const png=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),c=>c.charCodeAt(0));
+      const data=new DataTransfer();
+      data.items.add(new File([png],'print.png',{type:'image/png'}));
+      data.items.add(new File(['log de erro'],'erro.log',{type:'text/plain'}));
+      form.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));
+    })()`);
+    await waitFor(win, `document.body.innerText.includes('print.png') && document.body.innerText.includes('erro.log')`);
+    await win.webContents.executeJavaScript(
+      `(()=>{const input=document.querySelector('input[placeholder^="Mensagem"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'smoke-attach analisa isso');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    await waitFor(win, `!document.querySelector('button[type="submit"]').disabled`);
+    await win.webContents.executeJavaScript(`document.querySelector('button[type="submit"]').form.requestSubmit()`);
+    await waitFor(win, `!document.body.innerText.includes('EXECUTANDO CLI') && document.body.innerText.includes('fixture resposta')`);
+    const readLines = (file) => {
+      try {
+        return require("fs").readFileSync(path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, file), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
+      } catch {
+        return [];
+      }
+    };
+    const claude = readLines("received-claude.jsonl").find((r) => r.text.includes("smoke-attach"));
+    const agy = readLines("received-agy.jsonl").find((r) => r.text.includes("smoke-attach"));
+    const codex = readLines("received-codex-input.jsonl").find((types) => types.includes("localImage"));
+    const delivered = [claude, agy, codex].filter(Boolean);
+    assert.equal(delivered.length >= 1, true, "a CLI da conversa recebeu a mensagem com anexos");
+    if (claude) {
+      assert.deepEqual(claude.blocks, ["image:image/png", "text"]);
+      assert.match(claude.text, /Arquivos anexados:\n- .*erro\.log/);
+    }
+    if (agy) {
+      assert.match(agy.text, /print\.png.*\(imagem\)/s);
+      await waitFor(win, `document.body.innerText.includes('Antigravity não tem campo nativo de imagem')`);
+    }
+    if (codex) assert.deepEqual(codex.slice(0, 3), ["text", "localImage", "mention:erro.log"]);
+    await waitFor(win, `[...document.querySelectorAll('img[alt="print.png"]')].length>=1`);
+  }
   if (stage === "restart") {
     const submit = async (text) => {
       await win.webContents.executeJavaScript(
@@ -283,7 +374,7 @@ async function send(win, text, expected) {
         `document.querySelector('header').innerText.includes('Nova sessão')`,
       );
       await win.webContents.executeJavaScript(
-        `window.__liveOutput='';window.__unsubscribeLive?.();window.__unsubscribeLive=window.beagleAPI.on('pty-data',p=>{window.__liveOutput+=p.data;});void 0;`,
+        `window.__liveOutput='';window.__shellOutput={};window.__unsubscribeLive?.();window.__unsubscribeLive=window.beagleAPI.on('pty-data',p=>{window.__liveOutput+=p.data;if(p.shellId)window.__shellOutput[p.shellId]=(window.__shellOutput[p.shellId]||'')+p.data;});void 0;`,
       );
       await win.webContents.executeJavaScript(
         `(()=>{const input=document.querySelector('input[placeholder^="Mensagem"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'smoke-live ${index}');input.dispatchEvent(new Event('input',{bubbles:true}));})()`,
@@ -321,6 +412,14 @@ async function send(win, text, expected) {
         true,
       );
       await waitFor(win, `window.__liveOutput.includes('LIVE_MIDDLE')`);
+      if (index === 1) {
+        // Codex: dois comandos em paralelo chegam etiquetados e cada um ganha a própria aba.
+        await waitFor(win, `window.__shellOutput['live-cmd']?.includes('LIVE_FIRST') && window.__shellOutput['live-cmd-2']?.includes('PARALLEL_BUILD')`);
+        assert.equal(await win.webContents.executeJavaScript(`!window.__shellOutput['live-cmd'].includes('PARALLEL_BUILD') && !window.__shellOutput['live-cmd-2'].includes('LIVE_FIRST')`), true, "a saída de cada comando fica na origem dele");
+        await waitFor(win, `[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].map(t=>t.innerText).join('|').includes('fixture tests') && [...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].map(t=>t.innerText).join('|').includes('fixture build')`);
+        await win.webContents.executeJavaScript(`[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].find(t=>t.innerText.includes('fixture build')).click()`);
+        await waitFor(win, `[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].find(t=>t.innerText.includes('fixture build')).getAttribute('aria-selected')==='true'`);
+      }
       if (index === 1) await waitFor(win, `document.body.innerText.includes('Analisando um comando com argumentos extensos')`);
       assert.equal(
         await win.webContents.executeJavaScript(
@@ -662,11 +761,81 @@ async function send(win, text, expected) {
       ),
       ["update"],
     );
+    // Auto-close das abas do shell: ligado por padrão; desligar é gravado e sobrevive à reinicialização.
+    const box = `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Fechar sozinha a aba'))`;
+    assert.equal(await win.webContents.executeJavaScript(`${box}.checked`), true);
+    await win.webContents.executeJavaScript(`${box}.click()`);
+    await waitFor(win, `${box}.checked===false && ${box}.closest('div').querySelector('select[aria-label="Tempo para fechar a aba concluída"]').disabled`);
+    assert.equal(
+      (await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`)).settings?.shellAutoClose,
+      false,
+      "a preferência foi gravada",
+    );
+    // Segundo plano: desligar “manter na bandeja” e ligar “iniciar com o sistema” (arquivo no HOME do teste).
+    const bg = (text) => `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes(${JSON.stringify(text)}))`;
+    assert.equal(await win.webContents.executeJavaScript(`${bg("Manter o BeagleDock na bandeja")}.checked`), true);
+    assert.equal(await win.webContents.executeJavaScript(`${bg("Iniciar junto com o sistema")}.checked`), false);
+    await win.webContents.executeJavaScript(`${bg("Iniciar junto com o sistema")}.click()`);
+    await waitFor(win, `${bg("Iniciar junto com o sistema")}.checked===true`);
+    const autostartFile = path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop");
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===true)`);
+    assert.match(require("fs").readFileSync(autostartFile, "utf8"), /--hidden/);
+    await win.webContents.executeJavaScript(`${bg("Manter o BeagleDock na bandeja")}.click()`);
+    await waitFor(win, `${bg("Manter o BeagleDock na bandeja")}.checked===false`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.runInBackground===false)`);
+    // Volta ao padrão: com o segundo plano desligado, fechar a janela encerra o app, e o estágio
+    // seguinte fecha a janela esperando a bandeja.
+    await win.webContents.executeJavaScript(`${bg("Manter o BeagleDock na bandeja")}.click()`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.runInBackground===true)`);
   } else {
+    const closed = await win.webContents.executeJavaScript(
+      `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Fechar sozinha a aba'))?.checked`,
+    );
+    assert.equal(closed, false, "a preferência de auto-close sobrevive à reinicialização");
+    const persisted = await win.webContents.executeJavaScript(`({
+      tray: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Manter o BeagleDock na bandeja')).checked,
+      login: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Iniciar junto com o sistema')).checked,
+    })`);
+    assert.deepEqual(persisted, { tray: true, login: true }, "as preferências de segundo plano sobrevivem à reinicialização");
+    // Desfazer: iniciar com o sistema desligado remove o arquivo.
+    await win.webContents.executeJavaScript(`[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Iniciar junto com o sistema')).click()`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===false)`);
+    assert.equal(require("fs").existsSync(path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop")), false);
     const value = await win.webContents.executeJavaScript(
       `document.querySelector('select[aria-label="Antigravity: Política de ferramentas global"]').value`,
     );
     assert.equal(value, "strict");
+  }
+  {
+    // Alt+P liga o plano e Alt+M percorre os modos; o seletor do cabeçalho mostra o modo e a troca persiste.
+    await win.webContents.executeJavaScript(`document.querySelector('[data-session-id]').click()`);
+    await waitFor(win, `!!document.querySelector('select[data-control="permission"]')`);
+    const mode = () => win.webContents.executeJavaScript(`document.querySelector('select[data-control="permission"]').value`);
+    const press = (key) => win.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},altKey:true,bubbles:true,cancelable:true}))`);
+    const start = await mode();
+    await press("p");
+    await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='plan'`);
+    await press("p");
+    await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='edits'`);
+    await press("m");
+    await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full'`);
+    await press("m");
+    await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='inherit'`);
+    assert.ok(start);
+    const saved = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>x.permission))`);
+    assert.ok(saved.includes("inherit"), "a troca foi gravada na conversa");
+    // Volta para a aba de configurações, de onde o passo seguinte parte.
+    await win.webContents.executeJavaScript(`document.querySelector('button[title^="Configurações"]').click()`);
+    await waitFor(win, `!document.querySelector('input[placeholder^="Mensagem"]')`);
+  }
+  {
+    // Menu da bandeja e notificações pedem para abrir uma conversa: com a tela de configurações aberta,
+    // a interface volta ao chat e vai até ela.
+    const st = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
+    const target = st.sessions[st.sessions.length - 1];
+    assert.equal(await win.webContents.executeJavaScript(`!document.querySelector('input[placeholder^="Mensagem"]')`), true, "começa fora do chat");
+    win.webContents.send("open-session", { sessionId: target.id });
+    await waitFor(win, `!!document.querySelector('input[placeholder^="Mensagem"]') && document.querySelector('header').innerText.includes(${JSON.stringify(target.title)})`);
   }
   assert.deepEqual(failures, []);
   console.log(

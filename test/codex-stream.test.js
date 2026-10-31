@@ -635,3 +635,48 @@ test("Codex: turno que o app-server começa sozinho vira mensagem nova; compacta
   await second;
   runner.shutdown();
 });
+
+test("Codex: dois comandos em paralelo saem etiquetados com o id de cada um (shellId)", async () => {
+  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  await tick();
+  const c = h.calls[0].child;
+  h.notify("item/started", { item: { id: "cmd-a", type: "commandExecution", command: "npm test" } });
+  h.notify("item/started", { item: { id: "cmd-b", type: "commandExecution", command: "npm run build" } });
+  h.notify("item/commandExecution/outputDelta", { itemId: "cmd-b", delta: "building\n" });
+  h.notify("item/commandExecution/outputDelta", { itemId: "cmd-a", delta: "testing\n" });
+  h.notify("item/completed", { item: { id: "cmd-a", type: "commandExecution", aggregatedOutput: "testing\n" } });
+  h.notify("item/completed", { item: { id: "cmd-b", type: "commandExecution", aggregatedOutput: "building\n" } });
+  const chunks = h.events.filter((e) => e.channel === "pty-data").map((e) => e.data);
+  const of = (id) => chunks.filter((d) => d.shellId === id).map((d) => d.data).join("");
+  assert.match(of("cmd-a"), /\$ npm test[\s\S]*testing/);
+  assert.doesNotMatch(of("cmd-a"), /building/);
+  assert.match(of("cmd-b"), /\$ npm run build[\s\S]*building/);
+  assert.doesNotMatch(of("cmd-b"), /testing/);
+  assert.ok(chunks.every((d) => d.shellId), "toda saída de comando tem origem");
+  h.notify("turn/completed", { turn: { id: c.turnId, status: "completed" } });
+  await pending;
+  runner.shutdown();
+});
+
+test("contrato Codex: turn/start leva imagem como localImage e arquivos como mention (formato nativo do app-server)", async () => {
+  const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-codex-attach-")));
+  fs.writeFileSync(path.join(dir, "app.ts"), "export {}");
+  const png = "data:image/png;base64," + Buffer.from("PNG").toString("base64");
+  const h = harness(), runner = h.make({ attachmentsRoot: path.join(dir, "dados") });
+  const pending = runner.execute({
+    ...payload, cwd: dir, prompt: "olha @app.ts",
+    attachments: [{ id: "a", name: "print.png", type: "image", url: png, sizeText: "1 KB" }],
+  });
+  await tick();
+  const c = h.calls[0].child;
+  const start = c.messages.find((m) => m.method === "turn/start");
+  assert.deepEqual(start.params.input.map((i) => i.type), ["text", "localImage", "mention"]);
+  assert.equal(start.params.input[0].text, "olha @app.ts");
+  assert.ok(fs.existsSync(start.params.input[1].path) && start.params.input[1].path.endsWith(".png"));
+  assert.deepEqual([start.params.input[2].name, start.params.input[2].path], ["app.ts", path.join(dir, "app.ts")]);
+  h.notify("turn/completed", { turn: { id: c.turnId, status: "completed" } });
+  await pending;
+  runner.shutdown();
+  fs.rmSync(dir, { recursive: true, force: true });
+});

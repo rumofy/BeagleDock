@@ -1,5 +1,5 @@
 import { useApp } from "../../hooks/AppStateProvider";
-import { LiveShell } from "../../components/LiveShell";
+import { SessionShell } from "./SessionShell";
 
 export function TerminalTab() {
   const {
@@ -27,13 +27,7 @@ export function TerminalTab() {
                   </div>
                 </div>
 
-                <LiveShell
-                  sessionId={currentSession?.id || ""}
-                  text={
-                    currentSession?.ptyRaw ||
-                    (currentSession?.ptyLog || []).join("\r\n")
-                  }
-                />
+                <SessionShell sessionId={currentSession?.id || ""} />
               </div>
             </div>
   );

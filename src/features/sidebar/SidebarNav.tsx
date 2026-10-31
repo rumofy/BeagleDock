@@ -12,11 +12,23 @@ export function SidebarNav() {
     setActiveTab,
     setShowSkillsModal,
     setShowHistoryModal,
-    providers,
+    messages,
     installedSkills,
     memoryStatus,
     refreshAIMemoryExplorer,
   } = useApp();
+  // Shells em execução: comandos rodando agora em qualquer conversa (os mesmos das abas do shell).
+  const runningShells = Object.values(messages).reduce(
+    (total, list) =>
+      total +
+      list.reduce(
+        (sum, message) =>
+          sum +
+          (message.events?.filter((e) => e.kind === "command" && e.status === "running").length ?? 0),
+        0,
+      ),
+    0,
+  );
   return (
           <div className="px-3 pt-3 pb-2 space-y-1">
             <button
@@ -49,16 +61,11 @@ export function SidebarNav() {
             >
               <div className="flex items-center gap-2">
                 <Terminal size={16} className="text-[#847b6a]" />
-                <span>Shells PTY Ativos</span>
+                <span>Shells</span>
               </div>
               <span className="font-mono text-[10px] bg-[#dfdacd] px-1.5 py-0.5 rounded text-[#5d5648]">
-                {providers.reduce(
-                  (acc, p) =>
-                    acc +
-                    p.sessions.filter((s) => s.status === "running").length,
-                  0,
-                )}{" "}
-                running
+                {runningShells}{" "}
+                rodando
               </span>
             </button>
 

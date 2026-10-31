@@ -98,13 +98,12 @@ const MessageRow = memo(
                     key={att.id}
                     className="overflow-hidden rounded-xl border border-[#dcd6c7] bg-[#ffffff] shadow-2xs max-w-sm"
                   >
-                    {att.type === "image" ? (
+                    {att.type === "image" && att.url ? (
                       <div>
                         <img
                           src={att.url}
                           alt={att.name}
-                          className="max-h-64 w-auto object-cover rounded-t-xl hover:opacity-95 cursor-pointer"
-                          onClick={() => window.open(att.url, "_blank")}
+                          className="max-h-64 w-auto object-cover rounded-t-xl"
                         />
                         <div className="px-2.5 py-1.5 flex items-center justify-between text-[11px] text-[#7d7565] bg-[#faf8f4]">
                           <span className="truncate max-w-[180px] font-medium">
