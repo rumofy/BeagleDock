@@ -9,11 +9,14 @@ import {
   Wand2,
   Clock,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { useNativeCommands } from "../../hooks/useNativeCommands";
 import { controlForCommand, openSessionControl } from "../../lib/sessionControls";
 import { CommandSuggestions } from "./CommandSuggestions";
+import { FileSuggestions } from "./FileSuggestions";
+import { useProjectFiles } from "../../hooks/useProjectFiles";
+import { applyMention, mentionAt } from "../../lib/attachments";
 
 export function ChatComposer() {
   const {
@@ -31,6 +34,7 @@ export function ChatComposer() {
     attachments,
     fileInputRef,
     handlePaste,
+    handleDropFiles,
     handleFileUpload,
     removeAttachment,
     handleSendMessage,
@@ -40,6 +44,27 @@ export function ChatComposer() {
     currentSession?.cwd,
     inputMessage,
   );
+  // @arquivo: arquivos do projeto sugeridos junto do cursor.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [caret, setCaret] = useState(0);
+  const [mentionPicked, setMentionPicked] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const mention = suggestions.active ? null : mentionAt(inputMessage, caret);
+  const projectFiles = useProjectFiles(currentSession?.cwd, mention ? mention.query : null);
+  const mentionOpen = !!mention && mentionDismissed !== `${inputMessage}|${caret}`;
+  const mentionSelected = Math.min(mentionPicked, Math.max(0, projectFiles.files.length - 1));
+  const pickMention = (file: string) => {
+    if (!mention) return;
+    const next = applyMention(inputMessage, caret, mention.start, file);
+    setInputMessage(next.text);
+    setCaret(next.caret);
+    setMentionPicked(0);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      inputRef.current?.setSelectionRange(next.caret, next.caret);
+    });
+  };
   const [picked, setPicked] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const open = suggestions.active && dismissed !== inputMessage;
@@ -103,8 +128,40 @@ export function ChatComposer() {
 
                   <form
                     onSubmit={submit}
-                    className="relative flex items-center gap-2 bg-[#ffffff] border border-[#dcd6c7] focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition"
+                    onDragOver={(e) => {
+                      if (!e.dataTransfer?.types.includes("Files")) return;
+                      e.preventDefault();
+                      setDragging(true);
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+                    }}
+                    onDrop={(e) => {
+                      setDragging(false);
+                      if (!e.dataTransfer?.files?.length) return;
+                      e.preventDefault();
+                      handleDropFiles(e.dataTransfer.files);
+                    }}
+                    className={`relative flex items-center gap-2 bg-[#ffffff] border ${dragging ? "border-amber-500 ring-2 ring-amber-200" : "border-[#dcd6c7]"} focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition`}
                   >
+                    {dragging && (
+                      <div
+                        data-testid="drop-hint"
+                        className="absolute inset-0 z-10 rounded-2xl bg-amber-50/90 flex items-center justify-center text-xs font-semibold text-[#8a4b0f] pointer-events-none"
+                      >
+                        Solte para anexar imagens e arquivos
+                      </div>
+                    )}
+                    {mentionOpen && (
+                      <FileSuggestions
+                        files={projectFiles.files}
+                        selected={mentionSelected}
+                        loading={projectFiles.loading}
+                        error={projectFiles.error}
+                        onPick={pickMention}
+                        onHover={setMentionPicked}
+                      />
+                    )}
                     {open && (
                       <CommandSuggestions
                         items={suggestions.items}
@@ -152,16 +209,37 @@ export function ChatComposer() {
                     </button>
 
                     <input
+                      ref={inputRef}
                       type="text"
                       value={inputMessage}
                       role="combobox"
-                      aria-expanded={open}
+                      aria-expanded={open || mentionOpen}
                       aria-autocomplete="list"
                       onChange={(e) => {
                         setInputMessage(e.target.value);
+                        setCaret(e.target.selectionStart ?? e.target.value.length);
                         setPicked(0);
+                        setMentionPicked(0);
                       }}
+                      onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
                       onKeyDown={(e) => {
+                        if (mentionOpen) {
+                          const count = projectFiles.files.length;
+                          if (e.key === "Escape") {
+                            e.preventDefault();
+                            setMentionDismissed(`${inputMessage}|${caret}`);
+                          } else if (count && e.key === "ArrowDown") {
+                            e.preventDefault();
+                            setMentionPicked((mentionSelected + 1) % count);
+                          } else if (count && e.key === "ArrowUp") {
+                            e.preventDefault();
+                            setMentionPicked((mentionSelected - 1 + count) % count);
+                          } else if (count && (e.key === "Tab" || e.key === "Enter")) {
+                            e.preventDefault();
+                            pickMention(projectFiles.files[mentionSelected]);
+                          }
+                          return;
+                        }
                         if (!open) return;
                         const count = suggestions.items.length;
                         if (e.key === "Escape") {

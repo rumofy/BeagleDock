@@ -123,6 +123,10 @@ if (name === "codex" && args[0] === "app-server") {
           fs.writeFileSync(file, JSON.stringify({ count: 0 }));
         emit({ id: m.id, result: { thread: { id: thread } } });
       } else if (m.method === "turn/start") {
+        fs.appendFileSync(
+          path.join(root, "received-codex-input.jsonl"),
+          JSON.stringify((m.params.input || []).map((i) => i.type + (i.name ? ":" + i.name : ""))) + "\n",
+        );
         const file = path.join(root, thread + ".json"),
           count = JSON.parse(fs.readFileSync(file)).count + 1;
         fs.writeFileSync(file, JSON.stringify({ count }));
@@ -226,6 +230,9 @@ if (name === "codex" && args[0] === "app-server") {
               delta: "LIVE_FIRST while running\n",
             },
           });
+          // Segundo comando em paralelo: cada um precisa ganhar a própria aba de shell.
+          emit({ method: "item/started", params: { threadId: thread, turnId, item: { id: "live-cmd-2", type: "commandExecution", command: "fixture build" } } });
+          emit({ method: "item/commandExecution/outputDelta", params: { threadId: thread, turnId, itemId: "live-cmd-2", delta: "PARALLEL_BUILD while running\n" } });
           emit({
             method: "item/agentMessage/delta",
             params: {
@@ -477,11 +484,23 @@ process.stdin.on("data", (chunk) => {
         );
         continue;
       }
+      const content = input.message?.content;
+      // Claude manda blocos (imagem + texto) quando há anexos; o Antigravity manda texto.
       responsePrompt =
-        typeof input.message?.content === "string" ? input.message.content : "";
+        typeof content === "string"
+          ? content
+          : Array.isArray(content)
+            ? content.filter((b) => b.type === "text").map((b) => b.text).join("\n")
+            : "";
       fs.appendFileSync(
         path.join(root, "received-" + name + ".jsonl"),
-        JSON.stringify({ id, text: responsePrompt }) + "\n",
+        JSON.stringify({
+          id,
+          text: responsePrompt,
+          ...(Array.isArray(content)
+            ? { blocks: content.map((b) => b.type + (b.source ? ":" + b.source.media_type : "")) }
+            : {}),
+        }) + "\n",
       );
       if (responsePrompt.startsWith("smoke-hang")) {
         if (name === "agy") {

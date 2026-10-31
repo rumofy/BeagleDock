@@ -52,6 +52,10 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   saveWorkspace: (ws) => ipcRenderer.invoke("save-workspace", ws),
   pickDirectory: (options) => ipcRenderer.invoke("pick-directory", options),
   openInEditor: (request) => ipcRenderer.invoke("open-in-editor", request),
+  searchProjectFiles: (request) => ipcRenderer.invoke("search-project-files", request),
+  listWorkspaceStatus: () => ipcRenderer.invoke("list-workspace-status"),
+  updateWorkspace: (request) => ipcRenderer.invoke("update-workspace", request),
+  deleteWorkspace: (id) => ipcRenderer.invoke("delete-workspace", id),
   listNativeCommands: (request) => ipcRenderer.invoke("list-native-commands", request),
   openExternalUrl: (url) => ipcRenderer.invoke("open-external-url", url),
   getZoom: () => ipcRenderer.invoke("get-zoom"),
@@ -80,6 +84,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "cli-context",
         "cli-turn-started",
         "cli-turn-finished",
+        "cli-notice",
+        "open-session",
         "cli-approvals",
       ].includes(channel)
     )

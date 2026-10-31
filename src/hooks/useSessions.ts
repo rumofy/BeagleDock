@@ -5,12 +5,16 @@ import { conversationTitle } from "../lib/conversationTitle";
 import { modelSelection } from "../lib/modelSelection";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
+import { appendShellOutput } from "../lib/shellTabs";
+import { storableAttachments } from "../lib/attachments";
+import { buildContinuation } from "../lib/continuation";
 import { PROVIDER_NAMES } from "../lib/approvalLabels";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import type {
   AIProviderId,
   AIProviderStatus,
+  ChatAttachment,
   ChatEvent,
   ChatMessage,
   ContextInfo,
@@ -141,12 +145,24 @@ export function useSessions({
       sessionId: string;
       data: string;
       pid?: number;
+      shellId?: string;
     }>((items) => {
-      const bySession = new Map<string, { data: string; pid?: number }>();
+      const bySession = new Map<
+        string,
+        { data: string; pid?: number; shells: Map<string, string> }
+      >();
       for (const item of items) {
-        const entry = bySession.get(item.sessionId) ?? { data: "" };
+        const entry = bySession.get(item.sessionId) ?? {
+          data: "",
+          shells: new Map<string, string>(),
+        };
         entry.data += item.data;
         entry.pid = item.pid || entry.pid;
+        if (item.shellId)
+          entry.shells.set(
+            item.shellId,
+            (entry.shells.get(item.shellId) ?? "") + item.data,
+          );
         bySession.set(item.sessionId, entry);
       }
       setProviders((prev) =>
@@ -167,6 +183,9 @@ export function useSessions({
                   ? [...(s.ptyLog || []), ...lines].slice(-150)
                   : s.ptyLog,
                 ptyRaw: ((s.ptyRaw || "") + batch.data).slice(-512 * 1024),
+                ...(batch.shells.size
+                  ? { shellRaw: appendShellOutput(s.shellRaw, batch.shells) }
+                  : {}),
               };
             }),
           };
@@ -232,6 +251,14 @@ export function useSessions({
         });
       },
     );
+    const unsubscribeNotice = beagleApi.on("cli-notice", ({ message }) =>
+      setAppError(message),
+    );
+    // Menu da bandeja ou notificação: leva o chat até a conversa.
+    const unsubscribeOpen = beagleApi.on("open-session", ({ sessionId }) => {
+      setActiveSessionId(sessionId);
+      setActiveTab("chat");
+    });
     const unsubscribeTurnFinished = beagleApi.on(
       "cli-turn-finished",
       ({ sessionId, responseMessageId, ok, text, error, events, discard }) => {
@@ -300,13 +327,17 @@ export function useSessions({
       unsubscribeEvents();
       unsubscribeContext();
       unsubscribeTurnStarted();
+      unsubscribeOpen();
+      unsubscribeNotice();
       unsubscribeTurnFinished();
     };
   }, []);
 
   const persistSession = async (session: ChatSession) => {
     try {
-      const result = await beagleApi.saveSession(session);
+      // A saída dos shells é só da tela: não é gravada e não precisa cruzar o IPC a cada salvamento.
+      const { shellRaw: _shellRaw, ...persistable } = session;
+      const result = await beagleApi.saveSession(persistable);
       if (!result?.success)
         throw new Error(result?.error || "Não foi possível salvar a conversa.");
       setProviders((prev) =>
@@ -321,6 +352,7 @@ export function useSessions({
                   nativeSessionId: s.nativeSessionId || session.nativeSessionId,
                   ptyLog: s.ptyLog,
                   ptyRaw: s.ptyRaw,
+                  shellRaw: s.shellRaw,
                   pid: s.pid || session.pid,
                 }
               : s,
@@ -555,6 +587,28 @@ export function useSessions({
     return newSession;
   };
 
+  // Continua a tarefa em outra CLI: cria uma sessão nova com o resumo do histórico local. A conversa
+  // original e o identificador nativo dela não são tocados.
+  const handleContinueInCli = async (targetProviderId: AIProviderId) => {
+    if (!currentSession) return;
+    const from = providers.find((p) => p.id === currentSession.providerId);
+    const to = providers.find((p) => p.id === targetProviderId);
+    if (!to || to.id === currentSession.providerId) return;
+    const prompt = buildContinuation({
+      fromProviderName: from?.name || "outra CLI",
+      toProviderName: to.name,
+      title: currentSession.title,
+      cwd: currentSession.cwd,
+      messages: currentMessages,
+    });
+    const session = await createSession(targetProviderId, {
+      title: `Continuação: ${currentSession.title}`,
+      cwd: currentSession.cwd,
+      permission: currentSession.permission,
+    });
+    if (session) void sendPrompt(session, prompt);
+  };
+
   const handleDeleteSession = async (
     sessionId: string,
     e: React.MouseEvent,
@@ -677,7 +731,11 @@ export function useSessions({
   };
 
   // Envia um prompt para uma sessão (chat principal ou Manutenção Assistida).
-  const sendPrompt = async (session: ChatSession, promptText: string) => {
+  const sendPrompt = async (
+    session: ChatSession,
+    promptText: string,
+    attachments: ChatAttachment[] = [],
+  ) => {
     const provider = providers.find((p) => p.id === session.providerId);
     const selected = modelSelection(
       provider?.modelOptions || [],
@@ -706,6 +764,7 @@ export function useSessions({
       sender: "user",
       senderName: userProfile.firstName,
       text: promptText,
+      ...(attachments.length ? { attachments: storableAttachments(attachments) } : {}),
       timestamp: new Date().toLocaleTimeString(),
     };
     const reply: ChatMessage = {
@@ -768,6 +827,7 @@ export function useSessions({
         providerId: sendingSession.providerId,
         responseMessageId: responseId,
         prompt: promptText,
+        ...(attachments.length ? { attachments } : {}),
         cwd: sendingSession.cwd,
         model: selected.model,
         effort: selected.effort,
@@ -848,6 +908,7 @@ export function useSessions({
     handlePermissionChange,
     handleReasoningChange,
     handleTriggerHandoff,
+    handleContinueInCli,
     handleCreateSession,
     createSession,
     handleDeleteSession,

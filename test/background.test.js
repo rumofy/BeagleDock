@@ -4,6 +4,8 @@ const {
   createBackgroundController,
   describeState,
   closeAction,
+  drawBadge,
+  sessionMenuItems,
   quitAction,
   friendlyTool,
 } = require("../electron/background");
@@ -13,6 +15,7 @@ test("estado da bandeja resume sessões rodando e aprovações pendentes", () =>
     status: "idle",
     summary: "Nenhuma sessão em execução",
     tooltip: "BeagleDock",
+    sessions: [],
   });
   assert.equal(describeState({ running: 1 }).summary, "1 sessão rodando");
   assert.equal(describeState({ running: 3 }).summary, "3 sessões rodando");
@@ -31,7 +34,7 @@ test("fechar a janela nunca encerra o app; sem bandeja funcional minimiza", () =
 });
 
 function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice = 1, bypass = false, trayFails = false, focused = false } = {}) {
-  const state = { running, approvals, quitCalls: 0, hidden: 0, minimized: 0, shown: 0, notes: [], blocker: { started: 0, stopped: 0 }, tooltip: "", menu: null, dialogs: 0 };
+  const state = { running, approvals, quitCalls: 0, hidden: 0, minimized: 0, shown: 0, notes: [], blocker: { started: 0, stopped: 0 }, tooltip: "", menu: null, dialogs: 0, images: [], opened: [], clicks: [] };
   class Tray {
     constructor() {
       if (trayFails) throw new Error("sem bandeja");
@@ -40,6 +43,7 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
     on() {}
     setToolTip(t) { state.tooltip = t; }
     setContextMenu(m) { state.menu = m; }
+    setImage(image) { state.images.push(image); }
     destroy() {}
   }
   const win = {
@@ -58,7 +62,7 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
   class Notification {
     static isSupported() { return true; }
     constructor(opts) { state.notes.push(opts); }
-    on() {}
+    on(name, cb) { if (name === "click") state.clicks.push(cb); }
     show() {}
   }
   const controller = createBackgroundController({
@@ -67,7 +71,11 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
     Menu: { buildFromTemplate: (t) => t },
     Notification,
     nativeImage: {
-      createFromPath: () => ({ isEmpty: () => emptyIcon, resize: () => ({ isEmpty: () => false }) }),
+      createFromPath: () => ({
+        isEmpty: () => emptyIcon,
+        resize: ({ width }) => ({ isEmpty: () => false, plain: true, toBitmap: () => Buffer.alloc(width * width * 4, 7) }),
+      }),
+      createFromBitmap: (bitmap, { width }) => ({ isEmpty: () => false, bitmap, width }),
     },
     powerSaveBlocker: {
       start: () => (state.blocker.started++, 7),
@@ -78,6 +86,8 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
     iconPath: "x.png",
     runningCount: () => state.running,
     approvalsList: () => state.approvals,
+    runningSessions: () => state.sessions || [],
+    openSession: (id) => state.opened.push(id),
     bypass,
     onQuit: () => {
       state.shutdown = true;
@@ -241,4 +251,82 @@ test("janela ativa = visível e não minimizada", () => {
   win.isMinimized = () => false;
   win.isVisible = () => false;
   assert.equal(controller.isWindowActive(), false);
+});
+
+test("segundo plano desligado: fechar a janela pede para sair, com a confirmação de sempre", () => {
+  assert.equal(closeAction({ quitting: false, trayReady: true, runInBackground: false }), "quit");
+  assert.equal(closeAction({ quitting: false, trayReady: false, runInBackground: false }), "quit");
+  assert.equal(closeAction({ quitting: true, trayReady: true, runInBackground: false }), "allow");
+  assert.equal(closeAction({ quitting: false, trayReady: true }), "hide", "o padrão continua sendo a bandeja");
+  const { controller, state, win } = harness({ running: 2, confirmChoice: 0 });
+  controller.start();
+  controller.attachWindow(win);
+  controller.setRunInBackground(false);
+  assert.equal(close(win), true);
+  assert.equal(state.dialogs, 1, "há sessão rodando: pergunta antes");
+  assert.equal(state.quitCalls, 0, "recusou: segue rodando");
+  assert.equal(state.hidden, 0);
+  controller.setRunInBackground(true);
+  close(win);
+  assert.equal(state.hidden, 1, "ligado de novo, volta a esconder");
+});
+
+test("selo do ícone: âmbar rodando, vermelho aguardando, ocioso intacto (BGRA)", () => {
+  const size = 22;
+  const base = Buffer.alloc(size * size * 4, 7);
+  assert.equal(drawBadge(base, size, "idle"), base, "ocioso não desenha nada");
+  const px = (buf, x, y) => [...buf.subarray((y * size + x) * 4, (y * size + x) * 4 + 4)];
+  const running = drawBadge(base, size, "running");
+  const waiting = drawBadge(base, size, "waiting");
+  const radius = Math.max(3, Math.round(size * 0.24));
+  const c = size - radius - 1;
+  assert.deepEqual(px(running, c, c), [11, 158, 245, 255], "miolo âmbar em BGRA");
+  assert.deepEqual(px(waiting, c, c), [72, 29, 225, 255], "miolo vermelho em BGRA");
+  assert.deepEqual(px(running, 0, 0), [7, 7, 7, 7], "fora do selo o ícone não muda");
+  assert.deepEqual(px(base, c, c), [7, 7, 7, 7], "a imagem original não é alterada");
+  assert.notDeepEqual(running, waiting);
+});
+
+test("a bandeja troca o ícone com o estado e lista as conversas em andamento", () => {
+  const { controller, state } = harness({ running: 1 });
+  state.sessions = [{ id: "s1", title: "Migrar pagamentos", providerName: "Codex CLI" }];
+  controller.start();
+  assert.equal(state.images.at(-1).bitmap.length, 22 * 22 * 4);
+  const runningIcon = state.images.at(-1);
+  const labels = state.menu.map((i) => i.label);
+  assert.ok(labels.includes("● Migrar pagamentos · Codex CLI"));
+  state.menu.find((i) => i.label?.startsWith("● ")).click();
+  assert.deepEqual(state.opened, ["s1"], "clicar na conversa leva a interface até ela");
+  state.approvals = [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "x" }];
+  controller.refresh();
+  assert.notEqual(state.images.at(-1), runningIcon, "aguardando permissão tem outro ícone");
+  assert.ok(state.menu.map((i) => i.label).includes("⚠ Migrar pagamentos · Codex CLI"));
+  state.running = 0; state.approvals = []; state.sessions = [];
+  controller.refresh();
+  assert.equal(state.images.at(-1).plain, true, "ocioso volta ao ícone sem selo");
+});
+
+test("itens do menu: a que aguarda permissão vem primeiro e a lista tem limite", () => {
+  const opened = [];
+  const sessions = Array.from({ length: 11 }, (_, i) => ({ id: `s${i}`, title: `Conversa ${i}`, waiting: i === 9 }));
+  const items = sessionMenuItems(sessions, (id) => opened.push(id));
+  assert.equal(items.length, 9);
+  assert.match(items[0].label, /^⚠ Conversa 9/);
+  assert.equal(items.at(-1).label, "… e mais 3");
+  assert.equal(items.at(-1).enabled, false);
+  items[1].click();
+  assert.deepEqual(opened, ["s0"]);
+});
+
+test("clicar na notificação traz a janela e abre a conversa de origem", () => {
+  const h = harness({ running: 1 });
+  h.controller.start();
+  h.controller.notifyTurnFinished({ title: "Codex respondeu", body: "ok", sessionId: "s7" });
+  h.state.approvals = [{ id: "a9", sessionId: "s3", providerId: "claude", tool: "Bash" }];
+  h.controller.onApprovalsChanged();
+  assert.equal(h.state.notes.length, 2);
+  h.state.clicks[0]();
+  h.state.clicks[1]();
+  assert.deepEqual(h.state.opened, ["s7", "s3"]);
+  assert.ok(h.state.shown >= 2, "a janela volta a aparecer");
 });

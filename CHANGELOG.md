@@ -4,6 +4,24 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-31
+
+### Adicionado
+
+- Modo de permissão por atalho: Alt+P liga e desliga o modo plano e Alt+M percorre os modos da conversa (da permissão global da CLI ao acesso total). O modo atual continua visível no cabeçalho, a troca vale para a próxima execução sem perder o histórico e, durante uma resposta, o app avisa em vez de trocar.
+- Em “Gerenciar workspaces”, cada pasta ganhou o botão para abrir o projeto no VS Code.
+- Bandeja do sistema mais completa: o ícone ganha um selo de estado (âmbar com conversa rodando, vermelho aguardando permissão), o menu lista as conversas em andamento e clicar em uma delas, ou na notificação de resposta ou de permissão pendente, abre a conversa correspondente no app.
+- Preferências de segundo plano nas configurações: manter o app na bandeja ao fechar a janela (desligado, fechar a janela encerra o app, avisando se houver conversa em execução) e iniciar junto com o sistema, já na bandeja e sem mostrar a janela (Linux).
+- Continuar em outra CLI: o botão “Continuar em” do cabeçalho cria uma conversa nova na CLI escolhida com um resumo do que foi feito (pedido original, última resposta, arquivos alterados e comandos que falharam), sem tocar na conversa original. Quando a cota da CLI atual está perto do fim e outra tem folga, o chat sugere a troca. O resumo vem só do histórico local, sem segredos, e a nova CLI é instruída a tratá-lo como informação e a conferir o estado real do projeto antes de continuar.
+- Anexos no chat: cole, arraste ou escolha imagens e arquivos no campo de mensagem, com pré-visualização e remoção, e eles chegam de verdade à CLI no formato dela (imagem como imagem no Claude Code e no Codex; arquivos por menção ou caminho). No Antigravity, que não tem campo nativo de imagem, o caminho vai no texto e o app avisa.
+- Ao digitar “@” no campo de mensagem, aparecem os arquivos do projeto da conversa (respeitando o .gitignore); o arquivo escolhido é enviado à CLI como menção.
+- Gerenciar workspaces: tela para ver se cada pasta ainda existe, se tem git e ai-memory e quantas conversas usa, renomear, trocar a pasta (com o seletor do sistema) e remover do cadastro. Isso nunca altera nem apaga conversas, histórico ou identificadores nativos.
+- Shell com abas: cada comando que roda em paralelo (ou que um agente lançou) ganha a própria aba no shell, com o comando, o estado (rodando, concluído ou erro) e o agente de origem. Só comandos viram aba; leitura de arquivo e outras ferramentas ficam só em “Tudo”, que continua mostrando o fluxo único de sempre. Abas novas não tomam o foco, uma marca avisa de saída nova e, com muitos comandos, as mais antigas ficam no menu “mais”. Comandos concluídos podem ser fechados (× ou “Limpar concluídas”), e a saída continua em “Tudo”. Nas configurações, o fechamento automático das abas concluídas com sucesso (padrão: 2 minutos sem serem vistas) pode ser ajustado ou desligado; erros e abas com saída não vista nunca fecham sozinhos.
+
+### Alterado
+
+- O atalho “Shells PTY Ativos” da barra lateral virou “Shells” e passou a contar os comandos rodando agora, os mesmos das abas do shell, em vez das conversas em andamento.
+
 ## [0.2.2] - 2026-10-31
 
 ### Adicionado
@@ -113,7 +131,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/rumofy/BeagleDock/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/rumofy/BeagleDock/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/rumofy/BeagleDock/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/rumofy/BeagleDock/compare/v0.1.2...v0.2.0

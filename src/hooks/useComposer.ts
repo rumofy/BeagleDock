@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadDrafts, saveDrafts, updateDraft, type DraftMap } from "../lib/drafts";
+import { attachmentProblem, sizeText } from "../lib/attachments";
 import type { ChatAttachment, ChatSession } from "../types";
 
 interface Params {
@@ -8,7 +9,11 @@ interface Params {
   setAppError: (message: string) => void;
   handleStopSession: (id: string) => Promise<void>;
   handleTriggerHandoff: () => Promise<void>;
-  sendPrompt: (session: ChatSession, promptText: string) => Promise<void>;
+  sendPrompt: (
+    session: ChatSession,
+    promptText: string,
+    attachments?: ChatAttachment[],
+  ) => Promise<void>;
 }
 
 /** Texto digitado, anexos e envio da mensagem do chat. */
@@ -82,59 +87,51 @@ export function useComposer({
   }, [sessionId]);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const attachmentCount = useRef(0);
+  attachmentCount.current = attachments.length;
 
-  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
-          const reader = new FileReader();
-          reader.onload = (loadEvent) => {
-            const dataUrl = loadEvent.target?.result as string;
-            setAttachments((prev) => [
-              ...prev,
-              {
-                id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-                name:
-                  file.name ||
-                  `print-${new Date().toISOString().slice(11, 19)}.png`,
-                type: "image",
-                url: dataUrl,
-                sizeText: `${Math.round(file.size / 1024)} KB`,
-              },
-            ]);
-          };
-          reader.readAsDataURL(file);
-        }
+  // Imagens e arquivos entram igual por colar, soltar ou escolher: viram data URL e seguem para a CLI.
+  const addFiles = (files: File[]) => {
+    let planned = attachmentCount.current;
+    for (const file of files) {
+      const problem = attachmentProblem(file, planned);
+      if (problem) {
+        setAppError(problem);
+        break;
       }
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const isImg = file.type.startsWith("image/");
+      planned += 1;
       const reader = new FileReader();
+      reader.onerror = () => setAppError(`Não foi possível ler “${file.name}”.`);
       reader.onload = (loadEvent) => {
+        const isImage = file.type.startsWith("image/");
         setAttachments((prev) => [
           ...prev,
           {
-            id: `att-${Date.now()}-${i}`,
-            name: file.name,
-            type: isImg ? "image" : "file",
+            id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            name:
+              file.name ||
+              `print-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.png`,
+            type: isImage ? "image" : "file",
             url: loadEvent.target?.result as string,
-            sizeText: `${Math.round(file.size / 1024)} KB`,
+            sizeText: sizeText(file.size),
           },
         ]);
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (!files.length) return;
+    e.preventDefault();
+    addFiles(files);
+  };
+
+  const handleDropFiles = (files: FileList | File[]) => addFiles(Array.from(files));
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) addFiles(Array.from(e.target.files));
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -146,12 +143,6 @@ export function useComposer({
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !currentSession) return;
-    if (attachments.length) {
-      setAppError(
-        "Envio de anexos ainda não é suportado neste chat. Informe o caminho do arquivo no projeto.",
-      );
-      return;
-    }
     const promptText = inputMessage.trim();
     if (
       (pendingTurns.current.get(currentSession.id) || 0) > 0 &&
@@ -168,8 +159,10 @@ export function useComposer({
       await handleTriggerHandoff();
       return;
     }
+    const sending = attachments;
     setInputMessage("");
-    await sendPrompt(currentSession, promptText);
+    setAttachments([]);
+    await sendPrompt(currentSession, promptText, sending);
   };
 
   return {
@@ -179,6 +172,7 @@ export function useComposer({
     attachments,
     fileInputRef,
     handlePaste,
+    handleDropFiles,
     handleFileUpload,
     removeAttachment,
     handleSendMessage,

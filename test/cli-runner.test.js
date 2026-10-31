@@ -894,3 +894,105 @@ test("AGY: step_type subagent registra o filho, mantém o agente ativo durante o
   assert.equal(cmdEvent.status, "done");
   runner.shutdown();
 });
+
+test("Claude: comandos em paralelo chegam ao shell etiquetados com o id da ferramenta (shellId)", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-sh" });
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-sh" });
+  child.event({
+    type: "assistant",
+    message: { content: [
+      { type: "tool_use", id: "tool-a", name: "Bash", input: { command: "npm test" } },
+      { type: "tool_use", id: "tool-b", name: "Bash", input: { command: "npm run build" } },
+    ] },
+  });
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-b", content: "built", is_error: false }] } });
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "tool-a", content: "tested", is_error: false }] } });
+  child.event({ type: "result", session_id: "claude-native-sh", result: "pronto", is_error: false });
+  child.close(0);
+  await pending;
+  const chunks = h.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
+  const of = (id) => chunks.filter((d) => d.shellId === id).map((d) => d.data).join("");
+  assert.match(of("tool-a"), /\$ npm test[\s\S]*tested/);
+  assert.match(of("tool-b"), /\$ npm run build[\s\S]*built/);
+  assert.doesNotMatch(of("tool-a"), /built/);
+});
+
+test("AGY: o passo da ferramenta é a origem da saída no shell (shellId)", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "response-sh" });
+  await tick();
+  const c = h.calls[0].child;
+  c.event({ event: "init", conversation_id: "native-sh-1" });
+  const tool = (index, command, state, output) =>
+    c.event({ event: "step_update", step_update: { step_index: index, step_type: "tool", state, tool_info: { parameters: { CommandLine: command }, output } } });
+  tool(2, "npm test", "ACTIVE", "testing\n");
+  tool(3, "npm run build", "ACTIVE", "building\n");
+  tool(2, "npm test", "DONE", "testing\n");
+  tool(3, "npm run build", "DONE", "building\n");
+  c.event({ event: "result", result: { status: "SUCCESS", response: "ok" } });
+  c.close(0);
+  await pending;
+  const chunks = h.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
+  const of = (id) => chunks.filter((d) => d.shellId === id).map((d) => d.data).join("");
+  assert.match(of("step-2"), /\$ npm test[\s\S]*testing/);
+  assert.match(of("step-3"), /\$ npm run build[\s\S]*building/);
+  assert.doesNotMatch(of("step-2"), /building/);
+});
+
+test("AGY: a saída que o manage_task devolve vai para a aba do comando que iniciou a tarefa", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "response-task" });
+  await tick();
+  const c = h.calls[0].child;
+  c.event({ event: "init", conversation_id: "native-task-1" });
+  const step = (index, state, info) => c.event({ event: "step_update", step_update: { step_index: index, step_type: "tool", state, tool_info: info } });
+  step(2, "ACTIVE", { name: "run_command", parameters: { CommandLine: "npm run build" }, output: "" });
+  step(5, "ACTIVE", { name: "manage_task", parameters: { Action: "status", TaskId: "conv-1/task-2" }, output: "" });
+  step(5, "DONE", { name: "manage_task", parameters: { Action: "status", TaskId: "conv-1/task-2" }, output: "Command output:\nbuild ok\n" });
+  c.event({ event: "result", result: { status: "SUCCESS", response: "ok" } });
+  c.close(0);
+  await pending;
+  const chunks = h.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
+  assert.match(chunks.filter((d) => d.shellId === "step-2").map((d) => d.data).join(""), /build ok/);
+  assert.equal(chunks.some((d) => d.shellId === "step-5"), false, "não cria aba própria para o manage_task");
+});
+
+test("Claude e AGY: só comando vira shell; leitura de arquivo e outras ferramentas ficam sem origem", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-read" });
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-read" });
+  child.event({ type: "assistant", message: { content: [
+    { type: "tool_use", id: "tool-bash", name: "Bash", input: { command: "npm test" } },
+    { type: "tool_use", id: "tool-read", name: "Read", input: { file_path: "/p/a.ts" } },
+  ] } });
+  child.event({ type: "user", message: { content: [
+    { type: "tool_result", tool_use_id: "tool-read", content: "CONTEUDO_DO_ARQUIVO", is_error: false },
+    { type: "tool_result", tool_use_id: "tool-bash", content: "TESTES_OK", is_error: false },
+  ] } });
+  child.event({ type: "result", session_id: "claude-native-read", result: "ok", is_error: false });
+  child.close(0);
+  await pending;
+  const chunks = h.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
+  const tagged = (id) => chunks.filter((d) => d.shellId === id).map((d) => d.data).join("");
+  assert.match(tagged("tool-bash"), /TESTES_OK/);
+  assert.equal(chunks.some((d) => d.shellId === "tool-read"), false);
+  assert.match(chunks.filter((d) => !d.shellId).map((d) => d.data).join(""), /CONTEUDO_DO_ARQUIVO/, "a saída continua em Tudo");
+
+  const g = harness(), r2 = g.make();
+  const p2 = r2.execute({ ...payload("antigravity"), responseMessageId: "response-read" });
+  await tick();
+  const c = g.calls[0].child;
+  c.event({ event: "init", conversation_id: "native-read-1" });
+  c.event({ event: "step_update", step_update: { step_index: 2, step_type: "tool", state: "DONE", tool_info: { name: "read_file", parameters: { Path: "/p/a.ts" }, output: "CONTEUDO_AGY" } } });
+  c.event({ event: "result", result: { status: "SUCCESS", response: "ok" } });
+  c.close(0);
+  await p2;
+  const agy = g.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
+  assert.match(agy.map((d) => d.data).join(""), /CONTEUDO_AGY/);
+  assert.equal(agy.some((d) => d.shellId), false);
+});

@@ -29,7 +29,7 @@ function createAgyChildOutput({
           pending.push({ id: key, name: tool.name, command });
           onToolStart({ id: key, name: tool.name, command, args: tool.args });
           if (tool.name === "run_command" && typeof command === "string") {
-            onCommand(command);
+            onCommand(command, key);
           }
         }
       } else if (step.type === "PLANNER_RESPONSE" && step.status === "DONE" && !step.tool_calls?.length) {
@@ -61,7 +61,7 @@ function createAgyChildOutput({
         if (at < 0 || hasLiveOutput(step.step_index)) continue;
         const text = step.content.slice(at + marker.length);
         if (text.startsWith(result.text) && text.length > result.text.length)
-          onOutput(text.slice(result.text.length));
+          onOutput(text.slice(result.text.length), result.id);
         result.text = text;
       }
     }

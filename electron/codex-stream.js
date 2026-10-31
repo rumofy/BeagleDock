@@ -120,8 +120,14 @@ function createCodexStream({
       e.context = createContextTracker({ emit, sessionId, source: "codex" });
       entries.set(sessionId, e);
       const current = e;
-      const output = (data) =>
-        emit("pty-data", { sessionId, data, pid: child.pid });
+      // `shellId` é o id do evento da linha do tempo do comando que produziu a saída.
+      const output = (data, shellId) =>
+        emit("pty-data", {
+          sessionId,
+          data,
+          pid: child.pid,
+          ...(shellId ? { shellId } : {}),
+        });
       const send = (message) =>
         child.stdin.write(JSON.stringify(message) + "\n");
       const request = (method, params) =>
@@ -230,18 +236,18 @@ function createCodexStream({
       const SUB_KINDS = new Set(["command", "mcp", "tool", "file", "web"]);
       function commandOutput(id, delta) {
         current.commands.set(id, (current.commands.get(id) || "") + delta);
-        output(delta);
+        output(delta, id);
       }
       function completeCommand(id, item) {
         const received = current.commands.get(id) || "";
         const full = item.aggregatedOutput || "";
         if (full && full !== received) {
-          if (full.startsWith(received)) output(full.slice(received.length));
+          if (full.startsWith(received)) output(full.slice(received.length), id);
           else if (received && full.endsWith(received))
-            output("\r\n[Início da saída]\r\n" + full.slice(0, -received.length));
-          else if (!received) output(full);
+            output("\r\n[Início da saída]\r\n" + full.slice(0, -received.length), id);
+          else if (!received) output(full, id);
         }
-        output("\r\n");
+        output("\r\n", id);
         current.commands.delete(id);
       }
       function handleSubThreadItem(method, params, parentId) {
@@ -262,7 +268,7 @@ function createCodexStream({
             parentId,
             ...(label.note ? { meta: { note: label.note } } : {}),
           });
-          if (item.type === "commandExecution") output(`$ ${item.command}\r\n`);
+          if (item.type === "commandExecution") output(`$ ${item.command}\r\n`, id);
         }
         if (method === "item/completed") {
           current.events.finish(
@@ -412,7 +418,7 @@ function createCodexStream({
             activity: "Recebendo saída do comando…",
             pid: child.pid,
           });
-          output(params.delta || "");
+          output(params.delta || "", params.itemId);
         } else if (ev.method === "thread/tokenUsage/updated") {
           const usage = codexContext(params.tokenUsage);
           if (usage) current.context.update(usage);
@@ -422,7 +428,7 @@ function createCodexStream({
           if (params.item?.type === "contextCompaction")
             current.context.compacting(true);
           if (params.item?.type === "commandExecution")
-            output(`$ ${params.item.command}\r\n`);
+            output(`$ ${params.item.command}\r\n`, params.item.id);
           const label = codexItemActivity(params.item);
           if (label) {
             // Uma atividade do subagente atualiza o agente original; não cria um agente por mensagem.
@@ -713,7 +719,7 @@ function createCodexStream({
       current
         .request("turn/start", {
           threadId: current.nativeId,
-          input: [{ type: "text", text: p.prompt }],
+          input: p.input || [{ type: "text", text: p.prompt }],
           ...(effort ? { effort } : {}),
           ...(model ? { model } : {}),
           cwd,

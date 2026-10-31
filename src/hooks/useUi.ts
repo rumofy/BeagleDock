@@ -8,6 +8,7 @@ export function useUi() {
   const [appError, setAppError] = useState("");
   const [showInlineTerminal, setShowInlineTerminal] = useState<boolean>(true);
   const [showWorkspaceModal, setShowWorkspaceModal] = useState<boolean>(false);
+  const [showWorkspaceManager, setShowWorkspaceManager] = useState<boolean>(false);
   const [showSkillsModal, setShowSkillsModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
 
@@ -38,6 +39,8 @@ export function useUi() {
     setShowInlineTerminal,
     showWorkspaceModal,
     setShowWorkspaceModal,
+    showWorkspaceManager,
+    setShowWorkspaceManager,
     showSkillsModal,
     setShowSkillsModal,
     showHistoryModal,

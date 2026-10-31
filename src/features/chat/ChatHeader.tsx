@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ShieldCheck,
   Code2,
+  Settings2,
 } from "lucide-react";
 import { beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
@@ -20,6 +21,7 @@ import type {
   ReasoningEffortLevel,
   PermissionLevel,
 } from "../../types";
+import { ContinueInCliButton } from "./ContinueInCli";
 
 const SOURCE_LABEL = {
   git: "remoto git",
@@ -81,6 +83,7 @@ export function ChatHeader() {
     showInlineTerminal,
     setShowInlineTerminal,
     setShowWorkspaceModal,
+    setShowWorkspaceManager,
     workspaces,
     isExecutingPrompt,
     setAppError,
@@ -193,7 +196,7 @@ export function ChatHeader() {
                   }
                   className="text-xs font-semibold bg-transparent outline-none cursor-pointer"
                   disabled={isExecutingPrompt}
-                  title="Permissões da conversa; solicitações elegíveis aparecem no painel de aprovação"
+                  title="Permissões da conversa (Alt+P liga o plano · Alt+M troca de modo); solicitações elegíveis aparecem no painel de aprovação"
                 >
                   <option value="inherit">Global da CLI</option>
                   <option value="plan">🔍 Somente leitura (plano)</option>
@@ -262,6 +265,15 @@ export function ChatHeader() {
                   + Cadastrar Novo Workspace...
                 </option>
               </select>
+              <button
+                type="button"
+                onClick={() => setShowWorkspaceManager(true)}
+                title="Gerenciar workspaces"
+                aria-label="Gerenciar workspaces"
+                className="p-0.5 rounded text-[#8c8270] hover:text-[#2c2822] hover:bg-[#e6e0d0]"
+              >
+                <Settings2 size={12} />
+              </button>
 
               <AiMemoryBadge
                 scope={memoryScope}
@@ -302,6 +314,7 @@ export function ChatHeader() {
           <Code2 size={14} />
           <span>VS Code</span>
         </button>
+        <ContinueInCliButton />
         <button
           onClick={handleTriggerHandoff}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] border border-[#d6cfbe] text-[#332f28] transition shadow-2xs hover:shadow-xs group"
