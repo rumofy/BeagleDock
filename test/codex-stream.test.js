@@ -714,3 +714,18 @@ test("Codex: se o turn/steer for recusado (turno já acabou), a mensagem cai na 
   h.notify("turn/completed", { turn: { status: "completed" } });
   await pending;
 });
+
+// Compactação automática (issue #58): o limite vai ao app-server do Codex como configuração.
+test("Codex: limite de compactação automática vai em model_auto_compact_token_limit (padrão 200 mil, 0 desliga)", async () => {
+  for (const [value, expected] of [[undefined, "model_auto_compact_token_limit=200000"], [150000, "model_auto_compact_token_limit=150000"], [0, null]]) {
+    const h = harness(), runner = h.make({ getAutoCompactTokens: () => value });
+    const pending = runner.execute(payload);
+    await tick();
+    const args = h.calls[0].args;
+    if (expected) assert.ok(args.includes(expected), `esperava ${expected} em ${args.join(" ")}`);
+    else assert.ok(!args.some((a) => String(a).includes("model_auto_compact_token_limit")));
+    h.notify("turn/completed", { turn: { status: "completed" } });
+    await pending;
+    runner.shutdown();
+  }
+});

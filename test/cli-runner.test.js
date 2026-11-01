@@ -1131,3 +1131,31 @@ test("AGY e Claude: falha sem saída própria (evento de erro) mantém o texto j
     assert.match(result.output || "", /Já escrito\./, provider);
   }
 });
+
+// Compactação automática (issue #58): o limite vai para o Claude Code pelo ambiente do processo.
+test("claude: limite de compactação automática vai no ambiente (padrão 200 mil) e muda o processo quando alterado", async () => {
+  const h = harness();
+  let limit;
+  const runner = h.make({ getAutoCompactTokens: () => limit });
+  const run = async () => {
+    const p = runner.execute(payload("claude"));
+    await tick();
+    h.calls.at(-1).child.event({ type: "system", session_id: "native-id-123" });
+    h.calls.at(-1).child.event({ type: "result", result: "ok" });
+    await p;
+  };
+  await run();
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "200000");
+  await run();
+  assert.equal(h.calls.length, 1, "mesmo limite: o processo da conversa é reaproveitado");
+  limit = 300000;
+  await run();
+  assert.equal(h.calls.length, 2, "limite novo: processo novo com a variável nova");
+  assert.equal(h.calls[1].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "300000");
+  limit = 0;
+  await run();
+  assert.equal(h.calls.length, 3);
+  assert.equal(h.calls[2].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined, "desligado: a CLI segue o padrão dela");
+  runner.shutdown();
+});

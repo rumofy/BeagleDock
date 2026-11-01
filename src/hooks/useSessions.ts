@@ -10,6 +10,7 @@ import { appendShellOutput } from "../lib/shellTabs";
 import { storableAttachments } from "../lib/attachments";
 import { buildContinuation } from "../lib/continuation";
 import { PROVIDER_NAMES } from "../lib/approvalLabels";
+import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import type {
@@ -35,6 +36,8 @@ interface Params {
   setAppError: (message: string) => void;
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
+  /** Contexto (tokens) a partir do qual a conversa é compactada sozinha; 0 desliga. */
+  autoCompactTokens?: number;
 }
 
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
@@ -46,6 +49,7 @@ export function useSessions({
   setAppError,
   setActiveTab,
   setShowWorkspaceModal,
+  autoCompactTokens,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   // Referências para os ouvintes de eventos, que não são recriados a cada renderização.
@@ -65,6 +69,10 @@ export function useSessions({
   const [stoppingSessions, setStoppingSessions] = useState<
     Record<string, boolean>
   >({});
+  const contextRef = useRef(contextBySession);
+  contextRef.current = contextBySession;
+  const autoCompactRef = useRef(autoCompactTokens);
+  autoCompactRef.current = autoCompactTokens;
   const pendingTurns = useRef(new Map<string, number>());
   const runGenerations = useRef(new Map<string, number>());
   const isExecutingPrompt = (executingSessions[activeSessionId] || 0) > 0;
@@ -634,9 +642,10 @@ export function useSessions({
   };
 
   // Claude Code: a compactação é a mensagem /compact (testado com a CLI real); Codex tem comando
-  // próprio; o AGY não oferece compactação em modo programático.
+  // próprio; o AGY também usa /compact (verificado com a CLI real 1.4.12).
   const compactContext = async (session: ChatSession) => {
-    if (session.providerId === "claude") {
+    // O AGY compacta pelo comando /compact (verificado com a CLI real 1.4.12), como o Claude Code.
+    if (session.providerId === "claude" || session.providerId === "antigravity") {
       await sendPrompt(session, "/compact");
       return;
     }
@@ -795,6 +804,7 @@ export function useSessions({
               ),
             },
       );
+    let autoCompact = false;
     try {
       if (!(await persistSession(sendingSession)))
         throw new Error("Não foi possível salvar a conversa.");
@@ -865,6 +875,16 @@ export function useSessions({
           ),
         })),
       );
+      // O AGY não tem limite próprio configurável: ao fim da resposta (cache ainda quente), se o
+      // contexto passou do limite e não há mais nada na fila, o app envia o /compact.
+      const limit = resolveAutoCompact(autoCompactRef.current);
+      autoCompact =
+        !!res?.ok &&
+        sendingSession.providerId === "antigravity" &&
+        promptText !== "/compact" &&
+        limit > 0 &&
+        (contextRef.current[id]?.used ?? 0) >= limit &&
+        (pendingTurns.current.get(id) || 0) <= 1;
     } catch (error) {
       setAppError((error as Error).message);
       finishReply(`Erro: ${(error as Error).message}`);
@@ -874,6 +894,7 @@ export function useSessions({
       else pendingTurns.current.delete(id);
       setExecutingSessions(Object.fromEntries(pendingTurns.current));
     }
+    if (autoCompact) await sendPrompt({ ...sendingSession, status: "idle" }, "/compact");
   };
 
   return {

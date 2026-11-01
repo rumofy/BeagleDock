@@ -14,6 +14,17 @@ const TEXT = {
   danger: "text-rose-700",
 } as const;
 
+/** Escrita de cache a partir da qual a chamada é destacada como cara. */
+const CACHE_WRITE_ALERT = 100_000;
+
+function cacheText(cache?: { read?: number; write?: number }): string {
+  if (!cache) return "";
+  const parts: string[] = [];
+  if (cache.read !== undefined) parts.push(`lido ${formatTokens(cache.read)}`);
+  if (cache.write !== undefined) parts.push(`escrito ${formatTokens(cache.write)}`);
+  return parts.length ? `cache: ${parts.join(" · ")}` : "";
+}
+
 /** Barra do contexto da sessão: ocupação da janela do modelo, compactação em curso e a última feita. */
 export const ContextBar = memo(function ContextBar({
   info,
@@ -28,9 +39,13 @@ export const ContextBar = memo(function ContextBar({
 }) {
   const percent = contextPercent(info?.used ?? null, info?.window ?? null);
   const level = contextLevel(percent);
-  const canCompact = providerId === "claude" || providerId === "codex";
+  const canCompact =
+    providerId === "claude" || providerId === "codex" || providerId === "antigravity";
   const hasData = info?.used !== null && info?.used !== undefined;
   const last = info?.lastCompaction;
+  const cache = info?.cache;
+  const cacheLabel = cacheText(cache);
+  const cacheHeavy = (cache?.write ?? 0) >= CACHE_WRITE_ALERT;
   return (
     <div
       className="flex items-center gap-3 px-3 py-1.5 rounded-xl border border-[#e4dec9] bg-[#faf8f4] text-[11px]"
@@ -63,6 +78,19 @@ export const ContextBar = memo(function ContextBar({
               ? `${formatTokens(info?.used)} em uso · janela não informada pela CLI`
               : `${Math.round(percent)}% · ${formatTokens(info?.used)} / ${formatTokens(info?.window)}`}
           </span>
+          {cacheLabel && (
+            <span
+              className={`shrink-0 font-mono ${cacheHeavy ? "font-bold text-amber-800" : "text-[#938b7a]"}`}
+              title={
+                cacheHeavy
+                  ? "Cache de prompt reescrito: o contexto inteiro foi reprocessado e consome bastante cota. Acontece quando a conversa fica parada além do tempo do cache. Compactar com a conversa ativa reduz esse custo."
+                  : "Cache de prompt da última chamada: lido é barato; escrito é caro."
+              }
+              data-testid="context-cache"
+            >
+              {cacheLabel}
+            </span>
+          )}
         </>
       )}
       {info?.compacting && (
@@ -104,9 +132,9 @@ export const ContextBar = memo(function ContextBar({
         ) : (
           <span
             className="text-[#938b7a]"
-            title="A compactação não está disponível em modo programático no AGY"
+            title="Esta CLI não oferece compactação"
           >
-            sem compactação no AGY
+            sem compactação
           </span>
         )}
       </span>

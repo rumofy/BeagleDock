@@ -46,6 +46,8 @@ export interface WorkspaceStatus extends WorkspaceItem {
 export interface ContextInfo {
   source?: string;
   used: number | null;
+  /** Cache de prompt da última chamada: lido (barato) e escrito (caro, cache expirado ou prefixo novo). */
+  cache?: { read?: number; write?: number };
   window: number | null;
   /** A janela veio da CLI (true) ou é uma estimativa pelo nome do modelo (false). */
   windowKnown?: boolean;
@@ -251,6 +253,8 @@ export interface AppSettings {
   shellAutoClose?: boolean;
   /** Segundos desde a última vez que a aba esteve na tela (padrão: 120). */
   shellAutoCloseSeconds?: number;
+  /** Contexto (em tokens) a partir do qual a conversa é compactada sozinha; 0 desliga (padrão: 200 mil). */
+  autoCompactTokens?: number;
   workspaces: WorkspaceItem[];
 }
 

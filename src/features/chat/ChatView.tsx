@@ -8,6 +8,7 @@ import { ChatMessageList } from "../../components/ChatMessageList";
 import type { ChatMessage } from "../../types";
 import type { FileTarget } from "../../components/LinkedText";
 import { ChatComposer } from "./ChatComposer";
+import { StaleContextNotice } from "./StaleContextNotice";
 import { ContinuationBanner } from "./ContinueInCli";
 
 export function ChatView() {
@@ -134,6 +135,7 @@ export function ChatView() {
             />
           ))}
           <ContinuationBanner />
+          <StaleContextNotice />
           <ChatComposer />
         </div>
       </div>

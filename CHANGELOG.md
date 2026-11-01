@@ -4,6 +4,13 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+### Adicionado
+
+- A barra de contexto mostra o cache de prompt da última resposta (lido e escrito) no Claude Code e no Codex CLI, e destaca quando o cache inteiro foi reescrito, que é o que gasta muita cota ao retomar uma conversa parada. O Antigravity não informa esse dado.
+- Compactação automática do contexto, configurável em Configurações (“Contexto das conversas”; padrão 200 mil tokens, ou desligada). Conversas longas ficam muito mais baratas de retomar depois de paradas, porque o cache expirado deixa de reprocessar centenas de milhares de tokens. Vale para Claude Code, Codex CLI e Antigravity.
+- O botão “Compactar” agora também funciona no Antigravity.
+- Ao enviar uma mensagem numa conversa grande (acima de 100 mil tokens) que ficou parada por mais de 1 hora, o app avisa que o cache expirou e que a mensagem vai reprocessar o contexto inteiro, e deixa escolher entre enviar assim mesmo, compactar antes de enviar ou voltar a editar.
+
 ## [0.4.0] - 2026-11-01
 
 ### Adicionado

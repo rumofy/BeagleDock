@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadDrafts, saveDrafts, updateDraft, type DraftMap } from "../lib/drafts";
 import { attachmentProblem, sizeText } from "../lib/attachments";
-import type { ChatAttachment, ChatSession } from "../types";
+import { staleContext, type StaleContext } from "../lib/staleContext";
+import type { ChatAttachment, ChatSession, ContextInfo } from "../types";
+
+/** Mensagem retida até a pessoa decidir o que fazer com o contexto grande e o cache expirado. */
+export interface StaleNotice extends StaleContext {
+  session: ChatSession;
+  text: string;
+  attachments: ChatAttachment[];
+}
 
 interface Params {
   currentSession: ChatSession | undefined;
@@ -9,6 +17,8 @@ interface Params {
   setAppError: (message: string) => void;
   handleStopSession: (id: string) => Promise<void>;
   handleTriggerHandoff: () => Promise<void>;
+  contextBySession: Record<string, ContextInfo>;
+  compactContext: (session: ChatSession) => Promise<void>;
   sendPrompt: (
     session: ChatSession,
     promptText: string,
@@ -23,8 +33,11 @@ export function useComposer({
   setAppError,
   handleStopSession,
   handleTriggerHandoff,
+  contextBySession,
+  compactContext,
   sendPrompt,
 }: Params) {
+  const [staleNotice, setStaleNotice] = useState<StaleNotice | null>(null);
   // O hook roda a cada quadro do stream (vive no provedor do app): nada de ler o armazenamento
   // nem interpretar JSON nas renderizações. Carrega uma vez, e grava com atraso.
   const storageRef = useRef<Storage | undefined | null>(null);
@@ -159,10 +172,31 @@ export function useComposer({
       await handleTriggerHandoff();
       return;
     }
+    // Conversa grande parada além do cache: avisa antes de gastar, só quando não há fila nem /compact.
+    const stale =
+      promptText === "/compact" || (pendingTurns.current.get(currentSession.id) || 0) > 0
+        ? null
+        : staleContext(contextBySession[currentSession.id], Date.now());
+    if (stale) {
+      setStaleNotice({ ...stale, session: currentSession, text: promptText, attachments });
+      return;
+    }
     const sending = attachments;
     setInputMessage("");
     setAttachments([]);
     await sendPrompt(currentSession, promptText, sending);
+  };
+
+  // Decisão sobre a mensagem retida: enviar assim mesmo, compactar antes de enviar, ou voltar a editar.
+  const resolveStaleNotice = async (choice: "send" | "compact" | "cancel") => {
+    const notice = staleNotice;
+    if (!notice) return;
+    setStaleNotice(null);
+    if (choice === "cancel") return;
+    setInputMessage("");
+    setAttachments([]);
+    if (choice === "compact") await compactContext(notice.session);
+    await sendPrompt(notice.session, notice.text, notice.attachments);
   };
 
   return {
@@ -176,5 +210,7 @@ export function useComposer({
     handleFileUpload,
     removeAttachment,
     handleSendMessage,
+    staleNotice,
+    resolveStaleNotice,
   };
 }

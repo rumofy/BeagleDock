@@ -71,6 +71,7 @@ function createCodexStream({
       effort,
       permission,
       p.fingerprint,
+      p.autoCompactTokens || 0,
     ]);
     let e = entries.get(sessionId);
     if (e && (e.key !== key || e.child.killed || e.child.exitCode !== null)) {
@@ -86,6 +87,8 @@ function createCodexStream({
           "-c",
           `approval_policy="${approvals && permission === "edits" ? "on-request" : "never"}"`,
         );
+      if (p.autoCompactTokens > 0)
+        config.push("-c", `model_auto_compact_token_limit=${p.autoCompactTokens}`);
       if (model) config.push("-c", `model=${JSON.stringify(model)}`);
       if (effort)
         config.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);

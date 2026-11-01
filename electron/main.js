@@ -549,8 +549,16 @@ const approvals = require("./approvals").createApprovalBroker({
     if (channel === "cli-approvals") background?.onApprovalsChanged();
   },
 });
+// Limite de compactação automática (configuração do usuário), mantido em memória para cada turno.
+let savedAutoCompactTokens;
+getAppSettings()
+  .then((saved) => {
+    if (saved && savedAutoCompactTokens === undefined) savedAutoCompactTokens = saved.autoCompactTokens;
+  })
+  .catch(() => {});
 const cliRunner = createCliRunner({
   approvals,
+  getAutoCompactTokens: () => savedAutoCompactTokens,
   onMcpAuthError: (line) => codexMcpAuth.inspect(line),
   // Agentes em segundo plano atualizam a linha do tempo depois do turno: grava no histórico.
   onLateEvents: (payload) => sessionService.saveLateEvents(payload),
@@ -1067,6 +1075,7 @@ module.exports.ready = app.whenReady().then(async () => {
       for (const saved of sessions)
         sessionInfo.set(saved.id, { title: saved.title, providerId: saved.providerId });
       background.setRunInBackground(appSettings?.runInBackground !== false);
+      savedAutoCompactTokens = appSettings?.autoCompactTokens;
       let workspaces = savedWorkspaces;
       if (!workspaces || workspaces.length === 0) {
         workspaces = discoverLocalWorkspaces();
@@ -1197,6 +1206,8 @@ module.exports.ready = app.whenReady().then(async () => {
         if (!auto.ok) return { success: false, error: auto.error };
       }
       const result = await saveAppSettings(settingsObj);
+      if (Object.hasOwn(settingsObj || {}, "autoCompactTokens"))
+        savedAutoCompactTokens = result?.settings?.autoCompactTokens;
       if (Object.hasOwn(settingsObj || {}, "runInBackground"))
         background.setRunInBackground(settingsObj.runInBackground !== false);
       return result;
