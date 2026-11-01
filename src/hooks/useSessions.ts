@@ -1,3 +1,4 @@
+import { HANDOFF_PROMPT } from "../lib/handoffPrompt";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
@@ -410,75 +411,11 @@ export function useSessions({
       });
   };
 
+  // O atalho pede à própria CLI da conversa que rode a skill de handoff do ai-memory
+  // (antes só listava os handoffs pendentes e nunca criava um).
   const handleTriggerHandoff = async () => {
-    if (!currentSession) return;
-
-    const handoffMsg: ChatMessage = {
-      id: `handoff-usr-${Date.now()}`,
-      sessionId: currentSession.id,
-      sender: "user",
-      senderName: userProfile.firstName,
-      text: "/handoff",
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
-
-    let realHandoffOutput = "";
-    if (backendAvailable()) {
-      try {
-        const res = await beagleApi.runAIMemoryCommand(
-          ["handoffs"],
-          currentSession.cwd,
-        );
-        if (!res?.ok)
-          throw new Error(res?.error || "Falha ao consultar handoffs.");
-        if (res && res.rawText) {
-          realHandoffOutput = `\n\nStatus no servidor:\n${res.rawText.trim()}`;
-        }
-      } catch (e) {
-        setAppError((e as Error).message);
-        return;
-      }
-    }
-
-    const handoffResponse: ChatMessage = {
-      id: `handoff-resp-${Date.now() + 1}`,
-      sessionId: currentSession.id,
-      sender: currentSession.providerId,
-      senderName: currentProvider?.name || "IA",
-      modelBadge: currentSession.currentModel,
-      reasoningBadge: currentSession.reasoningEffort,
-      text: `📦 Consulta de handoffs no ai-memory. Nenhum handoff foi criado por esta ação.\n\n• Sessão: "${currentSession.title}"\n• Usuário OS: ${userProfile.fullName} (${userProfile.email})\n• Modelo: ${currentSession.currentModel} (${currentSession.reasoningEffort})\n• Workspace: ${currentSession.cwd}${realHandoffOutput}`,
-      commandSnippet: `ai-memory handoffs --cwd "${currentSession.cwd}"`,
-      executionSeconds: 1,
-      timestamp: new Date().toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    };
-
-    setMessages((prev) => ({
-      ...prev,
-      [currentSession.id]: [
-        ...(prev[currentSession.id] || []),
-        handoffMsg,
-        handoffResponse,
-      ],
-    }));
-
-    if (backendAvailable()) {
-      beagleApi
-        .saveChatMessage({ ...handoffMsg, provider: currentSession.providerId })
-        .catch(() => {});
-      beagleApi
-        .saveChatMessage({
-          ...handoffResponse,
-          provider: currentSession.providerId,
-        })
-        .catch(() => {});
-    }
+    if (!currentSession || isExecutingPrompt) return;
+    await sendPrompt(currentSession, HANDOFF_PROMPT);
   };
 
   const handleCreateSession = async (
@@ -746,9 +683,10 @@ export function useSessions({
       ...session,
       currentModel: selected.model,
       reasoningEffort: selected.effort,
-      title: session.titleLocked
-        ? session.title
-        : conversationTitle(session.title, promptText),
+      title:
+        session.titleLocked || promptText === HANDOFF_PROMPT
+          ? session.title
+          : conversationTitle(session.title, promptText),
       status: "running" as const,
     };
     const id = sendingSession.id;

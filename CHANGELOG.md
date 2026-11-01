@@ -4,6 +4,12 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-01
+
+### Corrigido
+
+- O atalho /handoff agora pede à CLI da conversa que salve um handoff de verdade com a skill do ai-memory, em vez de só listar os handoffs pendentes e parecer travado.
+
 ## [0.3.1] - 2026-10-31
 
 ### Corrigido
@@ -138,7 +144,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/rumofy/BeagleDock/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rumofy/BeagleDock/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/rumofy/BeagleDock/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/rumofy/BeagleDock/compare/v0.2.1...v0.2.2

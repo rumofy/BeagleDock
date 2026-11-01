@@ -318,7 +318,7 @@ export function ChatHeader() {
         <button
           onClick={handleTriggerHandoff}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] border border-[#d6cfbe] text-[#332f28] transition shadow-2xs hover:shadow-xs group"
-          title="Sincronizar /handoff real com o ai-memory"
+          title="Salvar um handoff desta conversa no ai-memory"
         >
           <ArrowRightLeft
             size={14}
