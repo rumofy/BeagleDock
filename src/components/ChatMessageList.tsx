@@ -5,6 +5,7 @@ import { CompanyIcon } from "./CompanyIcon";
 import { ChatTimeline } from "./ChatTimeline";
 import { MessageBody } from "./MessageBody";
 import type { FileTarget } from "./LinkedText";
+import { messageSegments } from "../lib/messageSegments";
 import type { ChatMessage, ReasoningEffortLevel, UserProfile } from "../types";
 
 export function reasoningBadgeClass(effort: ReasoningEffortLevel) {
@@ -51,6 +52,10 @@ const MessageRow = memo(
           e.status === "running" &&
           e.meta?.background === true,
       ).length ?? 0;
+    const segments = messageSegments(msg.text || "");
+    const earlier = segments.slice(0, -1);
+    const lastSegment = segments.at(-1) || "";
+    const boxClass = `text-sm text-[#2e2a24] leading-relaxed bg-[#f4f1e8]/60 border border-[#eae4d7] rounded-2xl shadow-2xs space-y-3 overflow-x-auto ${compact ? "p-2.5" : "p-3.5"}`;
     return (
       <div key={msg.id} className="flex gap-3">
         {msg.sender === "user" ? (
@@ -84,17 +89,29 @@ const MessageRow = memo(
             <span className="text-xs text-[#9d9483]">{msg.timestamp}</span>
           </div>
 
-          <div
-            className={`text-sm text-[#2e2a24] leading-relaxed bg-[#f4f1e8]/60 border border-[#eae4d7] rounded-2xl shadow-2xs space-y-3 overflow-x-auto ${compact ? "p-2.5" : "p-3.5"}`}
-          >
-            {msg.events && msg.events.length > 0 && (
+          {/* Cada trecho de texto da resposta é uma caixa própria: o que já foi lido fica separado do novo. */}
+          {earlier.map((segment, index) => (
+            <div key={index} className={`${boxClass} mb-2`} data-testid="message-segment">
+              {index === 0 && msg.events && msg.events.length > 0 && (
+                <ChatTimeline events={msg.events} streaming={!!msg.isStreaming} />
+              )}
+              <div className="whitespace-pre-wrap break-words font-sans">
+                <MessageBody
+                  text={segment}
+                  onOpenFile={msg.sender === "user" ? undefined : onOpenFile}
+                />
+              </div>
+            </div>
+          ))}
+          <div className={boxClass} data-testid="message-segment">
+            {earlier.length === 0 && msg.events && msg.events.length > 0 && (
               <ChatTimeline events={msg.events} streaming={!!msg.isStreaming} />
             )}
 
-            {msg.text && (
+            {lastSegment && (
               <div className="whitespace-pre-wrap break-words font-sans">
                 <MessageBody
-                  text={msg.text}
+                  text={lastSegment}
                   onOpenFile={msg.sender === "user" ? undefined : onOpenFile}
                 />
               </div>

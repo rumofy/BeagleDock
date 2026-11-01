@@ -27,20 +27,37 @@ function pickModelWindow(modelUsage, preferredModel) {
   return entries.sort((a, b) => volume(b[1]) - volume(a[1]))[0][1].contextWindow;
 }
 
+// Cache de prompt da última chamada: o que foi lido (barato) e o que foi escrito (caro, acontece
+// quando o cache expirou ou o prefixo mudou). Só entra quando a CLI informa algum dos dois.
+function cacheUsage(read, write) {
+  const hasRead = Number.isFinite(read) && read >= 0;
+  const hasWrite = Number.isFinite(write) && write >= 0;
+  if (!hasRead && !hasWrite) return null;
+  return { ...(hasRead ? { read } : {}), ...(hasWrite ? { write } : {}) };
+}
+
+function claudeCacheUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  return cacheUsage(usage.cache_read_input_tokens, usage.cache_creation_input_tokens);
+}
+
 function codexContext(tokenUsage) {
   const used = num(tokenUsage?.last?.totalTokens);
   const window = Number.isFinite(tokenUsage?.modelContextWindow) ? tokenUsage.modelContextWindow : null;
-  return used > 0 ? { used, window } : null;
+  if (!(used > 0)) return null;
+  const cache = cacheUsage(tokenUsage?.last?.cachedInputTokens, tokenUsage?.last?.cacheWriteInputTokens);
+  return { used, window, ...(cache ? { cache } : {}) };
 }
 
 function createContextTracker({ emit = () => {}, sessionId, source, now = Date.now }) {
-  const state = { used: null, window: null, windowKnown: false, compacting: false, compactions: 0, last: null };
+  const state = { used: null, cache: null, window: null, windowKnown: false, compacting: false, compactions: 0, last: null };
   const publish = () =>
     emit("cli-context", { sessionId, ...snapshot() });
   function snapshot() {
     return {
       source,
       used: state.used,
+      ...(state.cache ? { cache: state.cache } : {}),
       window: state.window,
       windowKnown: state.windowKnown,
       compacting: state.compacting,
@@ -50,8 +67,9 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
     };
   }
   return {
-    update({ used, window, windowKnown, model }) {
+    update({ used, window, windowKnown, model, cache }) {
       if (Number.isFinite(used)) state.used = used;
+      if (cache) state.cache = cache;
       if (Number.isFinite(window)) {
         state.window = window;
         state.windowKnown = windowKnown !== false;
@@ -100,6 +118,7 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
 
 module.exports = {
   claudeContextUsed,
+  claudeCacheUsage,
   pickModelWindow,
   codexContext,
   createContextTracker,

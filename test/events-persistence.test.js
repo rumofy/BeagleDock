@@ -85,3 +85,17 @@ test("atualização tardia mescla por id na resposta gravada, sem apagar o resto
   assert.equal(r6.events[2].parentId, "ag");
   assert.deepEqual(await store.mergeMessageEvents("s-events", "nao-existe", [event()]), { success: false });
 });
+
+test("mensagem entregue no meio de uma resposta: o histórico reaberto mantém a ordem vista na tela", async () => {
+  const ms = (offset) => new Date(Date.now() + offset).toISOString().replace("T", " ").replace("Z", "");
+  const m = (id, sender, extra) => ({ id, sessionId: "s-order", sender, senderName: sender, text: id, timestamp: "t", ...extra });
+  await store.saveSession({ ...session, id: "s-order" });
+  await store.saveChatMessage(m("u1", "user"));
+  await store.saveChatMessage(m("u2", "user"));
+  // As respostas são gravadas no fim do turno, depois das duas mensagens do usuário.
+  await store.saveChatMessage(m("a1", "claude", { createdAt: ms(1999) }));
+  await store.setMessageTime("s-order", "u2", ms(2000));
+  await store.saveChatMessage(m("a2", "claude", { createdAt: ms(3000) }));
+  const order = (await store.getChatMessages("s-order")).map((x) => x.id);
+  assert.deepEqual(order, ["u1", "a1", "u2", "a2"]);
+});

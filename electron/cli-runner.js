@@ -18,12 +18,20 @@ const {
 } = require("./activity-labels");
 const { LIVE_OUTPUT_GUIDANCE } = require("./guidance");
 const { randomUUID } = require("crypto");
+const {
+  SEGMENT_SEPARATOR,
+  addRotation,
+  liveReply,
+  applyRotations,
+} = require("./message-segments");
 const { createEventTracker } = require("./stream-events");
 const {
   claudeContextUsed,
+  claudeCacheUsage,
   pickModelWindow,
   createContextTracker,
 } = require("./context-usage");
+const { DEFAULT_AUTO_COMPACT_TOKENS, resolveAutoCompactTokens } = require("./auto-compact");
 const { askApproval, claudeApprovalOptions } = require("./approval-options");
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 const PERMISSIONS = new Set(["inherit", "plan", "ask", "edits", "full"]);
@@ -117,6 +125,8 @@ function createCliRunner({
   resolveSelection = ({ model, effort }) => ({ model, effort }),
   readAgyPermissions = readInheritedPermissions,
   globalFingerprint = () => "",
+  // Limite de contexto para compactar sozinho (0 = desligado). Lido a cada turno: a mudança vale já.
+  getAutoCompactTokens = () => DEFAULT_AUTO_COMPACT_TOKENS,
   approvals,
   onMcpAuthError = () => {},
   // Atualizações de eventos depois do fim do turno (agentes em segundo plano).
@@ -250,11 +260,13 @@ function createCliRunner({
           permission,
           nativeId,
           fingerprint: globalFingerprint(providerId),
+          autoCompactTokens: resolveAutoCompactTokens(getAutoCompactTokens()),
         });
       const agySettings =
         providerId === "antigravity" && permission !== "inherit"
           ? agyPermissionSettings(permission, readAgyPermissions(), !!approvals)
           : undefined;
+      const autoCompactTokens = providerId === "claude" ? resolveAutoCompactTokens(getAutoCompactTokens()) : 0;
       const key = JSON.stringify([
         providerId,
         bin,
@@ -264,6 +276,7 @@ function createCliRunner({
         permission,
         agySettings,
         globalFingerprint(providerId),
+        autoCompactTokens,
       ]);
       let entry = processes.get(sessionId);
       if (
@@ -308,7 +321,16 @@ function createCliRunner({
           cwd,
           stdio: ["pipe", "pipe", "pipe"],
           detached: process.platform !== "win32",
-          ...(approvalBridge ? { env: approvalBridge.env } : {}),
+          ...(approvalBridge || autoCompactTokens
+            ? {
+                env: {
+                  ...(approvalBridge?.env || {}),
+                  ...(autoCompactTokens
+                    ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(autoCompactTokens) }
+                    : {}),
+                },
+              }
+            : {}),
         });
         entry = {
           approvalBridge,
@@ -329,7 +351,7 @@ function createCliRunner({
         const activity = (text, detail) =>
           emit("cli-stream-chunk", {
             sessionId,
-            responseMessageId: current.turn?.responseMessageId,
+            responseMessageId: liveReply(current.turn, current.turn?.text).responseMessageId,
             activity: text,
             ...(detail ? { detail } : {}),
             pid: child.pid,
@@ -472,20 +494,25 @@ function createCliRunner({
               child.kill();
             });
         };
-        const stream = (text, delta = false) => {
+        const stream = (text, delta = false, stepIndex = undefined) => {
           const turn = current.turn;
           if (!turn || !text) return;
           if (delta) {
+            // AGY: cada etapa de resposta é um trecho; o texto de uma etapa nova abre outra caixa.
+            if (stepIndex !== undefined && turn.text && turn.textStep !== undefined && turn.textStep !== stepIndex)
+              turn.text += SEGMENT_SEPARATOR;
+            if (stepIndex !== undefined) turn.textStep = stepIndex;
             turn.text += text;
             turn.hasDeltas = true;
           } else if (!turn.hasDeltas)
-            turn.text += (turn.text ? "\n\n" : "") + text;
+            turn.text += (turn.text ? SEGMENT_SEPARATOR : "") + text;
+          const live = liveReply(turn, turn.text);
           emit("cli-stream-chunk", {
             sessionId,
-            responseMessageId: turn.responseMessageId,
+            responseMessageId: live.responseMessageId,
             activity: "IA respondendo…",
             chunk: text,
-            fullText: turn.text,
+            fullText: live.fullText,
             pid: child.pid,
           });
         };
@@ -573,7 +600,7 @@ function createCliRunner({
                 step.step_type === "agent_response" &&
                 typeof step.text_delta === "string"
               )
-                stream(step.text_delta, true);
+                stream(step.text_delta, true, step.step_index);
               // user_input e system_message são ruído para a pessoa (o pedido e o prompt de sistema).
               if (
                 step.step_type &&
@@ -700,8 +727,11 @@ function createCliRunner({
               current.agyTools?.clear();
               turn.finish({
                 ok,
-                output:
-                  typeof result.response === "string"
+                // O `result` do AGY junta as etapas com "\n"; o texto do turno guarda cada trecho
+                // separado (verificado com a CLI real 1.4.12), então ele vale quando há mais de um.
+                output: turn.text.includes(SEGMENT_SEPARATOR)
+                  ? turn.text
+                  : typeof result.response === "string"
                     ? result.response
                     : turn.text,
                 error: ok
@@ -912,7 +942,7 @@ function createCliRunner({
               ev.event.content_block?.type === "text" &&
               turn?.text
             )
-              turn.text += "\n\n";
+              turn.text += SEGMENT_SEPARATOR;
           } else if (ev.type === "assistant") {
             if (providerId === "claude" && !ev.parent_tool_use_id) {
               const used = claudeContextUsed(ev.message?.usage);
@@ -923,6 +953,7 @@ function createCliRunner({
                   window: current.contextWindow,
                   windowKnown: Number.isFinite(current.contextWindow),
                   model: current.model,
+                  cache: claudeCacheUsage(ev.message?.usage),
                 });
               }
             }
@@ -1159,6 +1190,7 @@ function createCliRunner({
             current.events.finishRunning(result.ok ? "done" : "error");
             const turnEvents = current.events.snapshot();
             current.events.endTurn();
+            result = applyRotations(result, turn);
             resolve({
               ...result,
               events: turnEvents,
@@ -1229,6 +1261,7 @@ function createCliRunner({
           cwd,
           selection,
           input: built.input,
+          responseMessageId: payload.responseMessageId,
         });
       } catch {
         return false;
@@ -1275,8 +1308,13 @@ function createCliRunner({
           message: { role: "user", content: built.content },
         }) + "\n",
       );
+      const from = entry.turn.responseMessageId;
+      const rotation = addRotation(entry.turn, {
+        responseMessageId: payload.responseMessageId,
+        text: entry.turn.text,
+      });
       entry.activity?.("Mensagem nova recebida; a IA a lê na próxima etapa");
-      return true;
+      return { from, at: rotation.at };
     } catch {
       return false;
     }
@@ -1287,17 +1325,14 @@ function createCliRunner({
     kill,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),
     busyCount: () => busy.size,
-    // Compactação nativa: só o Codex tem comando próprio fora da conversa; no Claude Code é a
-    // mensagem /compact, e o AGY não oferece compactação em modo programático.
+    // Compactação nativa: só o Codex tem comando próprio fora da conversa; no Claude Code e no AGY
+    // (1.4.12, verificado) ela é a mensagem /compact, enviada pelo app como um turno normal.
     compact: (id, providerId) =>
       providerId === "codex"
         ? codex.compact(id)
         : Promise.resolve({
             ok: false,
-            error:
-              providerId === "antigravity"
-                ? "O AGY não oferece compactação em modo programático."
-                : "No Claude Code a compactação é a mensagem /compact.",
+            error: "No Claude Code e no AGY a compactação é a mensagem /compact.",
           }),
     async prepareUpdate() {
       await codex.prepareUpdate();

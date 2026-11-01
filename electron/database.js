@@ -245,7 +245,7 @@ async function getSavedSessions() {
   }));
 }
 const insertMessageSql =
-  "INSERT INTO chat_history (id,session_id,provider,sender,sender_name,model_badge,reasoning_badge,text,command_snippet,attachments_json,timestamp,events_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+  "INSERT INTO chat_history (id,session_id,provider,sender,sender_name,model_badge,reasoning_badge,text,command_snippet,attachments_json,timestamp,events_json,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,COALESCE(?,CURRENT_TIMESTAMP))";
 const messageSql =
   insertMessageSql +
   " ON CONFLICT(id) DO UPDATE SET text=excluded.text,model_badge=excluded.model_badge,reasoning_badge=excluded.reasoning_badge,events_json=COALESCE(excluded.events_json,chat_history.events_json)";
@@ -303,7 +303,18 @@ function messageParams(m) {
     m.attachments ? JSON.stringify(m.attachments) : null,
     m.timestamp,
     eventsJson(m.events),
+    typeof m.createdAt === "string" ? m.createdAt : null,
   ];
+}
+// Reposiciona uma mensagem no histórico (mensagem entregue no meio de uma resposta em andamento).
+async function setMessageTime(sessionId, messageId, createdAt) {
+  await initDatabase();
+  await run("UPDATE chat_history SET created_at=? WHERE id=? AND session_id=?", [
+    createdAt,
+    messageId,
+    sessionId,
+  ]);
+  return { success: true };
 }
 async function sessionExists(id) {
   await initDatabase();
@@ -571,6 +582,7 @@ module.exports = {
   setNativeSession,
   deleteSessionFromDb,
   saveChatMessage,
+  setMessageTime,
   deleteChatMessage,
   mergeMessageEvents,
   replaceChatMessages,

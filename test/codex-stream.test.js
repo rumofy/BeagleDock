@@ -692,7 +692,7 @@ test("Codex: mensagem durante a execução vai ao turno ativo por turn/steer, se
   const pending = runner.execute(payload);
   await tick(); await tick();
   const child = h.calls[0].child;
-  assert.equal(await runner.inject({ ...payload, prompt: "e também isto" }), true);
+  assert.ok(await runner.inject({ ...payload, prompt: "e também isto", responseMessageId: "ai-segunda" }));
   const steer = child.messages.find((m) => m.method === "turn/steer");
   assert.equal(steer.params.threadId, "native-codex-123");
   assert.equal(steer.params.expectedTurnId, child.turnId);
@@ -713,4 +713,56 @@ test("Codex: se o turn/steer for recusado (turno já acabou), a mensagem cai na 
   assert.equal(await runner.inject({ ...payload, prompt: "tarde demais" }), false);
   h.notify("turn/completed", { turn: { status: "completed" } });
   await pending;
+});
+
+// Compactação automática (issue #58): o limite vai ao app-server do Codex como configuração.
+test("Codex: limite de compactação automática vai em model_auto_compact_token_limit (padrão 200 mil, 0 desliga)", async () => {
+  for (const [value, expected] of [[undefined, "model_auto_compact_token_limit=200000"], [150000, "model_auto_compact_token_limit=150000"], [0, null]]) {
+    const h = harness(), runner = h.make({ getAutoCompactTokens: () => value });
+    const pending = runner.execute(payload);
+    await tick();
+    const args = h.calls[0].args;
+    if (expected) assert.ok(args.includes(expected), `esperava ${expected} em ${args.join(" ")}`);
+    else assert.ok(!args.some((a) => String(a).includes("model_auto_compact_token_limit")));
+    h.notify("turn/completed", { turn: { status: "completed" } });
+    await pending;
+    runner.shutdown();
+  }
+});
+
+test("Codex: cada mensagem do agente é um trecho separado (issue #59)", async () => {
+  const { SEGMENT_SEPARATOR } = require("../electron/message-segments");
+  const h = harness(), runner = h.make();
+  const pending = runner.execute(payload);
+  await tick();
+  h.notify("item/agentMessage/delta", { itemId: "m1", delta: "Vou rodar os testes." });
+  h.notify("item/agentMessage/delta", { itemId: "m2", delta: "Passou." });
+  assert.equal(
+    h.events.filter((e) => e.channel === "cli-stream-chunk").at(-1).data.fullText,
+    `Vou rodar os testes.${SEGMENT_SEPARATOR}Passou.`,
+  );
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.output, `Vou rodar os testes.${SEGMENT_SEPARATOR}Passou.`);
+  runner.shutdown();
+});
+
+test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto escrito depois", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute(payload);
+  await tick(); await tick();
+  h.notify("item/agentMessage/delta", { itemId: "m1", delta: "Vou rodar os testes." });
+  assert.ok(await runner.inject({ ...payload, prompt: "e o build?", responseMessageId: "ai-segunda" }));
+  h.notify("item/agentMessage/delta", { itemId: "m2", delta: "O build passou." });
+  const last = h.events.filter((e) => e.channel === "cli-stream-chunk" && e.data.fullText).at(-1).data;
+  assert.equal(last.responseMessageId, "ai-segunda");
+  assert.equal(last.fullText, "O build passou.");
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.output, "Vou rodar os testes.");
+  assert.deepEqual(
+    result.followUps.map(({ responseMessageId, text }) => ({ responseMessageId, text })),
+    [{ responseMessageId: "ai-segunda", text: "O build passou." }],
+  );
+  runner.shutdown();
 });

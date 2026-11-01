@@ -4,6 +4,20 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
+### Adicionado
+
+- A barra de contexto mostra o cache de prompt da última resposta (lido e escrito) no Claude Code e no Codex CLI, e destaca quando o cache inteiro foi reescrito, que é o que gasta muita cota ao retomar uma conversa parada. O Antigravity não informa esse dado.
+- Compactação automática do contexto, configurável em Configurações (“Contexto das conversas”; padrão 200 mil tokens, ou desligada). Conversas longas ficam muito mais baratas de retomar depois de paradas, porque o cache expirado deixa de reprocessar centenas de milhares de tokens. Vale para Claude Code, Codex CLI e Antigravity.
+- O botão “Compactar” agora também funciona no Antigravity.
+- Ao enviar uma mensagem numa conversa grande (acima de 100 mil tokens) que ficou parada por mais de 1 hora, o app avisa que o cache expirou e que a mensagem vai reprocessar o contexto inteiro, e deixa escolher entre enviar assim mesmo, compactar antes de enviar ou voltar a editar.
+
+### Corrigido
+
+- Os textos que a IA escreve entre as ferramentas (“vou rodar os testes…”, “passou, agora…”, a conclusão) não ficam mais empilhados numa caixa só: cada trecho aparece na própria caixa, o que facilita separar o que você já leu do que é novo. Vale para Claude Code, Codex CLI e Antigravity; conversas antigas continuam como estavam.
+- A mensagem que você envia enquanto a IA ainda está respondendo não fica mais com a resposta dela em cima: o que a IA escreve depois de recebê-la aparece numa caixa nova, abaixo da sua mensagem, e o histórico reaberto mantém essa ordem. Vale para Claude Code e Codex CLI.
+
 ## [0.4.0] - 2026-11-01
 
 ### Adicionado
@@ -163,7 +177,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/rumofy/BeagleDock/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rumofy/BeagleDock/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/rumofy/BeagleDock/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rumofy/BeagleDock/compare/v0.3.0...v0.3.1

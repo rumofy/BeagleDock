@@ -10,6 +10,7 @@ import { appendShellOutput } from "../lib/shellTabs";
 import { storableAttachments } from "../lib/attachments";
 import { buildContinuation } from "../lib/continuation";
 import { PROVIDER_NAMES } from "../lib/approvalLabels";
+import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import type {
@@ -35,6 +36,8 @@ interface Params {
   setAppError: (message: string) => void;
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
+  /** Contexto (tokens) a partir do qual a conversa é compactada sozinha; 0 desliga. */
+  autoCompactTokens?: number;
 }
 
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
@@ -46,6 +49,7 @@ export function useSessions({
   setAppError,
   setActiveTab,
   setShowWorkspaceModal,
+  autoCompactTokens,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   // Referências para os ouvintes de eventos, que não são recriados a cada renderização.
@@ -65,6 +69,10 @@ export function useSessions({
   const [stoppingSessions, setStoppingSessions] = useState<
     Record<string, boolean>
   >({});
+  const contextRef = useRef(contextBySession);
+  contextRef.current = contextBySession;
+  const autoCompactRef = useRef(autoCompactTokens);
+  autoCompactRef.current = autoCompactTokens;
   const pendingTurns = useRef(new Map<string, number>());
   const runGenerations = useRef(new Map<string, number>());
   const isExecutingPrompt = (executingSessions[activeSessionId] || 0) > 0;
@@ -634,9 +642,10 @@ export function useSessions({
   };
 
   // Claude Code: a compactação é a mensagem /compact (testado com a CLI real); Codex tem comando
-  // próprio; o AGY não oferece compactação em modo programático.
+  // próprio; o AGY também usa /compact (verificado com a CLI real 1.4.12).
   const compactContext = async (session: ChatSession) => {
-    if (session.providerId === "claude") {
+    // O AGY compacta pelo comando /compact (verificado com a CLI real 1.4.12), como o Claude Code.
+    if (session.providerId === "claude" || session.providerId === "antigravity") {
       await sendPrompt(session, "/compact");
       return;
     }
@@ -767,14 +776,19 @@ export function useSessions({
       ...prev,
       [id]: [...(prev[id] || []), userMsg, reply],
     }));
-    const finishReply = (text: string, events?: ChatEvent[], ok = false) =>
+    const finishReply = (
+      text: string,
+      events?: ChatEvent[],
+      ok = false,
+      targetId = responseId,
+    ) =>
       setMessages((prev) =>
         !prev[id]
           ? prev
           : {
               ...prev,
               [id]: prev[id].map((m) =>
-                m.id === responseId
+                m.id === targetId
                   ? {
                       ...m,
                       text,
@@ -795,6 +809,7 @@ export function useSessions({
               ),
             },
       );
+    let autoCompact = false;
     try {
       if (!(await persistSession(sendingSession)))
         throw new Error("Não foi possível salvar a conversa.");
@@ -808,6 +823,7 @@ export function useSessions({
         sessionId: id,
         providerId: sendingSession.providerId,
         responseMessageId: responseId,
+        userMessageId: userMsg.id,
         prompt: promptText,
         ...(attachments.length ? { attachments } : {}),
         cwd: sendingSession.cwd,
@@ -819,10 +835,27 @@ export function useSessions({
       // A CLI recebeu a mensagem no meio da execução (próxima etapa): a resposta sai no mesmo
       // balão da execução em andamento, então este balão da fila deixa de existir.
       if (res?.injected) {
+        // O balão da fila vira a resposta a esta mensagem, abaixo dela; a resposta anterior segue
+        // com o que já escreveu.
         setMessages((prev) =>
           !prev[id]
             ? prev
-            : { ...prev, [id]: prev[id].filter((m) => m.id !== responseId) },
+            : {
+                ...prev,
+                [id]: prev[id].map((m) =>
+                  m.id === responseId
+                    ? {
+                        ...m,
+                        queuedFor: undefined,
+                        isStreaming: true,
+                        activity: m.activity || "Respondendo…",
+                        startedAt: m.startedAt ?? Date.now(),
+                      }
+                    : m.id === res.rotatedFrom
+                      ? { ...m, activity: undefined, detail: undefined }
+                      : m,
+                ),
+              },
         );
         return;
       }
@@ -834,17 +867,49 @@ export function useSessions({
         );
         return;
       }
+      const followUps = res?.followUps || [];
       finishReply(
         stripAnsi(
           res?.stopped
             ? res.output || "Execução interrompida pelo usuário."
-            : res?.ok
-              ? res.output || "Execução concluída."
-              : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
+            : followUps.length
+              ? res?.output || ""
+              : res?.ok
+                ? res.output || "Execução concluída."
+                : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
         ),
         res?.events,
         !!res?.ok,
       );
+      // Respostas às mensagens entregues no meio da execução: fecham com o texto de cada uma, e as
+      // sem texto saem da tela.
+      if (followUps.length) {
+        const empty = new Set(
+          followUps.filter((f) => !f.text.trim()).map((f) => f.responseMessageId),
+        );
+        setMessages((prev) =>
+          !prev[id]
+            ? prev
+            : {
+                ...prev,
+                [id]: prev[id]
+                  .filter((m) => !empty.has(m.id))
+                  .map((m) => {
+                    const done = followUps.find((f) => f.responseMessageId === m.id);
+                    return done
+                      ? {
+                          ...m,
+                          text: stripAnsi(done.text),
+                          isStreaming: false,
+                          queuedFor: undefined,
+                          activity: undefined,
+                          detail: undefined,
+                        }
+                      : m;
+                  }),
+              },
+        );
+      }
       setProviders((prev) =>
         prev.map((p) => ({
           ...p,
@@ -865,6 +930,16 @@ export function useSessions({
           ),
         })),
       );
+      // O AGY não tem limite próprio configurável: ao fim da resposta (cache ainda quente), se o
+      // contexto passou do limite e não há mais nada na fila, o app envia o /compact.
+      const limit = resolveAutoCompact(autoCompactRef.current);
+      autoCompact =
+        !!res?.ok &&
+        sendingSession.providerId === "antigravity" &&
+        promptText !== "/compact" &&
+        limit > 0 &&
+        (contextRef.current[id]?.used ?? 0) >= limit &&
+        (pendingTurns.current.get(id) || 0) <= 1;
     } catch (error) {
       setAppError((error as Error).message);
       finishReply(`Erro: ${(error as Error).message}`);
@@ -874,6 +949,7 @@ export function useSessions({
       else pendingTurns.current.delete(id);
       setExecutingSessions(Object.fromEntries(pendingTurns.current));
     }
+    if (autoCompact) await sendPrompt({ ...sendingSession, status: "idle" }, "/compact");
   };
 
   return {

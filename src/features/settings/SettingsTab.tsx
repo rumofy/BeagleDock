@@ -3,6 +3,7 @@ import { ApiKeysCard } from "./ApiKeysCard";
 import { AppearanceCard } from "./AppearanceCard";
 import { ShellsCard } from "./ShellsCard";
 import { BackgroundCard } from "./BackgroundCard";
+import { AutoCompactCard } from "./AutoCompactCard";
 
 export function SettingsTab() {
   return (
@@ -11,6 +12,7 @@ export function SettingsTab() {
                 <AppearanceCard />
                 <ShellsCard />
                 <BackgroundCard />
+                <AutoCompactCard />
                 <CliSettingsCard />
                 <ApiKeysCard />
               </div>

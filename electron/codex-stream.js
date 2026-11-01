@@ -6,6 +6,12 @@ const { codexItemActivity, reasoningTail } = require("./activity-labels");
 const { LIVE_OUTPUT_GUIDANCE } = require("./guidance");
 const { createEventTracker } = require("./stream-events");
 const { codexContext, createContextTracker } = require("./context-usage");
+const {
+  SEGMENT_SEPARATOR,
+  addRotation,
+  liveReply,
+  applyRotations,
+} = require("./message-segments");
 const { askApproval, codexApprovalOptions } = require("./approval-options");
 
 const textOf = (value) =>
@@ -71,6 +77,7 @@ function createCodexStream({
       effort,
       permission,
       p.fingerprint,
+      p.autoCompactTokens || 0,
     ]);
     let e = entries.get(sessionId);
     if (e && (e.key !== key || e.child.killed || e.child.exitCode !== null)) {
@@ -86,6 +93,8 @@ function createCodexStream({
           "-c",
           `approval_policy="${approvals && permission === "edits" ? "on-request" : "never"}"`,
         );
+      if (p.autoCompactTokens > 0)
+        config.push("-c", `model_auto_compact_token_limit=${p.autoCompactTokens}`);
       if (model) config.push("-c", `model=${JSON.stringify(model)}`);
       if (effort)
         config.push("-c", `model_reasoning_effort=${JSON.stringify(effort)}`);
@@ -158,18 +167,19 @@ function createCodexStream({
         });
       current.request = request;
       const publish = () => {
-        current.text = [...current.messages.values()].join("\n\n");
+        current.text = [...current.messages.values()].filter(Boolean).join(SEGMENT_SEPARATOR);
+        const live = liveReply(current, current.text);
         emit("cli-stream-chunk", {
           sessionId,
-          responseMessageId: current.responseMessageId,
-          fullText: current.text,
+          responseMessageId: live.responseMessageId,
+          fullText: live.fullText,
           pid: child.pid,
         });
       };
       const sendActivity = (activity, detail) =>
         emit("cli-stream-chunk", {
           sessionId,
-          responseMessageId: current.responseMessageId,
+          responseMessageId: liveReply(current, current.text).responseMessageId,
           activity,
           ...(detail ? { detail } : {}),
           pid: child.pid,
@@ -416,7 +426,7 @@ function createCodexStream({
           );
           emit("cli-stream-chunk", {
             sessionId,
-            responseMessageId: current.responseMessageId,
+            responseMessageId: liveReply(current, current.text).responseMessageId,
             activity: "Recebendo saída do comando…",
             pid: child.pid,
           });
@@ -685,6 +695,7 @@ function createCodexStream({
     current.text = "";
     current.error = null;
     current.responseMessageId = responseMessageId;
+    current.rotations = [];
     current.reasoningParts = new Map();
     current.subThreads ||= new Map();
     current.events.start(responseMessageId);
@@ -710,6 +721,7 @@ function createCodexStream({
         current.events.finishRunning(result.ok ? "done" : "error");
         const turnEvents = current.events.snapshot();
         current.events.endTurn();
+        result = applyRotations(result, current);
         resolve({
           ...result,
           events: turnEvents,
@@ -773,7 +785,9 @@ function createCodexStream({
         expectedTurnId: e.turnId,
         input: p.input,
       });
-      return true;
+      const from = e.responseMessageId;
+      const rotation = addRotation(e, { responseMessageId: p.responseMessageId, text: e.text });
+      return { from, at: rotation.at };
     } catch {
       return false;
     }

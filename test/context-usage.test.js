@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const ts = require("typescript");
-const { claudeContextUsed, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
+const { claudeContextUsed, claudeCacheUsage, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
 
 const out = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/tokens.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -101,4 +101,38 @@ test("a mesma compactação avisada por dois eventos conta uma vez", () => {
   clock += 5000;
   t.compacted({ trigger: "auto" });
   assert.equal(t.snapshot().compactions, 2, "uma compactação nova, depois, conta");
+});
+
+// Valores reais da issue #58 (Claude Code 2.1.316): 1ª chamada após ~4h parado, com cache expirado.
+const ISSUE_58_USAGE = { input_tokens: 2, cache_read_input_tokens: 10571, cache_creation_input_tokens: 595831, output_tokens: 546 };
+
+test("cache: Claude informa leitura e escrita da última chamada (issue #58)", () => {
+  assert.deepEqual(claudeCacheUsage(ISSUE_58_USAGE), { read: 10571, write: 595831 });
+  assert.deepEqual(claudeCacheUsage({ cache_read_input_tokens: 5 }), { read: 5 });
+  assert.equal(claudeCacheUsage({ input_tokens: 2 }), null);
+  assert.equal(claudeCacheUsage(undefined), null);
+  assert.equal(claudeContextUsed(ISSUE_58_USAGE), 606404);
+});
+
+test("cache: Codex usa cachedInputTokens (lido) e cacheWriteInputTokens (escrito)", () => {
+  const usage = { last: { totalTokens: 9000, cachedInputTokens: 7000, cacheWriteInputTokens: 1500 }, modelContextWindow: 272000 };
+  assert.deepEqual(codexContext(usage), { used: 9000, window: 272000, cache: { read: 7000, write: 1500 } });
+});
+
+test("cache: o rastreador publica o cache e uma atualização sem cache não o apaga", () => {
+  const sent = [];
+  const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "claude" });
+  t.update({ used: 606404, cache: claudeCacheUsage(ISSUE_58_USAGE) });
+  assert.deepEqual(sent.at(-1).cache, { read: 10571, write: 595831 });
+  t.setWindow(1000000, true);
+  assert.deepEqual(sent.at(-1).cache, { read: 10571, write: 595831 });
+  t.update({ used: 607050, cache: claudeCacheUsage({ cache_read_input_tokens: 606402, cache_creation_input_tokens: 648 }) });
+  assert.deepEqual(sent.at(-1).cache, { read: 606402, write: 648 });
+});
+
+test("cache: sem dado de cache (AGY) o snapshot não traz o campo", () => {
+  const sent = [];
+  const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "antigravity" });
+  t.update({ used: 1200 });
+  assert.equal("cache" in sent.at(-1), false);
 });

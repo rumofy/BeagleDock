@@ -40,6 +40,7 @@ function useAppStateValue() {
     setAppError,
     setActiveTab,
     setShowWorkspaceModal,
+    autoCompactTokens: settings.settings.autoCompactTokens,
   });
   const composer = useComposer({
     currentSession: sessions.currentSession,
@@ -47,6 +48,8 @@ function useAppStateValue() {
     setAppError,
     handleStopSession: sessions.handleStopSession,
     handleTriggerHandoff: sessions.handleTriggerHandoff,
+    contextBySession: sessions.contextBySession,
+    compactContext: sessions.compactContext,
     sendPrompt: sessions.sendPrompt,
   });
   const historyActions = useHistoryActions({
