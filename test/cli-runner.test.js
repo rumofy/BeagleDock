@@ -1,4 +1,5 @@
 const { test } = require("node:test");
+const { SEGMENT_SEPARATOR } = require("../electron/message-segments");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough, Writable } = require("node:stream");
@@ -1070,7 +1071,7 @@ test("Claude: o texto já escrito no turno não é trocado pelo result final nem
   child.close(0);
   const result = await pending;
   assert.equal(result.ok, false);
-  assert.equal(result.output, "Primeiro trecho.\n\nSegundo trecho.");
+  assert.equal(result.output, `Primeiro trecho.${SEGMENT_SEPARATOR}Segundo trecho.`);
   assert.match(result.error, /5-hour limit/);
 });
 
@@ -1086,7 +1087,7 @@ test("Claude: no sucesso, o texto final reúne todos os trechos e não só o úl
   child.event({ type: "result", session_id: "claude-native-2", is_error: false, result: "Pronto." });
   child.close(0);
   const result = await pending;
-  assert.equal(result.output, "Vou ler.\n\nPronto.");
+  assert.equal(result.output, `Vou ler.${SEGMENT_SEPARATOR}Pronto.`);
 });
 
 test("Claude: mensagem enviada durante a execução entra no turno em andamento (stdin) e outras CLIs não aceitam", async () => {
@@ -1097,7 +1098,7 @@ test("Claude: mensagem enviada durante a execução entra no turno em andamento 
   const child = h.calls[0].child;
   child.event({ type: "system", subtype: "init", session_id: "claude-native-3" });
   await tick();
-  assert.equal(await runner.inject({ ...payload("claude"), prompt: "e também isto" }), true);
+  assert.ok(await runner.inject({ ...payload("claude"), prompt: "e também isto" }));
   assert.equal(child.inputs.length, 2);
   assert.match(child.inputs[1], /e também isto/);
   assert.equal(await runner.inject({ ...payload("claude"), prompt: "x", effort: "high" }), false, "outro esforço espera na fila");
@@ -1157,5 +1158,75 @@ test("claude: limite de compactação automática vai no ambiente (padrão 200 m
   await run();
   assert.equal(h.calls.length, 3);
   assert.equal(h.calls[2].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined, "desligado: a CLI segue o padrão dela");
+  runner.shutdown();
+});
+
+// Issue #59: cada trecho de texto da resposta vira uma caixa própria (separador invisível entre eles).
+const textBlock = (child, text) => {
+  child.event({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } });
+  child.event({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } });
+};
+test("claude: textos entre ferramentas ficam em trechos separados, na tela e no resultado final", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", session_id: "native-id-123" });
+  textBlock(child, "Vou rodar os testes.");
+  child.event({ type: "stream_event", event: { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "t1", name: "Bash", input: {} } } });
+  textBlock(child, "Passou, agora o build.");
+  textBlock(child, "Tudo certo.");
+  child.event({ type: "result", result: "Tudo certo." });
+  const result = await run;
+  assert.equal(result.output, ["Vou rodar os testes.", "Passou, agora o build.", "Tudo certo."].join(SEGMENT_SEPARATOR));
+  const live = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText).at(-1).data.fullText;
+  assert.equal(live, result.output, "o texto ao vivo já traz os mesmos trechos do resultado final");
+  runner.shutdown();
+});
+test("claude: mensagem entregue no meio do turno abre outra resposta, abaixo dela, com o texto escrito depois", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", session_id: "native-id-123" });
+  textBlock(child, "Vou rodar os testes.");
+  const delivered = await runner.inject({ ...payload("claude"), prompt: "e o build?", responseMessageId: "ai-segunda" });
+  assert.equal(delivered.from, payload("claude").responseMessageId);
+  assert.equal(typeof delivered.at, "number");
+  textBlock(child, "Sobre o build: passou.");
+  child.event({ type: "result", result: "Sobre o build: passou." });
+  const result = await run;
+  assert.equal(result.output, "Vou rodar os testes.");
+  assert.deepEqual(
+    result.followUps.map(({ responseMessageId, text }) => ({ responseMessageId, text })),
+    [{ responseMessageId: "ai-segunda", text: "Sobre o build: passou." }],
+  );
+  const chunks = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText);
+  assert.equal(chunks[0].data.responseMessageId, payload("claude").responseMessageId);
+  assert.equal(chunks.at(-1).data.responseMessageId, "ai-segunda", "o texto novo aparece na resposta nova");
+  assert.equal(chunks.at(-1).data.fullText, "Sobre o build: passou.", "só o trecho escrito depois da entrega");
+  runner.shutdown();
+});
+test("antigravity: cada etapa de resposta é um trecho, e as partes da mesma etapa continuam juntas", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("antigravity"));
+  await tick();
+  const child = h.calls[0].child;
+  const step = (index, text, type = "agent_response") =>
+    child.event({ event: "step_update", step_update: { conversation_id: "agy-1", step_index: index, state: "ACTIVE", step_type: type, text_delta: text } });
+  child.event({ event: "init", conversation_id: "agy-1", init: {} });
+  step(1, "Olá ");
+  step(1, "mundo");
+  step(2, "", "tool");
+  step(3, "Fim.");
+  child.event({ event: "result", result: { conversation_id: "agy-1", status: "SUCCESS", response: "Olá mundo\nFim." } });
+  const live = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText).at(-1).data.fullText;
+  assert.equal(live, `Olá mundo${SEGMENT_SEPARATOR}Fim.`);
+  const result = await run;
+  // O `result` do AGY junta as etapas com "\n" (CLI real): o resultado final não pode apagar as caixas.
+  assert.equal(result.output, `Olá mundo${SEGMENT_SEPARATOR}Fim.`);
   runner.shutdown();
 });

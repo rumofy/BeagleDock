@@ -147,7 +147,7 @@ test("abas de shell: título, estado e agente vêm da linha do tempo; limites po
 });
 
 test("continuar em outra CLI: resumo só com dados do histórico, sem segredos e com o histórico como dado", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/continuation.ts"), "utf8").replace(/^import .*$/gm, "").replace(/providerQuota\(/g, "(p=>p.quota)("), {
+  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/continuation.ts"), "utf8").replace(/^import .*$/gm, "").replace(/providerQuota\(/g, "(p=>p.quota)(").replace(/plainMessageText\(/g, "(t=>t.split('\\n\\n\\u2063\\n\\n').join('\\n\\n').split('\\u2063').join(''))("), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
   const ctx = { exports: {}, RegExp, Math, Set };

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { createSessionService } = require("../electron/session-service");
 
 function setup({ inject = () => false } = {}) {
-  const saved = [], deleted = [], kills = [];
+  const saved = [], deleted = [], kills = [], times = [];
   const gates = [];
   const started = [];
   const runner = {
@@ -21,10 +21,11 @@ function setup({ inject = () => false } = {}) {
     sessionExists: async () => true,
     saveChatMessage: async (m) => saved.push(m),
     deleteChatMessage: async (s, id) => deleted.push(id),
+    setMessageTime: async (...args) => times.push(args),
     setSessionContext: async () => {},
     deleteSessionFromDb: async () => {},
   };
-  return { service: createSessionService({ store, runner }), saved, deleted, kills, gates, started };
+  return { service: createSessionService({ store, runner }), saved, deleted, kills, gates, started, times };
 }
 const p = (n, extra = {}) => ({ sessionId: "s1", providerId: "claude", responseMessageId: `r${n}`, prompt: `m${n}` , ...extra });
 const tick = () => new Promise((r) => setImmediate(r));
@@ -166,4 +167,35 @@ test("mensagem em decisão de injeção não pode ser removida", async () => {
   assert.equal((await second).injected, true);
   t.gates.shift()({ ok: true });
   await first;
+});
+
+test("mensagem entregue no meio do turno: a resposta a ela é gravada depois dela e a ordem do histórico acompanha a tela", async () => {
+  const at = Date.UTC(2026, 10, 1, 12, 0, 20, 123);
+  const t = setup({ inject: () => ({ from: "r1", at }) });
+  const first = t.service.execute(p(1));
+  await tick();
+  const second = await t.service.execute(p(2, { userMessageId: "u2" }));
+  assert.equal(second.injected, true);
+  assert.equal(second.rotatedFrom, "r1");
+  assert.deepEqual(t.times, [["s1", "u2", "2026-11-01 12:00:20.123"]], "a mensagem do usuário passa a valer desde a entrega");
+  t.gates.shift()({ ok: true, output: "antes", followUps: [{ responseMessageId: "r2", at, text: "depois" }] });
+  const result = await first;
+  assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "depois" }]);
+  const byId = Object.fromEntries(t.saved.map((m) => [m.id, m]));
+  assert.equal(byId.r1.text, "antes");
+  assert.equal(byId.r1.createdAt, "2026-11-01 12:00:20.122", "a primeira resposta fica logo antes da mensagem");
+  assert.equal(byId.r2.text, "depois");
+  assert.ok(byId.r2.createdAt > byId.r1.createdAt, "a última resposta termina depois da mensagem entregue");
+});
+
+test("resposta à mensagem entregue sem texto não é gravada e vai vazia para a tela", async () => {
+  const at = Date.now();
+  const t = setup({ inject: () => ({ from: "r1", at }) });
+  const first = t.service.execute(p(1));
+  await tick();
+  await t.service.execute(p(2));
+  t.gates.shift()({ ok: true, output: "tudo", followUps: [{ responseMessageId: "r2", at, text: "" }] });
+  const result = await first;
+  assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "" }]);
+  assert.deepEqual(t.saved.map((m) => m.id), ["r1"]);
 });

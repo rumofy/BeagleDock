@@ -11,6 +11,11 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 - O botão “Compactar” agora também funciona no Antigravity.
 - Ao enviar uma mensagem numa conversa grande (acima de 100 mil tokens) que ficou parada por mais de 1 hora, o app avisa que o cache expirou e que a mensagem vai reprocessar o contexto inteiro, e deixa escolher entre enviar assim mesmo, compactar antes de enviar ou voltar a editar.
 
+### Corrigido
+
+- Os textos que a IA escreve entre as ferramentas (“vou rodar os testes…”, “passou, agora…”, a conclusão) não ficam mais empilhados numa caixa só: cada trecho aparece na própria caixa, o que facilita separar o que você já leu do que é novo. Vale para Claude Code, Codex CLI e Antigravity; conversas antigas continuam como estavam.
+- A mensagem que você envia enquanto a IA ainda está respondendo não fica mais com a resposta dela em cima: o que a IA escreve depois de recebê-la aparece numa caixa nova, abaixo da sua mensagem, e o histórico reaberto mantém essa ordem. Vale para Claude Code e Codex CLI.
+
 ## [0.4.0] - 2026-11-01
 
 ### Adicionado

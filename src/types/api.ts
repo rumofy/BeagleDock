@@ -113,6 +113,8 @@ export interface ExecutePromptPayload {
   sessionId: string;
   providerId: AIProviderId;
   responseMessageId: string;
+  /** Mensagem do usuário que originou este envio; reposiciona o histórico se ela for entregue no meio de uma resposta. */
+  userMessageId?: string;
   prompt: string;
   cwd: string;
   model: string;
@@ -165,6 +167,10 @@ export interface ExecutePromptResult {
   stopped?: boolean;
   /** A CLI recebeu a mensagem no meio da execução em andamento (não gerou resposta própria). */
   injected?: boolean;
+  /** Resposta que estava sendo escrita quando a mensagem foi entregue. */
+  rotatedFrom?: string;
+  /** Respostas às mensagens entregues no meio da execução, na ordem (texto vazio = sem resposta). */
+  followUps?: { responseMessageId: string; text: string }[];
   output?: string;
   error?: string;
   nativeSessionId?: string;

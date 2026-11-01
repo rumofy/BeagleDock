@@ -776,14 +776,19 @@ export function useSessions({
       ...prev,
       [id]: [...(prev[id] || []), userMsg, reply],
     }));
-    const finishReply = (text: string, events?: ChatEvent[], ok = false) =>
+    const finishReply = (
+      text: string,
+      events?: ChatEvent[],
+      ok = false,
+      targetId = responseId,
+    ) =>
       setMessages((prev) =>
         !prev[id]
           ? prev
           : {
               ...prev,
               [id]: prev[id].map((m) =>
-                m.id === responseId
+                m.id === targetId
                   ? {
                       ...m,
                       text,
@@ -818,6 +823,7 @@ export function useSessions({
         sessionId: id,
         providerId: sendingSession.providerId,
         responseMessageId: responseId,
+        userMessageId: userMsg.id,
         prompt: promptText,
         ...(attachments.length ? { attachments } : {}),
         cwd: sendingSession.cwd,
@@ -829,10 +835,27 @@ export function useSessions({
       // A CLI recebeu a mensagem no meio da execução (próxima etapa): a resposta sai no mesmo
       // balão da execução em andamento, então este balão da fila deixa de existir.
       if (res?.injected) {
+        // O balão da fila vira a resposta a esta mensagem, abaixo dela; a resposta anterior segue
+        // com o que já escreveu.
         setMessages((prev) =>
           !prev[id]
             ? prev
-            : { ...prev, [id]: prev[id].filter((m) => m.id !== responseId) },
+            : {
+                ...prev,
+                [id]: prev[id].map((m) =>
+                  m.id === responseId
+                    ? {
+                        ...m,
+                        queuedFor: undefined,
+                        isStreaming: true,
+                        activity: m.activity || "Respondendo…",
+                        startedAt: m.startedAt ?? Date.now(),
+                      }
+                    : m.id === res.rotatedFrom
+                      ? { ...m, activity: undefined, detail: undefined }
+                      : m,
+                ),
+              },
         );
         return;
       }
@@ -844,17 +867,49 @@ export function useSessions({
         );
         return;
       }
+      const followUps = res?.followUps || [];
       finishReply(
         stripAnsi(
           res?.stopped
             ? res.output || "Execução interrompida pelo usuário."
-            : res?.ok
-              ? res.output || "Execução concluída."
-              : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
+            : followUps.length
+              ? res?.output || ""
+              : res?.ok
+                ? res.output || "Execução concluída."
+                : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
         ),
         res?.events,
         !!res?.ok,
       );
+      // Respostas às mensagens entregues no meio da execução: fecham com o texto de cada uma, e as
+      // sem texto saem da tela.
+      if (followUps.length) {
+        const empty = new Set(
+          followUps.filter((f) => !f.text.trim()).map((f) => f.responseMessageId),
+        );
+        setMessages((prev) =>
+          !prev[id]
+            ? prev
+            : {
+                ...prev,
+                [id]: prev[id]
+                  .filter((m) => !empty.has(m.id))
+                  .map((m) => {
+                    const done = followUps.find((f) => f.responseMessageId === m.id);
+                    return done
+                      ? {
+                          ...m,
+                          text: stripAnsi(done.text),
+                          isStreaming: false,
+                          queuedFor: undefined,
+                          activity: undefined,
+                          detail: undefined,
+                        }
+                      : m;
+                  }),
+              },
+        );
+      }
       setProviders((prev) =>
         prev.map((p) => ({
           ...p,
