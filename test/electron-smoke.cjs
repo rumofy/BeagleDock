@@ -72,6 +72,11 @@ async function send(win, text, expected) {
     `(()=>{const logo=document.querySelector('img[alt="BeagleDock — mascote beagle"]');return logo?.complete && logo.naturalWidth>0;})()`,
   );
 
+  // Os detalhes da cota começam recolhidos: nada deles aparece até abrir.
+  await waitFor(win, `!document.querySelector('[data-testid="quota-details"]')`);
+  await win.webContents.executeJavaScript(
+    `document.querySelectorAll('button[aria-label^="Detalhes da cota"]').forEach((b) => b.click())`,
+  );
   await waitFor(
     win,
     `document.querySelector('[aria-label="Cotas por grupo do AGY"]')?.innerText.includes('Claude and GPT models')`,

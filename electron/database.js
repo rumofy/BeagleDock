@@ -397,6 +397,12 @@ async function saveChatMessage(m) {
   await run(messageSql, messageParams(m));
   return { success: true, id: m.id };
 }
+async function deleteChatMessage(sessionId, messageId) {
+  await initDatabase();
+  await run("DELETE FROM chat_history WHERE id=? AND session_id=?", [messageId, sessionId]);
+  LIVE_MESSAGE_IDS.delete(messageId);
+  return { success: true };
+}
 // Respostas com agentes em segundo plano ainda ativas nesta execução do app.
 const LIVE_MESSAGE_IDS = new Set();
 function chatRow(r) {
@@ -565,6 +571,7 @@ module.exports = {
   setNativeSession,
   deleteSessionFromDb,
   saveChatMessage,
+  deleteChatMessage,
   mergeMessageEvents,
   replaceChatMessages,
   sessionExists,

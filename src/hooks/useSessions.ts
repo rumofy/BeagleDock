@@ -667,6 +667,48 @@ export function useSessions({
     }
   };
 
+  // Mensagem que ainda espera na fila: remove sem a CLI chegar a recebê-la.
+  const cancelQueuedPrompt = async (reply: ChatMessage) => {
+    if (!reply.queuedFor) return;
+    try {
+      const result = await beagleApi.cancelQueuedPrompt({
+        sessionId: reply.sessionId,
+        responseMessageId: reply.id,
+        userMessageId: reply.queuedFor,
+      });
+      if (!result?.ok)
+        throw new Error(result?.error || "Não foi possível remover da fila.");
+      setMessages((prev) =>
+        !prev[reply.sessionId]
+          ? prev
+          : {
+              ...prev,
+              [reply.sessionId]: prev[reply.sessionId].filter(
+                (m) => m.id !== reply.id && m.id !== reply.queuedFor,
+              ),
+            },
+      );
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+
+  // "Enviar agora": interrompe a execução atual para esta mensagem da fila ser a próxima.
+  const forceQueuedPrompt = async (reply: ChatMessage) => {
+    if (!reply.queuedFor) return;
+    try {
+      const result = await beagleApi.forceQueuedPrompt({
+        sessionId: reply.sessionId,
+        responseMessageId: reply.id,
+        userMessageId: reply.queuedFor,
+      });
+      if (!result?.ok)
+        throw new Error(result?.error || "Não foi possível enviar agora.");
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+
   // Envia um prompt para uma sessão (chat principal ou Manutenção Assistida).
   const sendPrompt = async (
     session: ChatSession,
@@ -716,6 +758,7 @@ export function useSessions({
         ? "Na fila · envio automático após a resposta atual…"
         : "Executando na CLI local…",
       isStreaming: true,
+      ...(wasPending ? { queuedFor: userMsg.id } : {}),
       activity: wasPending ? "Na fila" : "Aguardando a CLI…",
       startedAt: Date.now(),
       timestamp: new Date().toLocaleTimeString(),
@@ -736,6 +779,7 @@ export function useSessions({
                       ...m,
                       text,
                       isStreaming: false,
+                      queuedFor: undefined,
                       activity: undefined,
                       detail: undefined,
                       // A lista final vem do backend; sem ela, encerra o que ainda estava rodando.
@@ -772,6 +816,16 @@ export function useSessions({
         permission: sendingSession.permission || "inherit",
         cancelled: (runGenerations.current.get(id) || 0) !== generation,
       });
+      // A CLI recebeu a mensagem no meio da execução (próxima etapa): a resposta sai no mesmo
+      // balão da execução em andamento, então este balão da fila deixa de existir.
+      if (res?.injected) {
+        setMessages((prev) =>
+          !prev[id]
+            ? prev
+            : { ...prev, [id]: prev[id].filter((m) => m.id !== responseId) },
+        );
+        return;
+      }
       if (res?.cancelled && !res?.stopped) {
         setMessages((prev) =>
           !prev[id]
@@ -856,6 +910,8 @@ export function useSessions({
     compactContext,
     unreadSessionIds,
     handleStopSession,
+    cancelQueuedPrompt,
+    forceQueuedPrompt,
     sendPrompt,
   };
 }

@@ -100,6 +100,8 @@ function createCodexStream({
       );
       e = {
         key,
+        cwd,
+        selection: JSON.stringify([model, effort, permission]),
         child,
         requests: new Map(),
         nativeId,
@@ -701,6 +703,8 @@ function createCodexStream({
       current.finish = (result) => {
         if (done) return;
         done = true;
+        if (result.output === undefined && current.text)
+          result = { ...result, output: current.text };
         clearTimeout(timer);
         current.finish = null;
         current.events.finishRunning(result.ok ? "done" : "error");
@@ -731,6 +735,48 @@ function createCodexStream({
           current.finish?.({ ok: false, error: error.message }),
         );
     });
+  }
+  // Mensagem enviada durante a execução: `turn/steer` a entrega ao turno ativo (como o Enter durante
+  // a resposta na CLI do Codex). Devolve false quando não há turno em andamento compatível ou o
+  // Codex recusa (ex.: o turno acabou no meio); aí a mensagem espera na fila.
+  function canInject(p) {
+    const e = entries.get(p?.sessionId);
+    return !(
+      !e ||
+      !e.finish ||
+      !e.turnId ||
+      !e.nativeId ||
+      e.compaction ||
+      e.child.exitCode !== null ||
+      e.child.killed ||
+      e.selection !== p.selection ||
+      e.cwd !== p.cwd
+    );
+  }
+  async function inject(p) {
+    const e = entries.get(p?.sessionId);
+    if (
+      !e ||
+      !e.finish ||
+      !e.turnId ||
+      !e.nativeId ||
+      e.compaction ||
+      e.child.exitCode !== null ||
+      e.child.killed ||
+      e.selection !== p.selection ||
+      e.cwd !== p.cwd
+    )
+      return false;
+    try {
+      await e.request("turn/steer", {
+        threadId: e.nativeId,
+        expectedTurnId: e.turnId,
+        input: p.input,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
   // Compactação nativa do Codex (thread/compact/start): só com o app-server da conversa ativo e
   // ocioso. Espera a compactação terminar e devolve o contexto resultante (para ser salvo).
@@ -764,6 +810,8 @@ function createCodexStream({
   }
   return {
     execute,
+    inject,
+    canInject,
     compact,
     kill: close,
     shutdown() {

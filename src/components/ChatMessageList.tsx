@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Trash2, Zap } from "lucide-react";
 import { ChatActivity } from "./ChatActivity";
 import { CompanyIcon } from "./CompanyIcon";
 import { ChatTimeline } from "./ChatTimeline";
@@ -27,14 +27,30 @@ type RowProps = {
   msg: ChatMessage;
   userProfile: Pick<UserProfile, "fullName" | "initials">;
   compact: boolean;
+  onForceQueued?: (msg: ChatMessage) => void;
+  onCancelQueued?: (msg: ChatMessage) => void;
 };
 
 // Só a mensagem em streaming muda de identidade a cada pedaço; as demais não re-renderizam.
 const MessageRow = memo(
-  function MessageRow({ msg, userProfile, compact, onOpenFile }: RowProps) {
+  function MessageRow({
+    msg,
+    userProfile,
+    compact,
+    onOpenFile,
+    onForceQueued,
+    onCancelQueued,
+  }: RowProps) {
     const backgroundAgents =
       msg.events?.filter((e) => e.kind === "agent" && e.status === "running")
         .length ?? 0;
+    const backgroundCommands =
+      msg.events?.filter(
+        (e) =>
+          e.kind === "command" &&
+          e.status === "running" &&
+          e.meta?.background === true,
+      ).length ?? 0;
     return (
       <div key={msg.id} className="flex gap-3">
         {msg.sender === "user" ? (
@@ -94,6 +110,30 @@ const MessageRow = memo(
                 lastProgressAt={msg.lastProgressAt}
               />
             )}
+            {msg.queuedFor && (onForceQueued || onCancelQueued) && (
+              <div className="flex items-center gap-2" data-testid="queued-actions">
+                {onForceQueued && (
+                  <button
+                    type="button"
+                    onClick={() => onForceQueued(msg)}
+                    title="Interrompe a execução atual e envia esta mensagem agora"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
+                  >
+                    <Zap size={12} /> Enviar agora
+                  </button>
+                )}
+                {onCancelQueued && (
+                  <button
+                    type="button"
+                    onClick={() => onCancelQueued(msg)}
+                    title="Remove a mensagem da fila antes de a IA lê-la"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-[11px] font-bold text-[#665e4f]"
+                  >
+                    <Trash2 size={12} /> Remover da fila
+                  </button>
+                )}
+              </div>
+            )}
             {!msg.isStreaming && backgroundAgents > 0 && (
               <div
                 role="status"
@@ -104,6 +144,18 @@ const MessageRow = memo(
                 {backgroundAgents === 1
                   ? "1 agente ainda trabalhando em segundo plano"
                   : `${backgroundAgents} agentes ainda trabalhando em segundo plano`}
+              </div>
+            )}
+            {!msg.isStreaming && backgroundCommands > 0 && (
+              <div
+                role="status"
+                data-testid="background-commands"
+                className="flex items-center gap-2 text-[11px] font-medium text-amber-700"
+              >
+                <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />
+                {backgroundCommands === 1
+                  ? "1 comando ainda rodando em segundo plano: a IA aguarda o aviso de conclusão"
+                  : `${backgroundCommands} comandos ainda rodando em segundo plano: a IA aguarda o aviso de conclusão`}
               </div>
             )}
             {msg.attachments && msg.attachments.length > 0 && (
@@ -167,6 +219,8 @@ const MessageRow = memo(
     a.msg === b.msg &&
     a.compact === b.compact &&
     a.onOpenFile === b.onOpenFile &&
+    a.onForceQueued === b.onForceQueued &&
+    a.onCancelQueued === b.onCancelQueued &&
     a.userProfile.fullName === b.userProfile.fullName &&
     a.userProfile.initials === b.userProfile.initials,
 );
@@ -176,12 +230,18 @@ export function ChatMessageList({
   userProfile,
   compact = false,
   onOpenFile,
+  onForceQueued,
+  onCancelQueued,
 }: {
   messages: ChatMessage[];
   userProfile: Pick<UserProfile, "fullName" | "initials">;
   compact?: boolean;
   onOpenFile?: (target: FileTarget) => void;
+  onForceQueued?: (msg: ChatMessage) => void;
+  onCancelQueued?: (msg: ChatMessage) => void;
 }) {
+  // "Enviar agora" só vale para a próxima mensagem da fila (a primeira que ainda espera).
+  const nextQueuedId = messages.find((m) => m.queuedFor)?.id;
   return (
     <>
       {messages.map((msg) => (
@@ -191,6 +251,8 @@ export function ChatMessageList({
           userProfile={userProfile}
           compact={compact}
           onOpenFile={onOpenFile}
+          onForceQueued={msg.id === nextQueuedId ? onForceQueued : undefined}
+          onCancelQueued={onCancelQueued}
         />
       ))}
     </>

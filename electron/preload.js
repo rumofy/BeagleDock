@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   ptyWrite: (payload) => ipcRenderer.invoke("pty-write", payload),
   ptyResize: (payload) => ipcRenderer.invoke("pty-resize", payload),
   interruptCliSession: (id) => ipcRenderer.invoke("interrupt-cli-session", id),
+  cancelQueuedPrompt: (request) => ipcRenderer.invoke("cancel-queued-prompt", request),
+  forceQueuedPrompt: (request) => ipcRenderer.invoke("force-queued-prompt", request),
   executeCliPrompt: (payload) =>
     ipcRenderer.invoke("execute-cli-prompt", payload),
   on: (channel, callback) => {

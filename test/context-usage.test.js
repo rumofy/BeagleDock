@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const ts = require("typescript");
-const { claudeContextUsed, guessClaudeWindow, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
+const { claudeContextUsed, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
 
 const out = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/tokens.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -22,12 +22,10 @@ test("Claude: contexto = entrada + cache criado + cache lido (a saída entra na 
   assert.equal(claudeContextUsed({ input_tokens: -5 }), null);
 });
 
-test("Claude: janela real vem do result; antes disso, estimada pelo nome do modelo", () => {
+test("Claude: a janela real vem do result", () => {
   assert.equal(pickModelWindow(REAL_MODEL_USAGE, "claude-haiku-5-5"), 1000000);
   assert.equal(pickModelWindow({ a: { contextWindow: 200000 }, b: { contextWindow: 1000000 } }, "b"), 1000000);
   assert.equal(pickModelWindow({}, "x"), null);
-  assert.equal(guessClaudeWindow("claude-sonnet-5-5"), 200000);
-  assert.equal(guessClaudeWindow("claude-opus-5-5[1m]"), 1000000);
 });
 
 test("Codex: contexto vem de last.totalTokens e a janela, de modelContextWindow", () => {
@@ -37,12 +35,12 @@ test("Codex: contexto vem de last.totalTokens e a janela, de modelContextWindow"
   assert.equal(codexContext(undefined), null);
 });
 
-test("rastreador: estima a janela do Claude até a real chegar, e a compactação zera o uso para o pós", () => {
+test("rastreador: não estima a janela do Claude (só a real, do result), e a compactação zera o uso para o pós", () => {
   const sent = [];
   const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "claude" });
   t.update({ used: 15406, model: "claude-haiku-5-5" });
-  assert.equal(sent.at(-1).window, 200000);
-  assert.equal(sent.at(-1).windowKnown, false);
+  assert.equal(sent.at(-1).window, null, "sem janela informada pela CLI não há palpite");
+  assert.equal(sent.at(-1).used, 15406);
   t.setWindow(1000000, true);
   assert.equal(sent.at(-1).window, 1000000);
   assert.equal(sent.at(-1).windowKnown, true);

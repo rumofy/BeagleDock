@@ -11,8 +11,10 @@ const MAX_TEXT = 4000;
 const TEXT_THROTTLE_MS = 120;
 const LATE_DEBOUNCE_MS = 400;
 
+// Agentes e comandos lançados em segundo plano seguem rodando depois que o turno termina.
 const isBackgroundAgent = (event) =>
-  event.kind === "agent" && event.meta?.background === true;
+  (event.kind === "agent" || event.kind === "command") &&
+  event.meta?.background === true;
 
 function createEventTracker({
   emit = () => {},
@@ -202,10 +204,11 @@ function createEventTracker({
     },
     // Encerra o que ainda roda no turno, MENOS agentes em segundo plano (e as etapas deles): esses
     // seguem trabalhando e terminam sozinhos, pelo evento final da própria CLI.
-    finishRunning(status = "done") {
+    // Com `all`, encerra também os em segundo plano (a CLI acabou: nada mais vai avisar o fim deles).
+    finishRunning(status = "done", { all = false } = {}) {
       const events = group(currentId);
       const background = new Set(
-        [...events.values()].filter(isBackgroundAgent).map((e) => e.id),
+        all ? [] : [...events.values()].filter(isBackgroundAgent).map((e) => e.id),
       );
       let grew = true;
       while (grew) {
@@ -223,6 +226,15 @@ function createEventTracker({
       for (const event of [...events.values()])
         if (event.status === "running" && !background.has(event.id))
           api.finish(event.id, status);
+    },
+    // A CLI encerrou: nada mais vai avisar o fim do que ainda constava como rodando.
+    finishAll(status = "error", note = "a CLI encerrou antes de avisar o fim") {
+      for (const events of [...groups.values()])
+        for (const event of [...events.values()])
+          if (event.status === "running")
+            api.finish(event.id, status, {
+              meta: { note: event.meta?.note ? `${event.meta.note} · ${note}` : note },
+            });
     },
     get(id) {
       for (const events of groups.values())

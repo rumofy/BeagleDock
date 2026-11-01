@@ -216,6 +216,8 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   embeddedPtyLog?: string[];
   isStreaming?: boolean;
+  /** Resposta que ainda espera na fila: id da mensagem da pessoa que a originou. */
+  queuedFor?: string;
   activity?: string;
   /** Complemento da atividade atual (comando, trecho do raciocínio…). */
   detail?: string;

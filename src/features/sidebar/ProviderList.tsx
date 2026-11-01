@@ -14,6 +14,9 @@ import { SessionRow } from "./SessionRow";
 export function ProviderList() {
   const { providers, handleCreateSession } = useApp();
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({});
+  // Detalhes da cota (leitura, reinício, tokens, grupos): recolhidos por padrão para sobrar espaço
+  // à lista de conversas; os percentuais de 5h e semana continuam no cabeçalho do provedor.
+  const [showDetails, setShowDetails] = useState<Record<string, boolean>>({});
   const [expandedProviders, setExpandedProviders] = useState<
     Record<string, boolean>
   >({
@@ -109,65 +112,84 @@ export function ProviderList() {
                 </div>
               </div>
 
-              <div
-                className="px-3 pb-2 text-[10px] text-[#7d7565]"
-                title={[quota.groupLabel, quota.sourceLabel]
-                  .filter(Boolean)
-                  .join(" · ")}
+              <button
+                type="button"
+                onClick={() =>
+                  setShowDetails((prev) => ({
+                    ...prev,
+                    [provider.id]: !prev[provider.id],
+                  }))
+                }
+                aria-expanded={!!showDetails[provider.id]}
+                aria-label={`Detalhes da cota de ${provider.name}`}
+                className="w-full text-left px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#8c8270] hover:text-[#443e33]"
               >
-                {quota.groupLabel && (
-                  <span className="block">{quota.groupLabel}</span>
-                )}
-                {!provider.installed
-                  ? "CLI não encontrada"
-                  : quota.updatedAt
-                    ? `${quota.stale ? "Leitura desatualizada" : "Última leitura"}: ${new Date(quota.updatedAt).toLocaleTimeString()}`
-                    : "Cota indisponível"}
-              </div>
-              {provider.installed &&
-                (quota.window5hResetAt || quota.weeklyResetAt) && (
+                {showDetails[provider.id] ? "▾" : "▸"} Detalhes da cota
+              </button>
+              {showDetails[provider.id] && (
+                <div data-testid="quota-details">
                   <div
                     className="px-3 pb-2 text-[10px] text-[#7d7565]"
-                    title={`Horários de reinício informados pela própria CLI, no seu fuso (${localUtcLabel()})`}
+                    title={[quota.groupLabel, quota.sourceLabel]
+                      .filter(Boolean)
+                      .join(" · ")}
                   >
-                    Reinicia · 5h: {formatReset(quota.window5hResetAt)} ·
-                    Semana: {formatReset(quota.weeklyResetAt)} (
-                    {localUtcLabel()})
+                    {quota.groupLabel && (
+                      <span className="block">{quota.groupLabel}</span>
+                    )}
+                    {!provider.installed
+                      ? "CLI não encontrada"
+                      : quota.updatedAt
+                        ? `${quota.stale ? "Leitura desatualizada" : "Última leitura"}: ${new Date(quota.updatedAt).toLocaleTimeString()}`
+                        : "Cota indisponível"}
                   </div>
-                )}
-              <div
-                className="px-3 pb-2 text-[10px] text-[#7d7565]"
-                title={[quota.groupLabel, quota.sourceLabel]
-                  .filter(Boolean)
-                  .join(" · ")}
-              >
-                {quota.totalTokens == null
-                  ? "Tokens indisponíveis"
-                  : `Tokens (7d): ${quota.totalTokens.toLocaleString()}`}
-                {provider.id === "antigravity" && quota.prompts5h !== undefined
-                  ? ` · ${quota.prompts5h} prompts (5h)`
-                  : ""}
-              </div>
-              {quota.groups && quota.groups.length > 0 && (
-                <div
-                  className="px-3 pb-2 space-y-1"
-                  aria-label="Cotas por grupo do AGY"
-                >
-                  {quota.groups.map((group) => (
+                  {provider.installed &&
+                    (quota.window5hResetAt || quota.weeklyResetAt) && (
+                      <div
+                        className="px-3 pb-2 text-[10px] text-[#7d7565]"
+                        title={`Horários de reinício informados pela própria CLI, no seu fuso (${localUtcLabel()})`}
+                      >
+                        Reinicia · 5h: {formatReset(quota.window5hResetAt)} ·
+                        Semana: {formatReset(quota.weeklyResetAt)} (
+                        {localUtcLabel()})
+                      </div>
+                    )}
+                  <div
+                    className="px-3 pb-2 text-[10px] text-[#7d7565]"
+                    title={[quota.groupLabel, quota.sourceLabel]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  >
+                    {quota.totalTokens == null
+                      ? "Tokens indisponíveis"
+                      : `Tokens (7d): ${quota.totalTokens.toLocaleString()}`}
+                    {provider.id === "antigravity" &&
+                    quota.prompts5h !== undefined
+                      ? ` · ${quota.prompts5h} prompts (5h)`
+                      : ""}
+                  </div>
+                  {quota.groups && quota.groups.length > 0 && (
                     <div
-                      key={group.name}
-                      className="text-[10px] flex justify-between gap-1"
-                      title={`Reinício 5h: ${group.window5hResetAt || "Não informado"} · Semanal: ${group.weeklyResetAt || "Não informado"}`}
+                      className="px-3 pb-2 space-y-1"
+                      aria-label="Cotas por grupo do AGY"
                     >
-                      <span className="text-[#7d7565] truncate">
-                        {group.name}
-                      </span>
-                      <span className="font-mono whitespace-nowrap">
-                        5h: {formatQuota(group.window5hPercent)} · S:{" "}
-                        {formatQuota(group.weeklyPercent)}
-                      </span>
+                      {quota.groups.map((group) => (
+                        <div
+                          key={group.name}
+                          className="text-[10px] flex justify-between gap-1"
+                          title={`Reinício 5h: ${group.window5hResetAt || "Não informado"} · Semanal: ${group.weeklyResetAt || "Não informado"}`}
+                        >
+                          <span className="text-[#7d7565] truncate">
+                            {group.name}
+                          </span>
+                          <span className="font-mono whitespace-nowrap">
+                            5h: {formatQuota(group.window5hPercent)} · S:{" "}
+                            {formatQuota(group.weeklyPercent)}
+                          </span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
               {quota.quotaError && (

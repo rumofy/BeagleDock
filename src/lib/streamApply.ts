@@ -47,6 +47,7 @@ function applyOne(
     else events.push(item.payload.event);
     return {
       ...message,
+      queuedFor: undefined,
       events,
       lastEventAt: now,
       lastProgressAt: changed ? now : (message.lastProgressAt ?? since),
@@ -63,6 +64,8 @@ function applyOne(
     (activity !== message.activity || detail !== message.detail);
   return {
     ...message,
+    // Chegou algo da CLI para esta resposta: ela saiu da fila.
+    queuedFor: undefined,
     text,
     activity: activity ?? message.activity,
     detail: activity !== undefined ? detail : message.detail,

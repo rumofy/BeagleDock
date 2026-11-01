@@ -520,7 +520,7 @@ test("Claude: contexto ao vivo pelo usage, janela real pelo result e compactaç�
   child.event({ type: "assistant", message: { model: "claude-haiku-5-5", usage: { input_tokens: 2, cache_creation_input_tokens: 6390, cache_read_input_tokens: 9014, output_tokens: 4 }, content: [{ type: "text", text: "ok" }] } });
   await tick();
   assert.equal(contexts().at(-1).used, 15406);
-  assert.equal(contexts().at(-1).windowKnown, false, "janela ainda estimada");
+  assert.equal(contexts().at(-1).window, null, "sem janela real ainda: nada estimado");
   // subagente (sidechain) não conta como contexto da conversa principal
   child.event({ type: "assistant", parent_tool_use_id: "tool-9", message: { model: "claude-haiku-5-5", usage: { input_tokens: 999999 }, content: [] } });
   await tick();
@@ -683,7 +683,6 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   child.event({ type: "assistant", message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: AGENT, name: "Agent", input: { description: "Rodar testes unitários", subagent_type: "general-purpose", prompt: "npm test", run_in_background: true } }] } });
   child.event({ type: "user", message: { content: [{ tool_use_id: AGENT, type: "tool_result", content: "Async agent launched successfully. The agent is working in the background." }] } });
   child.event({ type: "result", session_id: "claude-native-123", result: "Disparei um agente.", is_error: false });
-  child.close(0);
   const result = await pending;
   const atEnd = result.events.find((e) => e.id === AGENT);
   assert.equal(atEnd.kind, "agent");
@@ -691,7 +690,6 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   assert.equal(atEnd.meta.background, true);
   // ...e o agente trabalha depois do fim do turno: os eventos continuam chegando.
   const emitted = () => h.emitted.filter((e) => e.ch === "cli-activity-event").map((e) => e.data);
-  child.exitCode = null; // o processo segue vivo para o agente
   child.event({ type: "system", subtype: "task_started", task_id: "tk1", tool_use_id: AGENT, subagent_type: "general-purpose", description: "Rodar testes unitários", is_backgrounded: true });
   child.event({ type: "assistant", parent_tool_use_id: AGENT, message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "inner-1", name: "Bash", input: { command: "timeout 600 npm test 2>&1 | tail -n 400" } }] } });
   child.event({ type: "system", subtype: "task_progress", task_id: "tk1", tool_use_id: AGENT, description: "Running npm test", usage: { total_tokens: 900, tool_uses: 1, duration_ms: 3000 }, last_tool_name: "Bash" });
@@ -712,6 +710,50 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   const saved = late.filter((p) => p.responseMessageId === "resp-bg").at(-1);
   assert.equal(saved.events.find((e) => e.id === AGENT).status, "done");
   assert.ok(saved.events.some((e) => e.id === "inner-1"));
+  child.close(0);
+});
+
+test("Claude: comando em segundo plano segue 'rodando' depois do turno e só termina com o aviso da tarefa", async () => {
+  const h = harness();
+  const late = [];
+  const runner = h.make({ onLateEvents: (p) => late.push(p) });
+  const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-bgcmd" });
+  await tick();
+  const child = h.calls[0].child;
+  const CMD = "toolu_bg_cmd_1";
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-123" });
+  child.event({ type: "assistant", message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: CMD, name: "Bash", input: { command: "npm run test:integration", run_in_background: true } }] } });
+  child.event({ type: "user", message: { content: [{ tool_use_id: CMD, type: "tool_result", content: "Command running in background with ID: b1" }] } });
+  child.event({ type: "result", session_id: "claude-native-123", result: "Aguardando a suíte.", is_error: false });
+  const result = await pending;
+  const atEnd = result.events.find((e) => e.id === CMD);
+  assert.equal(atEnd.status, "running", "o retorno imediato não encerra o comando");
+  assert.equal(atEnd.meta.background, true);
+  child.event({ type: "system", subtype: "task_started", task_id: "b1", tool_use_id: CMD, task_type: "local_bash", description: "npm run test:integration" });
+  child.event({ type: "system", subtype: "task_notification", task_id: "b1", tool_use_id: CMD, status: "completed", summary: "suíte passou" });
+  await new Promise((r) => setTimeout(r, 500));
+  const saved = late.filter((p) => p.responseMessageId === "resp-bgcmd").at(-1);
+  assert.equal(saved.events.find((e) => e.id === CMD).status, "done");
+  child.close(0);
+});
+
+test("Claude: se a CLI encerra com comando em segundo plano ainda 'rodando', ele deixa de constar como rodando", async () => {
+  const h = harness();
+  const late = [];
+  const runner = h.make({ onLateEvents: (p) => late.push(p) });
+  const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-bgdie" });
+  await tick();
+  const child = h.calls[0].child;
+  const CMD = "toolu_bg_cmd_2";
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-123" });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", id: CMD, name: "Bash", input: { command: "npm test", run_in_background: true } }] } });
+  child.event({ type: "user", message: { content: [{ tool_use_id: CMD, type: "tool_result", content: "Command running in background" }] } });
+  child.event({ type: "result", session_id: "claude-native-123", result: "ok", is_error: false });
+  await pending;
+  child.close(0);
+  await new Promise((r) => setTimeout(r, 500));
+  const saved = late.filter((p) => p.responseMessageId === "resp-bgdie").at(-1);
+  assert.equal(saved.events.find((e) => e.id === CMD).status, "error");
 });
 
 // O agente principal recebe o resultado do agente em segundo plano e responde sozinho (turno
@@ -1013,4 +1055,79 @@ test("Claude e AGY: só comando vira shell; leitura de arquivo e outras ferramen
   const agy = g.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
   assert.match(agy.map((d) => d.data).join(""), /CONTEUDO_AGY/);
   assert.equal(agy.some((d) => d.shellId), false);
+});
+
+test("Claude: o texto já escrito no turno não é trocado pelo result final nem pela mensagem de erro (limite de uso)", async () => {
+  const h = harness();
+  const runner = h.make();
+  const pending = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-1" });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "Primeiro trecho." }] } });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "Segundo trecho." }] } });
+  child.event({ type: "result", session_id: "claude-native-1", is_error: true, result: "You've hit your 5-hour limit", errors: [] });
+  child.close(0);
+  const result = await pending;
+  assert.equal(result.ok, false);
+  assert.equal(result.output, "Primeiro trecho.\n\nSegundo trecho.");
+  assert.match(result.error, /5-hour limit/);
+});
+
+test("Claude: no sucesso, o texto final reúne todos os trechos e não só o último do result", async () => {
+  const h = harness();
+  const runner = h.make();
+  const pending = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-2" });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "Vou ler." }] } });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "Pronto." }] } });
+  child.event({ type: "result", session_id: "claude-native-2", is_error: false, result: "Pronto." });
+  child.close(0);
+  const result = await pending;
+  assert.equal(result.output, "Vou ler.\n\nPronto.");
+});
+
+test("Claude: mensagem enviada durante a execução entra no turno em andamento (stdin) e outras CLIs não aceitam", async () => {
+  const h = harness();
+  const runner = h.make();
+  const pending = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-3" });
+  await tick();
+  assert.equal(await runner.inject({ ...payload("claude"), prompt: "e também isto" }), true);
+  assert.equal(child.inputs.length, 2);
+  assert.match(child.inputs[1], /e também isto/);
+  assert.equal(await runner.inject({ ...payload("claude"), prompt: "x", effort: "high" }), false, "outro esforço espera na fila");
+  assert.equal(await runner.inject({ ...payload("codex"), prompt: "x" }), false);
+  assert.equal(await runner.inject({ ...payload("antigravity"), prompt: "x" }), false);
+  child.event({ type: "result", session_id: "claude-native-3", is_error: false, result: "ok" });
+  child.close(0);
+  await pending;
+  assert.equal(await runner.inject({ ...payload("claude"), prompt: "depois" }), false, "sem turno em andamento");
+});
+
+test("AGY e Claude: falha sem saída própria (evento de erro) mantém o texto já escrito no turno", async () => {
+  for (const provider of ["claude", "antigravity"]) {
+    const h = harness();
+    const runner = h.make();
+    const pending = runner.execute(payload(provider));
+    await tick();
+    const child = h.calls[0].child;
+    if (provider === "claude") {
+      child.event({ type: "system", subtype: "init", session_id: "claude-native-9" });
+      child.event({ type: "assistant", message: { model: "m", content: [{ type: "text", text: "Já escrito." }] } });
+    } else {
+      child.event({ event: "init", conversation_id: "agy-native-id-123" });
+      child.event({ event: "step_update", step_update: { conversation_id: "agy-native-id-123", step_index: 2, state: "DONE", step_type: "agent_response", text_delta: "Já escrito." } });
+    }
+    child.stderr.write("");
+    child.emit("error", new Error("pipe quebrado"));
+    child.close(1);
+    const result = await pending;
+    assert.equal(result.ok, false, provider);
+    assert.match(result.output || "", /Já escrito\./, provider);
+  }
 });

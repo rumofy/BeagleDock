@@ -4,7 +4,19 @@ function createSessionService({ store, runner }) {
     turns = new Map(),
     removing = new Map(),
     generations = new Map(),
-    stopping = new Map();
+    stopping = new Map(),
+    // Quantas execuções (rodando + na fila) cada conversa tem; a mensagem só entra no turno atual
+    // quando ele é o único à frente dela.
+    pendingCount = new Map(),
+    // Respostas enfileiradas que a pessoa tirou da fila e as que a CLI já começou a processar.
+    discarded = new Set(),
+    started = new Set(),
+    // Respostas esperando na fila de cada conversa (em ordem), as que estão decidindo entre injetar
+    // e enfileirar, a cadeia dessas decisões e as mensagens do usuário já removidas da fila.
+    queuedOrder = new Map(),
+    reserved = new Set(),
+    decisions = new Map(),
+    droppedUsers = new Set();
   const cancelled = () => ({
     ok: false,
     cancelled: true,
@@ -88,12 +100,114 @@ function createSessionService({ store, runner }) {
       .catch(() => {});
     return pending;
   }
-  function execute(payload) {
+  const validIds = (request) =>
+    request &&
+    [request.sessionId, request.responseMessageId, request.userMessageId].every(
+      (v) => typeof v === "string" && /^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,200}$/.test(v),
+    );
+  const waiting = (id) => {
+    if (!queuedOrder.has(id)) queuedOrder.set(id, []);
+    return queuedOrder.get(id);
+  };
+  // A mensagem deixou a espera: foi entregue, descartada ou terminou.
+  function leave(id, responseId) {
+    const list = queuedOrder.get(id);
+    if (list) {
+      const at = list.indexOf(responseId);
+      if (at >= 0) list.splice(at, 1);
+      if (!list.length) queuedOrder.delete(id);
+    }
+    reserved.delete(responseId);
+  }
+  // Só pode ser removida/forçada uma mensagem que ainda está esperando na fila desta conversa e que
+  // a CLI não recebeu nem está em vias de receber.
+  const isWaiting = (request) =>
+    waiting(request.sessionId).includes(request.responseMessageId) &&
+    !reserved.has(request.responseMessageId) &&
+    !started.has(request.responseMessageId);
+  // Tira da fila uma mensagem ainda não entregue à CLI e apaga o que foi salvo dela.
+  async function cancelQueued(request) {
+    if (!validIds(request)) return { ok: false, error: "Mensagem inválida." };
+    const { sessionId, responseMessageId, userMessageId } = request;
+    if (!isWaiting(request))
+      return { ok: false, error: "A mensagem não está mais esperando na fila." };
+    discarded.add(responseMessageId);
+    leave(sessionId, responseMessageId);
+    // Um salvamento da mensagem ainda a caminho não pode recriá-la depois.
+    droppedUsers.add(userMessageId);
+    if (droppedUsers.size > 500) droppedUsers.delete(droppedUsers.values().next().value);
+    try {
+      await write(sessionId, async () => {
+        await store.deleteChatMessage?.(sessionId, userMessageId);
+        await store.deleteChatMessage?.(sessionId, responseMessageId);
+      });
+    } catch {}
+    return { ok: true };
+  }
+  // "Enviar agora": derruba a execução em andamento; a próxima da fila é esta, por isso só a primeira
+  // mensagem esperando pode ser forçada (as demais manteriam a ordem e interromperiam o que não deve).
+  async function forceQueued(request) {
+    if (!validIds(request)) return { ok: false, error: "Mensagem inválida." };
+    if (!isWaiting(request) || waiting(request.sessionId)[0] !== request.responseMessageId)
+      return { ok: false, error: "Só a próxima mensagem da fila pode ser enviada agora." };
+    runner.kill(request.sessionId);
+    return { ok: true };
+  }
+  async function execute(payload) {
     const id = payload?.sessionId;
-    if (removing.has(id)) return Promise.resolve(cancelled());
+    if (removing.has(id)) return cancelled();
+    const responseId = payload?.responseMessageId;
+    // O Parar vale para o que já foi enviado: a geração e a barreira são lidas já na entrada.
+    const stopState = {
+      generation: generations.get(id) || 0,
+      barrier: stopping.get(id),
+    };
+    payload = { ...payload, __stop: stopState };
+    pendingCount.set(id, (pendingCount.get(id) || 0) + 1);
+    if (responseId) {
+      waiting(id).push(responseId);
+      // Enquanto a decisão (injetar ou enfileirar) não sai, a mensagem não pode ser removida.
+      reserved.add(responseId);
+    }
+    // As decisões de uma conversa saem em ordem: uma injeção lenta não deixa a seguinte furar a fila.
+    const decision = (decisions.get(id) || Promise.resolve()).then(() => decide(payload));
+    decisions.set(id, decision.catch(() => {}));
+    const outcome = await decision;
+    return outcome.result ?? outcome.pending;
+  }
+  async function decide(payload) {
+    const id = payload.sessionId;
+    const responseId = payload.responseMessageId;
+    const drop = (result) => {
+      leave(id, responseId);
+      const left = (pendingCount.get(id) || 1) - 1;
+      if (left > 0) pendingCount.set(id, left);
+      else pendingCount.delete(id);
+      return { result };
+    };
+    if (removing.has(id)) return drop(cancelled());
+    // A CLI recebe a mensagem no meio da execução, como na CLI original (Claude Code: na próxima
+    // etapa; Codex: turn/steer). Só entra se não houver outra mensagem esperando na frente.
+    if (
+      turns.has(id) &&
+      (pendingCount.get(id) || 0) === 2 &&
+      !stopping.has(id) &&
+      payload.cancelled !== true &&
+      !discarded.has(responseId) &&
+      typeof runner.inject === "function" &&
+      (await runner.inject(payload))
+    )
+      return drop({ ok: true, injected: true, output: "" });
+    if (removing.has(id)) return drop(cancelled());
+    reserved.delete(responseId);
+    const { __stop: stop, ...clean } = payload;
+    return { pending: enqueue(clean, stop) };
+  }
+  function enqueue(payload, stop) {
+    const id = payload?.sessionId;
     const previous = turns.get(id);
-    const generation = generations.get(id) || 0,
-      barrier = stopping.get(id);
+    const generation = stop.generation,
+      barrier = stop.barrier;
     const wasStopped = () =>
       payload.cancelled === true || (generations.get(id) || 0) !== generation;
     const pending = (async () => {
@@ -103,7 +217,11 @@ function createSessionService({ store, runner }) {
       if (removing.has(id) || !(await store.sessionExists(id)))
         return cancelled();
       if (removing.has(id)) return cancelled();
+      if (discarded.has(payload.responseMessageId))
+        return { ok: false, cancelled: true, discarded: true };
       if (wasStopped()) return stoppedResult(payload);
+      started.add(payload.responseMessageId);
+      leave(id, payload.responseMessageId);
       const result = await runner.execute(payload);
       if (removing.has(id)) return cancelled();
       if (wasStopped() || result.cancelled)
@@ -148,6 +266,14 @@ function createSessionService({ store, runner }) {
     pending
       .finally(() => {
         if (turns.get(id) === pending) turns.delete(id);
+        const left = (pendingCount.get(id) || 1) - 1;
+        if (left > 0) pendingCount.set(id, left);
+        else pendingCount.delete(id);
+        started.delete(payload.responseMessageId);
+        discarded.delete(payload.responseMessageId);
+        leave(id, payload.responseMessageId);
+        if (decisions.get(id) && !turns.has(id) && !(pendingCount.get(id) || 0))
+          decisions.delete(id);
       })
       .catch(() => {});
     return pending;
@@ -173,6 +299,8 @@ function createSessionService({ store, runner }) {
   return {
     execute,
     interrupt,
+    cancelQueued,
+    forceQueued,
     isBusy: () => turns.size > 0,
     // Sessões com turno rodando ou na fila (a fila aguarda dentro de `turns`).
     activeCount: () => turns.size,
@@ -217,7 +345,9 @@ function createSessionService({ store, runner }) {
     saveSession: (session) =>
       write(session.id, () => store.saveSession(session)),
     saveChatMessage: (message) =>
-      write(message.sessionId, () => store.saveChatMessage(message)),
+      droppedUsers.has(message.id)
+        ? Promise.resolve({ success: true })
+        : write(message.sessionId, () => store.saveChatMessage(message)),
     replaceChatMessages: (id, messages) => {
       if (turns.has(id))
         return Promise.reject(

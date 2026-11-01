@@ -85,6 +85,12 @@ export interface SavedState {
   error?: string;
 }
 
+export interface QueuedPromptRequest {
+  sessionId: string;
+  responseMessageId: string;
+  userMessageId: string;
+}
+
 export interface OkResult {
   success?: boolean;
   ok?: boolean;
@@ -157,6 +163,8 @@ export interface ExecutePromptResult {
   ok?: boolean;
   cancelled?: boolean;
   stopped?: boolean;
+  /** A CLI recebeu a mensagem no meio da execução em andamento (não gerou resposta própria). */
+  injected?: boolean;
   output?: string;
   error?: string;
   nativeSessionId?: string;
@@ -290,6 +298,10 @@ export interface BeagleAPI {
   ptyWrite(payload: PtyPayload): Promise<unknown>;
   ptyResize(payload: PtyPayload): Promise<unknown>;
   interruptCliSession(id: string): Promise<OkResult>;
+  /** Tira da fila uma mensagem que a CLI ainda não recebeu (apaga também a mensagem salva). */
+  cancelQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
+  /** Interrompe a execução atual para a mensagem da fila ser enviada em seguida. */
+  forceQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
   executeCliPrompt(payload: ExecutePromptPayload): Promise<ExecutePromptResult>;
   on<K extends keyof StreamEvents>(channel: K, callback: (payload: StreamEvents[K]) => void): () => void;
 }

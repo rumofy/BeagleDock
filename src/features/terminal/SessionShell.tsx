@@ -4,7 +4,6 @@ import { useApp } from "../../hooks/AppStateProvider";
 import {
   buildShellTabs,
   DEFAULT_AUTO_CLOSE_SECONDS,
-  splitVisibleTabs,
   tabsToAutoClose,
   type TabClock,
 } from "../../lib/shellTabs";
@@ -91,16 +90,30 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
 
   const raw = currentSession?.ptyRaw || (currentSession?.ptyLog || []).join("\r\n");
   const text = activeTab ? (currentSession?.shellRaw?.[activeTab.id] ?? "") : raw;
-  const { visible, overflow } = splitVisibleTabs(tabs, activeTab ? activeTab.id : null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  // A roda do mouse rola as abas na horizontal; a aba escolhida sempre fica à vista.
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el || el.scrollWidth <= el.clientWidth || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+    el.scrollLeft += event.deltaY;
+  };
+  useEffect(() => {
+    scrollRef.current
+      ?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [current, tabs.length]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       {tabs.length >= 1 && (
+        <div className="flex items-center gap-1 px-2 py-1 bg-[#1e1e21] border-b border-[#2e2e33] min-w-0">
         <div
+          ref={scrollRef}
+          onWheel={onWheel}
           role="tablist"
           aria-label="Shells da conversa"
           data-testid="shell-tabs"
-          className="flex items-center gap-1 px-2 py-1 bg-[#1e1e21] border-b border-[#2e2e33] overflow-x-auto"
+          className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto pb-1 [scrollbar-width:thin] [scrollbar-color:#52525b_transparent]"
         >
           <button
             role="tab"
@@ -110,7 +123,7 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
           >
             Tudo
           </button>
-          {visible.map((tab) => {
+          {tabs.map((tab) => {
             const unseen = current !== tab.id && (seen.current[tab.id] ?? 0) < tab.size;
             return (
               <button
@@ -144,6 +157,7 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
               </button>
             );
           })}
+        </div>
           {finished.length > 0 && (
             <button
               type="button"
@@ -152,26 +166,10 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
                 closeTabs(finished.map((tab) => tab.id));
               }}
               title="Fechar as abas dos comandos que já terminaram"
-              className="shrink-0 ml-auto px-2 py-0.5 rounded text-[11px] font-mono text-[#a1a1aa] hover:bg-[#2e2e33]"
+              className="shrink-0 px-2 py-0.5 rounded text-[11px] font-mono text-[#a1a1aa] hover:bg-[#2e2e33]"
             >
               Limpar concluídas ({finished.length})
             </button>
-          )}
-          {overflow.length > 0 && (
-            <select
-              aria-label="Mais shells"
-              value=""
-              onChange={(e) => e.target.value && setSelected(e.target.value)}
-              className="shrink-0 bg-[#27272a] text-[#a1a1aa] text-[11px] font-mono rounded px-1 py-0.5 outline-none"
-            >
-              <option value="">mais ({overflow.length})</option>
-              {overflow.map((tab) => (
-                <option key={tab.id} value={tab.id}>
-                  {tab.agent ? `${tab.agent} › ` : ""}
-                  {tab.label}
-                </option>
-              ))}
-            </select>
           )}
         </div>
       )}
