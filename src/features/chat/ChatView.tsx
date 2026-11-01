@@ -5,6 +5,7 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { ApprovalCard } from "../../components/ApprovalCard";
 import { ContextBar } from "../../components/ContextBar";
 import { ChatMessageList } from "../../components/ChatMessageList";
+import type { ChatMessage } from "../../types";
 import type { FileTarget } from "../../components/LinkedText";
 import { ChatComposer } from "./ChatComposer";
 import { ContinuationBanner } from "./ContinueInCli";
@@ -22,11 +23,21 @@ export function ChatView() {
     contextBySession,
     compactContext,
     isExecutingPrompt,
+    forceQueuedPrompt,
+    cancelQueuedPrompt,
   } = useApp();
   const pendingApprovals = cliApprovals.filter(
     (a) => a.sessionId === activeSessionId,
   );
   const sessionCwd = currentSession?.cwd;
+  const onForceQueued = useCallback(
+    (m: ChatMessage) => void forceQueuedPrompt(m),
+    [forceQueuedPrompt],
+  );
+  const onCancelQueued = useCallback(
+    (m: ChatMessage) => void cancelQueuedPrompt(m),
+    [cancelQueuedPrompt],
+  );
   // Identidade estável: a lista de mensagens é memoizada e só re-renderiza o que mudou.
   const openFile = useCallback(
     async (target: FileTarget) => {
@@ -101,6 +112,8 @@ export function ChatView() {
                 messages={currentMessages}
                 userProfile={userProfile}
                 onOpenFile={openFile}
+                onForceQueued={onForceQueued}
+                onCancelQueued={onCancelQueued}
               />
             )}
           </div>

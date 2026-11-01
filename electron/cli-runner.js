@@ -314,6 +314,8 @@ function createCliRunner({
           approvalBridge,
           child,
           key,
+          cwd,
+          selection: JSON.stringify([model, effort, permission]),
           providerId,
           nativeId,
           turn: null,
@@ -939,7 +941,8 @@ function createCliRunner({
                     ? {
                         meta: {
                           ...(label.note ? { note: label.note } : {}),
-                          ...(label.kind === "agent" && block.input?.run_in_background
+                          ...(["agent", "command"].includes(label.kind) &&
+                          block.input?.run_in_background
                             ? { background: true }
                             : {}),
                         },
@@ -1041,7 +1044,13 @@ function createCliRunner({
               typeof ev.result === "string" ? ev.result : ev.result?.text;
             turn.finish({
               ok: !ev.is_error && !turn.error,
-              output: resultText || turn.text,
+              // O `result` do Claude traz só o último trecho (ou a mensagem de erro): o que a IA já
+              // escreveu durante o turno não pode ser substituído por ele.
+              output: ev.is_error
+                ? turn.text
+                : providerId === "claude"
+                  ? turn.text || resultText
+                  : resultText || turn.text,
               error: ev.is_error
                 ? (ev.errors || []).join("\n") || resultText || "Falha na CLI."
                 : turn.error,
@@ -1085,18 +1094,21 @@ function createCliRunner({
           void current.liveFiles?.stop();
           if (processes.get(sessionId) === current) processes.delete(sessionId);
           const turn = current.turn;
-          if (turn)
-            turn.finish({
-              ok: code === 0 && !turn.error,
-              code,
-              output: turn.text,
-              error:
-                turn.error ||
-                (code === 0
-                  ? undefined
-                  : current.stderr.trim() ||
-                    `CLI encerrou com código ${code}.`),
-            });
+          const finishing = turn
+            ? turn.finish({
+                ok: code === 0 && !turn.error,
+                code,
+                output: turn.text,
+                error:
+                  turn.error ||
+                  (code === 0
+                    ? undefined
+                    : current.stderr.trim() ||
+                      `CLI encerrou com código ${code}.`),
+              })
+            : undefined;
+          // Tarefas em segundo plano que ainda constavam como rodando acabaram junto com a CLI.
+          void Promise.resolve(finishing).then(() => current.events.finishAll());
         });
       }
       // Um turno espontâneo em andamento termina antes de a mensagem nova usar a CLI.
@@ -1126,6 +1138,10 @@ function createCliRunner({
             clearTimeout(timer);
             const turn = current.turn;
             current.turn = null;
+            // Falha sem saída própria (erro de processo, timeout, evento de erro): o que a IA já
+            // escreveu no turno continua na mensagem.
+            if (result.output === undefined && turn?.text)
+              result = { ...result, output: turn.text };
             await current.liveFiles?.poll();
             await current.idWrite;
             if (current.persistenceError)
@@ -1181,8 +1197,93 @@ function createCliRunner({
       Promise.resolve(onComplete()).catch(() => {});
     }
   }
+  // Claude Code: uma mensagem escrita durante a execução entra na próxima etapa do turno em andamento
+  // (testado com a CLI real: uma única resposta final cobre as duas mensagens). Devolve false quando
+  // não há turno em andamento da mesma configuração; aí a mensagem espera na fila.
+  async function inject(payload) {
+    const { sessionId, providerId, prompt, permission = "edits" } = payload || {};
+    if (providerId === "codex") {
+      if (typeof sessionId !== "string" || typeof prompt !== "string" || !prompt.trim())
+        return false;
+      try {
+        const { model, effort } = resolveSelection({
+          providerId,
+          model: payload.model || "",
+          effort: payload.effort || "",
+        });
+        const cwd = checkCwd(payload.cwd);
+        const selection = JSON.stringify([model, effort, permission]);
+        // Confere antes de gravar os anexos: se a injeção não é possível, `execute` os grava depois.
+        if (!codex.canInject({ sessionId, cwd, selection })) return false;
+        const built = buildInput(providerId, {
+          prompt,
+          files: saveAttachments({
+            sessionId,
+            attachments: payload.attachments,
+            root: attachmentsRoot,
+          }),
+          mentions: findMentions(prompt, cwd),
+        });
+        return await codex.inject({
+          sessionId,
+          cwd,
+          selection,
+          input: built.input,
+        });
+      } catch {
+        return false;
+      }
+    }
+    if (
+      providerId !== "claude" ||
+      typeof sessionId !== "string" ||
+      typeof prompt !== "string" ||
+      !prompt.trim()
+    )
+      return false;
+    const entry = processes.get(sessionId);
+    if (
+      !entry ||
+      !entry.turn ||
+      entry.turn.auto ||
+      entry.providerId !== "claude" ||
+      entry.child.exitCode !== null ||
+      entry.child.killed ||
+      !entry.child.stdin?.writable
+    )
+      return false;
+    try {
+      const { model, effort } = resolveSelection({
+        providerId,
+        model: payload.model || "",
+        effort: payload.effort || "",
+      });
+      if (entry.selection !== JSON.stringify([model, effort, permission]))
+        return false;
+      const built = buildInput(providerId, {
+        prompt,
+        files: saveAttachments({
+          sessionId,
+          attachments: payload.attachments,
+          root: attachmentsRoot,
+        }),
+        mentions: findMentions(prompt, entry.cwd),
+      });
+      entry.child.stdin.write(
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: built.content },
+        }) + "\n",
+      );
+      entry.activity?.("Mensagem nova recebida; a IA a lê na próxima etapa");
+      return true;
+    } catch {
+      return false;
+    }
+  }
   return {
     execute,
+    inject,
     kill,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),
     busyCount: () => busy.size,

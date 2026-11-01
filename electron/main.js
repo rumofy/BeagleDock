@@ -65,6 +65,7 @@ const {
   deleteSessionFromDb,
   getSavedSessions,
   saveChatMessage,
+  deleteChatMessage,
   replaceChatMessages,
   sessionExists,
   getChatMessages,
@@ -583,6 +584,7 @@ const sessionService = createSessionService({
     setSessionContext,
     mergeMessageEvents,
     saveChatMessage,
+    deleteChatMessage,
     replaceChatMessages,
     sessionExists,
     deleteSessionFromDb,
@@ -1273,6 +1275,9 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
   handle("interrupt-cli-session", (_event, id) => sessionService.interrupt(id));
+  // Mensagem na fila: tira da fila antes de a CLI recebê-la / interrompe a execução atual para ela passar.
+  handle("cancel-queued-prompt", (_event, request) => sessionService.cancelQueued(request));
+  handle("force-queued-prompt", (_event, request) => sessionService.forceQueued(request));
   handle("execute-cli-prompt", async (_event, payload) =>
     updatingCli
       ? { ok: false, error: "Aguarde a atualização da CLI terminar." }

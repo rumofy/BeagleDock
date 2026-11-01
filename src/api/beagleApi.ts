@@ -71,6 +71,8 @@ export const beagleApi: BeagleAPI = {
   ptyWrite: (payload) => backend().ptyWrite(payload),
   ptyResize: (payload) => backend().ptyResize(payload),
   interruptCliSession: (id) => backend().interruptCliSession(id),
+  cancelQueuedPrompt: (request) => backend().cancelQueuedPrompt(request),
+  forceQueuedPrompt: (request) => backend().forceQueuedPrompt(request),
   executeCliPrompt: (payload) => backend().executeCliPrompt(payload),
   on: (channel, callback) => backend().on(channel, callback),
 };

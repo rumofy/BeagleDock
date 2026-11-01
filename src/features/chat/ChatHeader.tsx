@@ -108,13 +108,18 @@ export function ChatHeader() {
   );
   return (
     <>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {currentProvider && (
           <CompanyIcon id={currentProvider.id} size={26} className="shrink-0" />
         )}
-        <div>
-          <div className="text-sm font-bold text-[#1c1b18] flex items-center gap-2">
-            <span>{currentSession?.title || "Selecione uma sessão"}</span>
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-[#1c1b18] flex flex-wrap items-center gap-2">
+            <span
+              className="max-w-[26rem] truncate"
+              title={currentSession?.title || undefined}
+            >
+              {currentSession?.title || "Selecione uma sessão"}
+            </span>
 
             {currentProvider && currentSession && (
               <div className="flex items-center gap-1 bg-[#ede9de] rounded-lg px-2 py-0.5 border border-[#dfdacd]">
@@ -233,7 +238,7 @@ export function ChatHeader() {
               )
             )}
           </div>
-          <div className="text-[11px] text-[#7e7565] flex items-center gap-2 mt-0.5">
+          <div className="text-[11px] text-[#7e7565] flex flex-wrap items-center gap-2 mt-0.5">
             <span>
               {currentProvider?.name} (v{currentProvider?.cliVersion})
             </span>
@@ -290,7 +295,7 @@ export function ChatHeader() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-wrap items-center justify-end gap-2.5 [&_button]:whitespace-nowrap">
         <button
           type="button"
           disabled={!currentSession}

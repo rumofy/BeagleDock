@@ -9,6 +9,7 @@ function harness() {
     calls = [],
     events = [];
   let wrong = false;
+  let steerFails = false;
   const store = {
     getNativeSession: async (id) => links.get(id),
     setNativeSession: async (id, p, nativeId, cwd) =>
@@ -50,6 +51,10 @@ function harness() {
               id: m.id,
               result: { thread: { id: child.threadId } },
             });
+          } else if (m.method === "turn/steer") {
+            if (steerFails || m.params.expectedTurnId !== child.turnId)
+              child.event({ id: m.id, error: { code: -32600, message: "turno não está ativo" } });
+            else child.event({ id: m.id, result: { turnId: child.turnId } });
           } else if (m.method === "turn/start") {
             child.turnId = `turn-${child.messages.filter((m) => m.method === "turn/start").length}`;
             child.event({ id: m.id, result: { turn: { id: child.turnId } } });
@@ -78,7 +83,7 @@ function harness() {
       params: { threadId: c.threadId, turnId: c.turnId, ...params },
     });
   };
-  return { make, links, calls, events, notify, setWrong: () => (wrong = true) };
+  return { make, links, calls, events, notify, setWrong: () => (wrong = true), failSteer: () => (steerFails = true) };
 }
 const payload = {
   providerId: "codex",
@@ -679,4 +684,33 @@ test("contrato Codex: turn/start leva imagem como localImage e arquivos como men
   await pending;
   runner.shutdown();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("Codex: mensagem durante a execução vai ao turno ativo por turn/steer, sem abrir turno novo", async (t) => {
+  const h = harness(), runner = h.make();
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload);
+  await tick(); await tick();
+  const child = h.calls[0].child;
+  assert.equal(await runner.inject({ ...payload, prompt: "e também isto" }), true);
+  const steer = child.messages.find((m) => m.method === "turn/steer");
+  assert.equal(steer.params.threadId, "native-codex-123");
+  assert.equal(steer.params.expectedTurnId, child.turnId);
+  assert.match(JSON.stringify(steer.params.input), /e também isto/);
+  assert.equal(child.messages.filter((m) => m.method === "turn/start").length, 1);
+  assert.equal(await runner.inject({ ...payload, prompt: "x", effort: "low" }), false, "outra configuração espera na fila");
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+  assert.equal(await runner.inject({ ...payload, prompt: "depois" }), false, "sem turno em andamento");
+});
+
+test("Codex: se o turn/steer for recusado (turno já acabou), a mensagem cai na fila", async (t) => {
+  const h = harness(), runner = h.make();
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload);
+  await tick(); await tick();
+  h.failSteer();
+  assert.equal(await runner.inject({ ...payload, prompt: "tarde demais" }), false);
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
 });

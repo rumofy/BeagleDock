@@ -4,6 +4,25 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-01
+
+### Adicionado
+
+- Mensagens na fila ganharam os botões “Enviar agora” (interrompe a execução atual e envia a mensagem em seguida) e “Remover da fila” (a mensagem nunca chega à IA e some do histórico). Vale para Claude Code, Codex CLI e Antigravity.
+- No Claude Code e no Codex CLI, uma mensagem escrita durante a execução agora é entregue à IA na próxima etapa, como nas CLIs originais, em vez de esperar o fim de toda a resposta. O Antigravity não aceita isso durante o turno e segue usando a fila.
+- As abas do shell rolam na horizontal (inclusive com a roda do mouse) e mostram todas as abas; a aba escolhida sempre fica à vista.
+
+### Alterado
+
+- Os detalhes da cota de cada CLI na barra lateral (última leitura, reinício, tokens e cotas por grupo) agora ficam recolhidos por padrão, num botão “Detalhes da cota”, para sobrar mais espaço à lista de conversas. Os percentuais de 5h e da semana continuam sempre visíveis.
+- A barra de contexto não estima mais a janela do modelo: mostra apenas os tokens reais informados pela CLI e só exibe a porcentagem quando a CLI informa a janela.
+- O cabeçalho da conversa se ajusta a telas menores, quebrando em linhas em vez de cortar os controles.
+
+### Corrigido
+
+- Quando a resposta termina mas um comando segue rodando em segundo plano (como uma suíte de testes) e a IA aguarda o aviso, a mensagem agora mostra que o comando ainda está em andamento, em vez de parecer concluída. Se a CLI encerrar antes do aviso, o comando deixa de constar como rodando.
+- Mensagens já emitidas pela IA não são mais substituídas ao fim do turno: o texto completo do Claude Code é preservado, inclusive quando o limite de uso é atingido, e a mensagem de erro deixou de aparecer duplicada.
+
 ## [0.3.2] - 2026-11-01
 
 ### Corrigido
@@ -144,7 +163,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/rumofy/BeagleDock/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/rumofy/BeagleDock/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/rumofy/BeagleDock/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/rumofy/BeagleDock/compare/v0.2.2...v0.3.0

@@ -61,7 +61,7 @@ export const ContextBar = memo(function ContextBar({
           <span className={`font-mono shrink-0 ${TEXT[level]}`}>
             {percent === null
               ? `${formatTokens(info?.used)} em uso · janela não informada pela CLI`
-              : `${Math.round(percent)}% · ${formatTokens(info?.used)} / ${formatTokens(info?.window)}${info?.windowKnown === false ? " (janela estimada)" : ""}`}
+              : `${Math.round(percent)}% · ${formatTokens(info?.used)} / ${formatTokens(info?.window)}`}
           </span>
         </>
       )}

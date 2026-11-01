@@ -39,6 +39,8 @@ const ALLOWED_METHODS = new Set([
   "ptyResize",
   "executeCliPrompt",
   "interruptCliSession",
+  "cancelQueuedPrompt",
+  "forceQueuedPrompt",
 ]);
 function matches(a, b) {
   return (

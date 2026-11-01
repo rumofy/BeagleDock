@@ -11,11 +11,6 @@ function claudeContextUsed(usage) {
   return used > 0 ? used : null;
 }
 
-// Antes de o result informar a janela real, estima pelo nome do modelo (marcado como estimativa).
-function guessClaudeWindow(model) {
-  return /\[1m\]|(^|[-_])1m\b/i.test(String(model || "")) ? 1_000_000 : 200_000;
-}
-
 // Escolhe a janela do modelo da conversa principal. A chave de modelUsage pode ter sufixo (ex.: [1m])
 // ou haver modelos de subagente/título: casa pelo nome e, na dúvida, vale o modelo mais usado.
 function pickModelWindow(modelUsage, preferredModel) {
@@ -60,10 +55,8 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
       if (Number.isFinite(window)) {
         state.window = window;
         state.windowKnown = windowKnown !== false;
-      } else if (state.window === null && source === "claude") {
-        state.window = guessClaudeWindow(model);
-        state.windowKnown = false;
       }
+      // Sem janela informada pela CLI não há estimativa: a barra mostra só os tokens reais em uso.
       publish();
     },
     setWindow(window, known = true) {
@@ -107,7 +100,6 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
 
 module.exports = {
   claudeContextUsed,
-  guessClaudeWindow,
   pickModelWindow,
   codexContext,
   createContextTracker,
