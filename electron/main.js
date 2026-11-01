@@ -65,6 +65,7 @@ const {
   deleteSessionFromDb,
   getSavedSessions,
   saveChatMessage,
+  setMessageTime,
   deleteChatMessage,
   replaceChatMessages,
   sessionExists,
@@ -549,6 +550,7 @@ const approvals = require("./approvals").createApprovalBroker({
     if (channel === "cli-approvals") background?.onApprovalsChanged();
   },
 });
+const { plainText } = require("./message-segments");
 const cliRunner = createCliRunner({
   approvals,
   onMcpAuthError: (line) => codexMcpAuth.inspect(line),
@@ -561,7 +563,7 @@ const cliRunner = createCliRunner({
     background.notifyTurnFinished({
       sessionId: payload.sessionId,
       title: `${names[payload.providerId] || payload.providerId} respondeu`,
-      body: String(payload.ok ? payload.text : payload.error || "Falha na execução.")
+      body: plainText(String(payload.ok ? payload.text : payload.error || "Falha na execução."))
         .replace(/\s+/g, " ")
         .slice(0, 140),
     });
@@ -584,6 +586,7 @@ const sessionService = createSessionService({
     setSessionContext,
     mergeMessageEvents,
     saveChatMessage,
+    setMessageTime,
     deleteChatMessage,
     replaceChatMessages,
     sessionExists,

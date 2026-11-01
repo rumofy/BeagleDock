@@ -1,4 +1,12 @@
 // Coordinate session mutations with turn completion. Deletion wins over late replies.
+// Momento no formato do banco (UTC, com milissegundos): ordena entre os de segundo inteiro.
+const dbTime = (ms) => new Date(ms).toISOString().replace("T", " ").replace("Z", "");
+const PROVIDER_NAMES = {
+  claude: "Claude Code",
+  codex: "Codex CLI",
+  antigravity: "Antigravity",
+};
+
 function createSessionService({ store, runner }) {
   const writes = new Map(),
     turns = new Map(),
@@ -36,6 +44,37 @@ function createSessionService({ store, runner }) {
       .catch(() => {});
     return pending;
   }
+  // Respostas às mensagens entregues no meio do turno: cada uma é gravada logo antes da mensagem
+  // seguinte (a última, no fim), para o histórico reaberto manter a ordem vista na tela.
+  async function saveFollowUps(payload, result, tail = "") {
+    const id = payload.sessionId;
+    const list = result.followUps || [];
+    const out = [];
+    for (let index = 0; index < list.length; index++) {
+      const item = list[index];
+      const last = index === list.length - 1;
+      const text = item.text || (last ? tail : "");
+      out.push({ responseMessageId: item.responseMessageId, text });
+      if (!text || removing.has(id)) continue;
+      const next = list[index + 1];
+      await write(id, () =>
+        store.saveChatMessage({
+          id: item.responseMessageId,
+          sessionId: id,
+          provider: payload.providerId,
+          sender: payload.providerId,
+          senderName: PROVIDER_NAMES[payload.providerId] || payload.providerId,
+          text,
+          modelBadge: payload.model,
+          reasoningBadge: payload.effort,
+          timestamp: new Date().toISOString(),
+          // A última termina agora; sem milissegundos ela empataria com a mensagem entregue e perderia.
+          createdAt: dbTime(next ? next.at - 1 : Date.now()),
+        }),
+      ).catch(() => {});
+    }
+    return out;
+  }
   async function stoppedResult(payload, result = {}, started = false) {
     const id = payload.sessionId;
     if (removing.has(id)) return cancelled();
@@ -66,14 +105,19 @@ function createSessionService({ store, runner }) {
           modelBadge: payload.model,
           reasoningBadge: payload.effort,
           timestamp: new Date().toISOString(),
+          ...(result.followUps?.length
+            ? { createdAt: dbTime(result.followUps[0].at - 1) }
+            : {}),
         }),
       );
     }
+    const followUps = await saveFollowUps(payload, result);
     return {
       ok: false,
       cancelled: true,
       stopped: true,
       output: text,
+      ...(followUps.length ? { followUps } : {}),
       nativeSessionId: result.nativeSessionId,
     };
   }
@@ -194,10 +238,27 @@ function createSessionService({ store, runner }) {
       !stopping.has(id) &&
       payload.cancelled !== true &&
       !discarded.has(responseId) &&
-      typeof runner.inject === "function" &&
-      (await runner.inject(payload))
-    )
-      return drop({ ok: true, injected: true, output: "" });
+      typeof runner.inject === "function"
+    ) {
+      const delivered = await runner.inject(payload);
+      if (delivered) {
+        // A mensagem passa a ficar entre a resposta que estava sendo escrita e a próxima: a ordem
+        // do histórico segue o momento da entrega (ver `replyTimes`).
+        const at = typeof delivered === "object" ? delivered.at : undefined;
+        if (at && payload.userMessageId && typeof store.setMessageTime === "function")
+          await write(id, () =>
+            store.setMessageTime(id, payload.userMessageId, dbTime(at)),
+          ).catch(() => {});
+        return drop({
+          ok: true,
+          injected: true,
+          ...(typeof delivered === "object" && delivered.from
+            ? { rotatedFrom: delivered.from }
+            : {}),
+          output: "",
+        });
+      }
+    }
     if (removing.has(id)) return drop(cancelled());
     reserved.delete(responseId);
     const { __stop: stop, ...clean } = payload;
@@ -242,15 +303,29 @@ function createSessionService({ store, runner }) {
                   codex: "Codex CLI",
                   antigravity: "Antigravity",
                 }[payload.providerId] || payload.providerId,
-              text: result.ok
-                ? result.output || "Execução concluída."
-                : `Erro: ${result.error || "Falha na execução."}${result.output ? "\n\n" + result.output : ""}`,
+              // Com mensagens entregues no meio do turno, o erro vai na última resposta.
+              text: result.followUps?.length
+                ? result.output || ""
+                : result.ok
+                  ? result.output || "Execução concluída."
+                  : `Erro: ${result.error || "Falha na execução."}${result.output ? "\n\n" + result.output : ""}`,
               events: result.events,
               modelBadge: payload.model,
               reasoningBadge: payload.effort,
               timestamp: new Date().toISOString(),
+              ...(result.followUps?.length
+                ? { createdAt: dbTime(result.followUps[0].at - 1) }
+                : {}),
             }),
           );
+          if (result.followUps?.length) {
+            const followUps = await saveFollowUps(
+              payload,
+              result,
+              result.ok ? "" : `Erro: ${result.error || "Falha na execução."}`,
+            );
+            return removing.has(id) ? cancelled() : { ...result, followUps };
+          }
         } catch (error) {
           if (removing.has(id)) return cancelled();
           return {
