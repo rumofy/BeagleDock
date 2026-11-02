@@ -7,6 +7,11 @@ const {
   publicSettings,
   dropUnreadableSecrets,
 } = require("./secure-settings");
+const {
+  toStoredAttachments,
+  fromStoredAttachments,
+  removeSessionAttachments,
+} = require("./attachments");
 const dbDir =
   process.env.BEAGLEDOCK_DATA_DIR || path.join(os.homedir(), ".beagledock");
 fs.mkdirSync(dbDir, { recursive: true, mode: 0o700 });
@@ -87,8 +92,35 @@ function initDatabase() {
         if (!existing.has(column))
           await run(`ALTER TABLE ${table} ADD COLUMN ${column} TEXT`);
     }
+    await run(
+      "CREATE INDEX IF NOT EXISTS chat_history_session ON chat_history(session_id, created_at)",
+    );
+    await moveInlineAttachments();
   })();
   return ready;
+}
+// Bancos antigos guardavam as imagens em base64 dentro da mensagem: passam para arquivos na pasta
+// da conversa (uma vez só) e o espaço liberado volta para o disco.
+async function moveInlineAttachments() {
+  const rows = await all(
+    "SELECT id, session_id, attachments_json FROM chat_history WHERE attachments_json LIKE '%data:%'",
+  );
+  let moved = 0;
+  for (const row of rows) {
+    try {
+      const stored = toStoredAttachments({
+        root: dbDir,
+        sessionId: row.session_id,
+        attachments: JSON.parse(row.attachments_json),
+      });
+      await run("UPDATE chat_history SET attachments_json=? WHERE id=?", [
+        JSON.stringify(stored),
+        row.id,
+      ]);
+      moved += 1;
+    } catch {}
+  }
+  if (moved) await run("VACUUM");
 }
 async function saveUserProfile(profile) {
   await initDatabase();
@@ -226,7 +258,60 @@ async function setSessionArchived(id, archived) {
 async function deleteSessionFromDb(id) {
   await initDatabase();
   await run("DELETE FROM sessions WHERE id=?", [id]);
+  removeSessionAttachments({ root: dbDir, sessionId: id });
   return { success: true };
+}
+// Horário de gravação no SQLite (UTC sem fuso) ou ISO vindo da interface.
+function sqlTime(value) {
+  if (!value) return NaN;
+  const text = String(value);
+  return Date.parse(/[TZ+]/.test(text.slice(10)) ? text : text.replace(" ", "T") + "Z");
+}
+const likeEscape = (text) => text.replace(/[\\%_]/g, (c) => "\\" + c);
+/**
+ * Conversas do BeagleDock para o histórico: só os dados da lista (as mensagens carregam ao abrir).
+ * A busca procura no título e no texto das mensagens.
+ */
+async function listConversationHistory(query = "") {
+  await initDatabase();
+  const term = typeof query === "string" ? query.trim().slice(0, 200) : "";
+  const like = `%${likeEscape(term)}%`;
+  const rows = await all(
+    `SELECT s.id, s.provider_id, s.title, s.cwd, s.current_model, s.archived, s.updated_ts, l.native_id,
+       (SELECT MAX(created_at) FROM chat_history c WHERE c.session_id=s.id) AS last_message,
+       (SELECT COUNT(*) FROM chat_history c WHERE c.session_id=s.id) AS message_count,
+       (SELECT text FROM chat_history c WHERE c.session_id=s.id AND c.sender='user' ORDER BY created_at,rowid LIMIT 1) AS first_prompt
+     FROM sessions s LEFT JOIN session_links l ON l.session_id=s.id
+     ${term ? "WHERE s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM chat_history c WHERE c.session_id=s.id AND c.text LIKE ? ESCAPE '\\')" : ""}`,
+    term ? [like, like] : [],
+  );
+  return rows
+    .map((r) => {
+      const ts = sqlTime(r.last_message) || sqlTime(r.updated_ts) || 0;
+      return {
+        id: `beagledock:${r.id}`,
+        source: "beagledock",
+        provider: r.provider_id,
+        title: r.title || "Conversa",
+        prompt: r.first_prompt || "",
+        project: r.cwd || "",
+        timestampMs: ts,
+        date: new Date(ts).toLocaleString(),
+        beagleSessionId: r.id,
+        sessionId: r.native_id || undefined,
+        model: r.current_model || "",
+        closed: r.archived === "1",
+        messageCount: r.message_count || 0,
+      };
+    })
+    .sort((a, b) => b.timestampMs - a.timestampMs);
+}
+/** IDs nativos já ligados a conversas do BeagleDock (o histórico não os repete). */
+async function linkedNativeIds() {
+  await initDatabase();
+  return (await all("SELECT provider_id, native_id FROM session_links")).map(
+    (r) => `${r.provider_id}:${r.native_id}`,
+  );
 }
 async function getSavedSessions() {
   await initDatabase();
@@ -308,7 +393,15 @@ function messageParams(m) {
     m.reasoningBadge || null,
     m.text,
     m.commandSnippet || null,
-    m.attachments ? JSON.stringify(m.attachments) : null,
+    m.attachments
+      ? JSON.stringify(
+          toStoredAttachments({
+            root: dbDir,
+            sessionId: m.sessionId,
+            attachments: m.attachments,
+          }),
+        )
+      : null,
     m.timestamp,
     eventsJson(m.events),
     typeof m.createdAt === "string" ? m.createdAt : null,
@@ -427,7 +520,12 @@ const LIVE_MESSAGE_IDS = new Set();
 function chatRow(r) {
   let attachments;
   try {
-    attachments = JSON.parse(r.attachments_json || "null") || undefined;
+    attachments =
+      fromStoredAttachments({
+        root: dbDir,
+        sessionId: r.session_id,
+        attachments: JSON.parse(r.attachments_json || "null"),
+      }) || undefined;
   } catch {}
   let events;
   try {
@@ -470,11 +568,12 @@ async function getChatMessages(id) {
     )
   ).map(chatRow);
 }
+// Só as conversas abertas carregam as mensagens ao iniciar; as fechadas carregam ao reabrir.
 async function getAllChatMessagesGrouped() {
   await initDatabase();
   const grouped = {};
   for (const row of await all(
-    "SELECT * FROM chat_history ORDER BY created_at,rowid",
+    "SELECT c.* FROM chat_history c JOIN sessions s ON s.id=c.session_id WHERE s.archived IS NULL OR s.archived<>'1' ORDER BY c.created_at,c.rowid",
   ))
     (grouped[row.session_id] ||= []).push(chatRow(row));
   return grouped;
@@ -589,6 +688,8 @@ module.exports = {
   getNativeSession,
   setNativeSession,
   deleteSessionFromDb,
+  listConversationHistory,
+  linkedNativeIds,
   saveChatMessage,
   setMessageTime,
   deleteChatMessage,

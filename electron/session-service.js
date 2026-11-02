@@ -415,8 +415,15 @@ function createSessionService({ store, runner }) {
         : Promise.resolve(),
     setSessionContext: (id, context) =>
       write(id, () => store.setSessionContext(id, context)),
-    setSessionArchived: (id, archived) =>
-      write(id, () => store.setSessionArchived(id, archived)),
+    // Fechar (archived) encerra o processo da CLI; com resposta em andamento, a pessoa para antes.
+    setSessionArchived: (id, archived) => {
+      if (archived && turns.has(id))
+        return Promise.reject(
+          new Error("Pare a execução desta conversa antes de fechá-la."),
+        );
+      if (archived) runner.kill(id);
+      return write(id, () => store.setSessionArchived(id, archived));
+    },
     saveSession: (session) =>
       write(session.id, () => store.saveSession(session)),
     saveChatMessage: (message) =>

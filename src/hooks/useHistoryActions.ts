@@ -30,8 +30,14 @@ export function useHistoryActions({
   setShowSkillsModal,
   setShowHistoryModal,
 }: Params) {
-  const { allSessions, pendingTurns, setActiveSessionId, setMessages } =
-    sessions;
+  const {
+    allSessions,
+    pendingTurns,
+    setActiveSessionId,
+    setMessages,
+    reopenSession,
+    forgetSession,
+  } = sessions;
   const handleSelectSkill = (skill: SkillItem) => {
     setShowSkillsModal(false);
     if (skill.name === "revisao-interna") {
@@ -52,9 +58,19 @@ export function useHistoryActions({
     setInputMessage(item.prompt);
   };
 
-  // Abre a conversa completa do histórico (.jsonl) e persiste no SQLite!
+  // Conversa do BeagleDock: reabre a própria sessão. Conversa só do terminal: importa o .jsonl
+  // da CLI para uma sessão do BeagleDock, ligada ao mesmo ID nativo.
   const handleOpenFullConversation = async (item: HistorySessionItem) => {
     setShowHistoryModal(false);
+    if (item.source === "beagledock" && item.beagleSessionId) {
+      try {
+        await reopenSession(item.beagleSessionId);
+        setActiveTab("chat");
+      } catch (err) {
+        setAppError((err as Error).message);
+      }
+      return;
+    }
 
     if (backendAvailable()) {
       try {
@@ -144,7 +160,32 @@ export function useHistoryActions({
 
     setInputMessage(item.prompt);
   };
+  // Apagar definitivamente: mensagens, anexos e a conversa nativa da CLI. Devolve se apagou.
+  const handleDeleteConversation = async (item: HistorySessionItem) => {
+    if (
+      item.beagleSessionId &&
+      (pendingTurns.current.get(item.beagleSessionId) || 0) > 0
+    ) {
+      setAppError("Pare a execução desta conversa antes de apagá-la.");
+      return false;
+    }
+    try {
+      const result = await beagleApi.deleteConversation({
+        provider: item.provider,
+        beagleSessionId: item.beagleSessionId,
+        nativeId: item.beagleSessionId ? undefined : item.sessionId,
+      });
+      if (!result?.success)
+        throw new Error(result?.error || "Não foi possível apagar a conversa.");
+      if (item.beagleSessionId) forgetSession(item.beagleSessionId);
+      return true;
+    } catch (err) {
+      setAppError((err as Error).message);
+      return false;
+    }
+  };
   return {
+    handleDeleteConversation,
     handleSelectSkill,
     handleSelectHistoryPrompt,
     handleOpenFullConversation,

@@ -463,6 +463,9 @@ function respond() {
   }
 }
 let approvalPending = false;
+// Execução travada (smoke-hang): como a CLI real no meio de uma etapa longa, recebe as mensagens
+// entregues durante a resposta, mas não responde; só o Parar a encerra.
+let hanging = false;
 let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
@@ -513,7 +516,9 @@ process.stdin.on("data", (chunk) => {
             : {}),
         }) + "\n",
       );
+      if (hanging) continue;
       if (responsePrompt.startsWith("smoke-hang")) {
+        hanging = true;
         if (name === "agy") {
           process.stdout.write(
             JSON.stringify({ event: "init", conversation_id: id }) + "\n",

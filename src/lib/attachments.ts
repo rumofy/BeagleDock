@@ -2,8 +2,6 @@ import type { ChatAttachment } from "../types";
 
 export const MAX_ATTACHMENTS = 10;
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
-/** Imagens maiores que isso não guardam a prévia no histórico (o arquivo já foi enviado à CLI). */
-export const MAX_STORED_PREVIEW_CHARS = 700 * 1024;
 
 /** Mensagem de erro se o arquivo não puder ser anexado; `null` se puder. */
 export function attachmentProblem(
@@ -23,12 +21,13 @@ export const sizeText = (bytes: number) =>
     ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
-/** O que a conversa guarda dos anexos: nome e tamanho sempre, a prévia só de imagens pequenas. */
+/**
+ * O que a conversa guarda dos anexos: nome e tamanho sempre, e a imagem (o backend a grava em
+ * arquivo na pasta da conversa; o banco só guarda a referência). Arquivos que não são imagem
+ * ficam só com nome e tamanho.
+ */
 export function storableAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
-  return attachments.map((a) => ({
-    ...a,
-    url: a.type === "image" && a.url.length <= MAX_STORED_PREVIEW_CHARS ? a.url : "",
-  }));
+  return attachments.map((a) => ({ ...a, url: a.type === "image" ? a.url : "" }));
 }
 
 /** `@trecho` imediatamente antes do cursor, no começo do texto ou depois de um espaço. */

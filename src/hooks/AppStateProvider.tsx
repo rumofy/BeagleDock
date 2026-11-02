@@ -10,7 +10,7 @@ import { useNotifications } from "./useNotifications";
 import { useProviders } from "./useProviders";
 import { useSessions } from "./useSessions";
 import { useSettings } from "./useSettings";
-import { useSkillsHistory } from "./useSkillsHistory";
+import { useInstalledSkills } from "./useInstalledSkills";
 import { useUi } from "./useUi";
 import { useUserProfile } from "./useUserProfile";
 import { useWorkspaces } from "./useWorkspaces";
@@ -30,7 +30,7 @@ function useAppStateValue() {
   const { workspaces, setWorkspaces } = useWorkspaces();
   const settings = useSettings(setAppError);
   const approvals = useApprovals(setAppError);
-  const library = useSkillsHistory();
+  const library = useInstalledSkills();
   const memory = useMemoryStatus();
   const sessions = useSessions({
     providers,

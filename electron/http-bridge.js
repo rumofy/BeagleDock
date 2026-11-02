@@ -22,6 +22,7 @@ const ALLOWED_METHODS = new Set([
   "getAIMemoryMaintenanceCwd",
   "getInstalledSkills",
   "getCliHistory",
+  "deleteConversation",
   "loadFullConversation",
   "getUserProfile",
   "getAppVersion",

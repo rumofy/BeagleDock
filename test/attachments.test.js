@@ -63,7 +63,7 @@ test("entrada nativa: Claude (imagem base64), Codex (localImage e mention) e Ant
 
   const agy = buildInput("antigravity", { prompt: "analisa", files, mentions });
   assert.equal(typeof agy.text, "string");
-  assert.match(agy.text, /print\.png.*\(imagem\)/s);
+  assert.match(agy.text, /\.png \(imagem: print\.png\)/);
   assert.equal(agy.warnings.length, 1);
   assert.match(agy.warnings[0], /Antigravity/);
   assert.equal(buildInput("claude", { prompt: "só texto" }).content, "só texto");
@@ -116,7 +116,7 @@ test("contrato Antigravity: o texto leva os caminhos e a pessoa recebe o aviso s
   const child = h.calls[0].child;
   const sent = child.inputs.map((l) => JSON.parse(l)).find((m) => m.event === "user");
   assert.equal(typeof sent.message.content, "string");
-  assert.match(sent.message.content, /print\.png.*\(imagem\)/s);
+  assert.match(sent.message.content, /\.png \(imagem: print\.png\)/);
   const notice = h.emitted.find((e) => e.ch === "cli-notice");
   assert.match(notice.data.message, /Antigravity/);
   assert.equal(notice.data.sessionId, "app-antigravity");
@@ -163,7 +163,7 @@ test("interface: limites do anexo, menção sob o cursor e o que a conversa guar
     { id: "2", name: "grande.png", type: "image", url: "x".repeat(800 * 1024), sizeText: "9 MB" },
     { id: "3", name: "a.log", type: "file", url: "data:text/plain;base64,AAAA", sizeText: "1 KB" },
   ])));
-  assert.deepEqual(kept.map((a) => a.url.length > 0), [true, false, false], "só prévia de imagem pequena fica no histórico");
+  assert.deepEqual(kept.map((a) => a.url.length > 0), [true, true, false], "imagens ficam no histórico (em arquivo); outros anexos, só o nome");
 });
 
 test("@arquivo: lista do git, busca por nome e por letras, e percurso sem git ignorando dependências", async () => {
