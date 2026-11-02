@@ -1,11 +1,11 @@
 // Optional live integration check. Invoking this script uses locally authenticated CLIs.
 // Ordinary npm test and test:desktop remain offline and never invoke providers.
 const fs = require("fs"),
-  os = require("os"),
   path = require("path");
 const { createCliRunner } = require("../electron/cli-runner");
 const { createCatalogs } = require("../electron/catalogs");
 const { findBinary } = require("../electron/platform");
+const { makeProbeDir } = require("./probe-dir.cjs");
 const selected = process.argv
   .find((a) => a.startsWith("--providers="))
   ?.split("=")[1]
@@ -29,20 +29,14 @@ const parallelCommand = (tag) =>
       failed++;
       continue;
     }
-    const cwd = fs.mkdtempSync(
-        path.join(os.tmpdir(), "beagledock-canary-probe-"),
-      ),
+    // A pasta já vem com o `.ai-memory.toml` do projeto único de sondas.
+    const cwd = makeProbeDir("canary-probe"),
       links = new Map(),
       times = {},
       shells = {},
       origins = new Set(),
       shellText = {},
       start = Date.now();
-    // Concentra todas as sessões de sonda em um único projeto do ai-memory.
-    fs.writeFileSync(
-      path.join(cwd, ".ai-memory.toml"),
-      'workspace = "default"\nproject = "beagledock-probes"\n',
-    );
     if (npmScenario) {
       fs.writeFileSync(path.join(cwd, "package.json"), JSON.stringify({
         name: "beagledock-stream-fixture", private: true,

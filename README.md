@@ -4,11 +4,21 @@
 
 Toolkit desktop para usar Claude Code, Codex CLI e Antigravity com conversas persistentes, catálogo local de modelos, histórico e consumo registrado pelas ferramentas.
 
-Código: [rumofy/BeagleDock](https://github.com/rumofy/BeagleDock). Mudanças por versão: [CHANGELOG.md](CHANGELOG.md). Licença: [Apache 2.0](LICENSE); avisos de terceiros: [NOTICE](NOTICE).
+Código: [rumofy/BeagleDock](https://github.com/rumofy/BeagleDock). Mudanças por versão: [CHANGELOG.md](CHANGELOG.md). Licença: [Apache 2.0](LICENSE); avisos de terceiros: [NOTICE](NOTICE). Como contribuir: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Plataformas
+
+| Plataforma | Situação |
+| --- | --- |
+| Linux x64 | **Suportada.** Desenvolvida, testada e empacotada (`.deb`/AppImage). |
+| Windows | **Experimental, aberta à comunidade.** O código trata caminhos, launchers `.cmd` e shell do Windows, mas o aplicativo nunca foi validado nessa plataforma. |
+| macOS | **Não testada.** Há tratamento de Homebrew e `zsh`, sem validação nem assinatura de código. |
+
+Quer ajudar a levar o BeagleDock para o Windows? Veja [o que precisa ser validado](CONTRIBUTING.md#windows) e abra um relato com o modelo **Relato de plataforma**.
 
 ## Desenvolvimento
 
-Use Node.js 22.12 ou superior, npm e as CLIs instaladas e autenticadas no sistema. O aplicativo descobre executáveis no PATH e nos diretórios comuns de cada plataforma. Windows inclui launchers npm `.cmd`; macOS inclui Homebrew; o terminal usa o shell do sistema.
+Use Node.js 22.12 ou superior, npm e as CLIs instaladas e autenticadas no sistema. O aplicativo descobre executáveis no PATH e nos diretórios comuns de cada plataforma; o terminal usa o shell do sistema. As instruções para Windows e macOS abaixo valem para quem quer testar ou contribuir; essas plataformas ainda não são suportadas.
 
 ```sh
 npm ci
@@ -77,7 +87,7 @@ Os testes usam bancos temporários, logs de exemplo, processos CLI simulados e u
 
 ## Instalação local (Linux)
 
-O pacote é gerado e instalado na própria máquina; não há pipeline de CI nem instaladores publicados.
+O pacote é gerado e instalado na própria máquina; o CI roda apenas tipos, testes e build do frontend, sem publicar instaladores.
 
 ```sh
 npm ci

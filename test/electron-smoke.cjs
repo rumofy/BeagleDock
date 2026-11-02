@@ -159,6 +159,48 @@ async function send(win, text, expected) {
       win,
       `(()=>{const el=document.querySelector('[data-testid="chat-scroll"]');return el.scrollHeight>el.clientHeight && el.scrollTop+el.clientHeight>=el.scrollHeight-2;})()`,
     );
+    {
+      // Ctrl+F busca na conversa aberta: realça as ocorrências (sem diferenciar maiúsculas nem
+      // acentos), mostra "N de M", Enter/Shift+Enter navegam e a lista acompanha mensagens novas.
+      const js = (code) => win.webContents.executeJavaScript(code);
+      const typeFind = (text) =>
+        js(`(()=>{const input=document.querySelector('input[aria-label="Buscar na conversa"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      const findKey = (key, shiftKey = false) =>
+        js(`document.querySelector('input[aria-label="Buscar na conversa"]').dispatchEvent(new KeyboardEvent('keydown',{key:${JSON.stringify(key)},shiftKey:${shiftKey},bubbles:true,cancelable:true}))`);
+      const status = () => js(`document.querySelector('[data-testid="chat-find-status"]').innerText`);
+      const hits = () => js(`CSS.highlights.get('chat-find')?.size ?? 0`);
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'f',ctrlKey:true,bubbles:true,cancelable:true}))`);
+      await waitFor(win, `document.activeElement?.getAttribute('aria-label')==='Buscar na conversa'`);
+      await typeFind("ROLAGEM");
+      await waitFor(win, `CSS.highlights.get('chat-find')?.size===500`);
+      assert.match(await status(), /^\d+ de 500$/);
+      // A ocorrência atual está dentro da área visível do chat.
+      assert.equal(
+        await js(`(()=>{const r=[...CSS.highlights.get('chat-find-current')][0].getBoundingClientRect();const b=document.querySelector('[data-testid="chat-scroll"]').getBoundingClientRect();return r.top>=b.top && r.bottom<=b.bottom;})()`),
+        true,
+      );
+      const term = "FIXTURE RESPOSTA";
+      const expected = await js(`(document.querySelector('[data-testid="chat-messages"]').innerText.toLowerCase().match(/fixture resposta/g)||[]).length`);
+      assert.ok(expected >= 2, "há respostas para buscar");
+      await typeFind(term);
+      await waitFor(win, `CSS.highlights.get('chat-find')?.size===${expected}`);
+      const first = Number((await status()).split(" ")[0]);
+      await findKey("Enter");
+      const second = Number((await status()).split(" ")[0]);
+      assert.equal(second, (first % expected) + 1, "Enter vai para a próxima");
+      await findKey("Enter", true);
+      assert.equal(Number((await status()).split(" ")[0]), first, "Shift+Enter volta");
+      await typeFind("acentuação-inexistente-xyz");
+      await waitFor(win, `document.querySelector('[data-testid="chat-find-status"]').innerText==='Nenhum resultado'`);
+      assert.equal(await hits(), 0);
+      // Com a busca aberta, a resposta nova entra na contagem sem reabrir a barra.
+      await typeFind(term);
+      await waitFor(win, `CSS.highlights.get('chat-find')?.size===${expected}`);
+      await send(win, "smoke-find", "agy fixture resposta 5");
+      await waitFor(win, `CSS.highlights.get('chat-find')?.size>${expected}`);
+      await findKey("Escape");
+      await waitFor(win, `!document.querySelector('[data-testid="chat-find"]') && !CSS.highlights.has('chat-find')`);
+    }
     const args = JSON.parse(
       require("fs").readFileSync(
         path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, "last-args-agy.json"),

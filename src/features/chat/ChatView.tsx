@@ -1,4 +1,4 @@
-import { useCallback, useRef, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useLayoutEffect, useState } from "react";
 import { ArrowDown } from "lucide-react";
 import { beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
@@ -10,6 +10,8 @@ import type { FileTarget } from "../../components/LinkedText";
 import { ChatComposer } from "./ChatComposer";
 import { StaleContextNotice } from "./StaleContextNotice";
 import { ContinuationBanner } from "./ContinueInCli";
+import { ChatFindBar } from "./ChatFindBar";
+import { useChatFind } from "./useChatFind";
 
 export function ChatView() {
   const {
@@ -65,6 +67,23 @@ export function ChatView() {
   const lastSessionRef = useRef(activeSessionId);
   const lastCountRef = useRef(currentMessages.length);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const find = useChatFind(chatScrollRef, messagesRef);
+  const [findFocus, setFindFocus] = useState(0);
+  const { setOpen: setFindOpen, setQuery: setFindQuery } = find;
+  // Ctrl+F abre a busca na conversa; com texto selecionado (uma linha), já busca por ele.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "f") return;
+      e.preventDefault();
+      const selected = window.getSelection()?.toString().trim() ?? "";
+      if (selected && selected.length <= 200 && !selected.includes("\n")) setFindQuery(selected);
+      setFindOpen(true);
+      setFindFocus((n) => n + 1);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setFindOpen, setFindQuery]);
   const scrollToEnd = () => {
     const scroller = chatScrollRef.current;
     if (scroller) scroller.scrollTop = scroller.scrollHeight;
@@ -102,7 +121,7 @@ export function ChatView() {
       >
         <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between space-y-4">
           {/* LISTA DE MENSAGENS */}
-          <div className="space-y-6 pt-2 flex-1">
+          <div ref={messagesRef} data-testid="chat-messages" className="space-y-6 pt-2 flex-1">
             {currentMessages.length === 0 ? (
               <div className="text-center py-16 text-[#8c8270] text-sm">
                 Crie uma conversa no botão + de uma CLI instalada ou abra o
@@ -141,6 +160,18 @@ export function ChatView() {
           <ChatComposer />
         </div>
       </div>
+      {find.open && (
+        <ChatFindBar
+          query={find.query}
+          onQuery={find.setQuery}
+          total={find.total}
+          current={find.current}
+          onNext={find.next}
+          onPrev={find.prev}
+          onClose={find.close}
+          focusToken={findFocus}
+        />
+      )}
       {awayFromEnd && (
         <button
           type="button"

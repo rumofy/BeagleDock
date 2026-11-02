@@ -277,6 +277,8 @@ export interface AppSettings {
   shellAutoCloseSeconds?: number;
   /** Contexto (em tokens) a partir do qual a conversa é compactada sozinha; 0 desliga (padrão: 200 mil). */
   autoCompactTokens?: number | null;
+  /** Apaga projetos temporários do ai-memory parados há mais destes dias; 0 desliga (padrão: 7). */
+  aiMemoryTempCleanupDays?: number;
   workspaces: WorkspaceItem[];
 }
 

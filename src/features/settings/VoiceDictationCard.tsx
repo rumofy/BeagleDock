@@ -234,7 +234,9 @@ export function VoiceDictationCard() {
           />
           <p className="mt-1.5 text-[11px] text-[#7d7565]">
             Um por linha ou separados por vírgula. Um termo sozinho fixa a grafia (“supabase” vira “Supabase”); “errado
-            =&gt; certo” troca o que costuma sair errado. Nomes do projeto e da CLI já entram sozinhos.
+            =&gt; certo” troca o que costuma sair errado. Nomes das CLIs, do projeto aberto e de ferramentas
+            comuns de desenvolvimento já vêm cadastrados e são reconhecidos mesmo quando saem parecidos
+            (“Bigodok” vira “BeagleDock”). Termos que você cadastra com maiúscula, como “Rumofy”, também.
           </p>
         </div>
 
