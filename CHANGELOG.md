@@ -4,6 +4,14 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-02
+
+### Adicionado
+
+- Ditado por voz no campo de mensagem: clique no microfone (ou use Ctrl+Shift+M), fale e conclua. O texto aparece no campo para você revisar antes de enviar, no Claude Code, no Codex CLI e no Antigravity. Esc descarta a gravação.
+- O ditado roda no seu computador, sem conta, sem chave e sem internet: usa o modelo de voz Parakeet, que entende português, pontua sozinho e transcreve alguns segundos de fala em cerca de 1 a 2 segundos. O modelo (669 MB) é baixado uma vez, na primeira vez que você usa o microfone, e só ocupa memória enquanto transcreve.
+- Vocabulário do ditado nas configurações: termos que precisam sair com a grafia certa e trocas como “cloud code => Claude Code”. Os nomes do projeto e da CLI já entram sozinhos. Quem preferir pode transcrever por uma API na nuvem (OpenAI ou compatível).
+
 ## [0.8.0] - 2026-11-02
 
 ### Adicionado
@@ -238,7 +246,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...v0.6.1

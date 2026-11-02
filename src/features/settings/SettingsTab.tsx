@@ -3,6 +3,7 @@ import { ApiKeysCard } from "./ApiKeysCard";
 import { AppearanceCard } from "./AppearanceCard";
 import { BackgroundCard } from "./BackgroundCard";
 import { AutoCompactCard } from "./AutoCompactCard";
+import { VoiceDictationCard } from "./VoiceDictationCard";
 
 export function SettingsTab() {
   return (
@@ -11,6 +12,7 @@ export function SettingsTab() {
                 <AppearanceCard />
                 <BackgroundCard />
                 <AutoCompactCard />
+                <VoiceDictationCard />
                 <CliSettingsCard />
                 <ApiKeysCard />
               </div>

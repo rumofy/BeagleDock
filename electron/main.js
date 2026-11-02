@@ -39,6 +39,8 @@ const { openExternalUrl, parseExternalUrl } = require("./external-links");
 const { createNativeCommands } = require("./native-commands");
 const { setAutostart } = require("./autostart");
 const { listFiles, searchFiles } = require("./project-files");
+const { transcribeAudio, findLocalEngine } = require("./transcription");
+const { createSpeechModels } = require("./speech-models");
 const { inspectWorkspace, validateWorkspaceEdit } = require("./workspace-status");
 const nativeCommands = createNativeCommands();
 const agyUsage = createAgyUsage();
@@ -81,6 +83,7 @@ const {
   getWorkspaces,
   saveAppSettings,
   getAppSettings,
+  getSecret,
   dropUnreadableCredentials,
   getNativeSession,
   setNativeSession,
@@ -1261,6 +1264,52 @@ module.exports.ready = app.whenReady().then(async () => {
       if (Object.hasOwn(settingsObj || {}, "runInBackground"))
         background.setRunInBackground(settingsObj.runInBackground !== false);
       return result;
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+
+  // Ditado por voz: o renderer grava o microfone e envia o WAV; modelo e chave ficam aqui.
+  const speechModels = createSpeechModels({
+    dir: path.join(
+      process.env.BEAGLEDOCK_DATA_DIR || path.join(os.homedir(), ".beagledock"),
+      "models",
+    ),
+    onProgress: (progress) => sendToRenderer("dictation-model-progress", progress),
+  });
+  handle("transcribe-audio", async (_event, request) => {
+    try {
+      const result = await transcribeAudio(request, {
+        getSettings: getAppSettings,
+        getSecret,
+        models: speechModels,
+      });
+      return { success: true, ...result };
+    } catch (e) {
+      return { success: false, error: e.message, code: e.code };
+    }
+  });
+  handle("dictation-status", async () => {
+    const settings = await getAppSettings();
+    return {
+      engine: settings?.voiceDictation?.engine === "api" ? "api" : "local",
+      model: speechModels.status(),
+      engineAvailable: !!findLocalEngine(),
+    };
+  });
+  handle("download-dictation-model", async () => {
+    try {
+      await speechModels.download();
+      return { success: true, model: speechModels.status() };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  });
+  handle("cancel-dictation-model-download", async () => speechModels.cancel());
+  handle("remove-dictation-model", async () => {
+    try {
+      speechModels.remove();
+      return { success: true, model: speechModels.status() };
     } catch (e) {
       return { success: false, error: e.message };
     }

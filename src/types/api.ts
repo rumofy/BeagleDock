@@ -21,6 +21,48 @@ import type {
   AIProviderStatus,
 } from "./index";
 
+export interface TranscribeAudioRequest {
+  /** WAV mono em base64. */
+  audio: string;
+  /** Termos da sessão atual (projeto, arquivos) que ajudam o modelo a acertar a grafia. */
+  context?: string[];
+}
+
+export interface TranscribeAudioResult {
+  success: boolean;
+  error?: string;
+  /** "SPEECH_MODEL_MISSING" quando o modelo local ainda não foi baixado. */
+  code?: string;
+  text?: string;
+  engine?: "api" | "local";
+  model?: string;
+}
+
+export interface DictationModelStatus {
+  id: string;
+  label: string;
+  /** Tamanho do download em bytes. */
+  size: number;
+  installed: boolean;
+  downloading: boolean;
+  received: number;
+}
+
+export interface DictationStatus {
+  engine: "api" | "local";
+  model: DictationModelStatus;
+  /** O motor local (parakeet-cli) foi compilado e está no pacote. */
+  engineAvailable: boolean;
+}
+
+export interface DictationModelProgress {
+  id: string;
+  received: number;
+  total: number;
+  done: boolean;
+  error?: string;
+}
+
 /** Uma escolha oferecida pela própria CLI para um pedido de permissão. */
 export interface ApprovalOption {
   id: string;
@@ -254,6 +296,7 @@ export interface StreamEvents {
     emittedAt?: number;
   };
   "cli-approvals": CliApproval[];
+  "dictation-model-progress": DictationModelProgress;
 }
 
 /** Superfície exposta pelo preload (`window.beagleAPI`). */
@@ -316,6 +359,13 @@ export interface BeagleAPI {
   getZoom(): Promise<number>;
   setZoom(factor: number): Promise<number>;
   saveAppSettings(settings: AppSettings): Promise<SaveSettingsResult>;
+  /** Transcreve uma gravação do microfone (WAV em base64) com o motor configurado. */
+  transcribeAudio(request: TranscribeAudioRequest): Promise<TranscribeAudioResult>;
+  getDictationStatus(): Promise<DictationStatus>;
+  /** Baixa o modelo de voz local (progresso em `dictation-model-progress`). */
+  downloadDictationModel(): Promise<{ success: boolean; error?: string; model?: DictationModelStatus }>;
+  cancelDictationModelDownload(): Promise<OkResult>;
+  removeDictationModel(): Promise<{ success: boolean; error?: string; model?: DictationModelStatus }>;
   replaceChatMessages(id: string, messages: Array<ChatMessage & { provider?: string }>): Promise<OkResult>;
   saveChatMessage(message: ChatMessage & { provider?: string }): Promise<OkResult>;
   getChatMessages(sessionId: string): Promise<ChatMessage[]>;

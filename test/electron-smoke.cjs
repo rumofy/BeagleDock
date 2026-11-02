@@ -4,6 +4,12 @@ const path = require("node:path");
 const stage = process.argv.at(-1);
 const failures = [];
 Object.defineProperty(app, "isPackaged", { get: () => true });
+// Microfone falso do Chromium (tom contínuo) e permissão sem diálogo: exercita o ditado de verdade.
+app.commandLine.appendSwitch("use-fake-device-for-media-stream");
+app.commandLine.appendSwitch("use-fake-ui-for-media-stream");
+// Diagnóstico real do ditado local: o microfone falso toca um arquivo de fala de verdade.
+if (process.env.BEAGLEDOCK_SMOKE_SPEECH_AUDIO)
+  app.commandLine.appendSwitch("use-file-for-fake-audio-capture", process.env.BEAGLEDOCK_SMOKE_SPEECH_AUDIO);
 app.on("web-contents-created", (_event, contents) => {
   contents.on("preload-error", (_event, _path, error) =>
     failures.push(error.message),
@@ -872,6 +878,111 @@ async function send(win, text, expected) {
     assert.equal(await win.webContents.executeJavaScript(`!document.querySelector('input[placeholder^="Mensagem"]')`), true, "começa fora do chat");
     win.webContents.send("open-session", { sessionId: target.id });
     await waitFor(win, `!!document.querySelector('input[placeholder^="Mensagem"]') && document.querySelector('header').innerText.includes(${JSON.stringify(target.title)})`);
+  }
+  if (stage === "first") {
+    // Ditado por voz: grava o microfone falso, converte em WAV no renderer e transcreve num
+    // servidor local compatível com OpenAI; o estado intermediário aparece antes do texto.
+    const http = require("node:http");
+    const received = [];
+    let release;
+    const gate = new Promise((resolve) => (release = resolve));
+    const server = http.createServer((req, res) => {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", async () => {
+        received.push({ url: req.url, auth: req.headers.authorization, body: Buffer.concat(chunks) });
+        await gate;
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify({ text: "texto ditado [BLANK_AUDIO] pelo microfone" }));
+      });
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
+    const input = `document.querySelector('input[placeholder^="Mensagem"]')`;
+    const mic = `document.querySelector('button[aria-label="Ditar mensagem por voz"]')`;
+    const speech = await win.webContents.executeJavaScript(`window.beagleAPI.getDictationStatus()`);
+    assert.equal(speech.engine, "local", "o ditado local é o padrão");
+    if (!speech.model.installed) {
+      // Sem o modelo de voz, o microfone oferece o download em vez de gravar à toa.
+      await waitFor(win, `!!${mic}`);
+      await win.webContents.executeJavaScript(`${mic}.click()`);
+      await waitFor(win, `document.querySelector('[data-testid="dictation-model-offer"]')?.innerText.includes('669 MB')`);
+      assert.equal(await win.webContents.executeJavaScript(`!document.querySelector('[data-testid="dictation-recording"]')`), true);
+      await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Agora não"]').click()`);
+      await waitFor(win, `!!${mic}`);
+    } else if (process.env.BEAGLEDOCK_SMOKE_SPEECH_AUDIO) {
+      // Ponta a ponta real: fala do arquivo → gravação → WAV → parakeet-cli → texto no campo.
+      assert.equal(speech.engineAvailable, true, "motor local compilado (npm run build:speech)");
+      await win.webContents.executeJavaScript(
+        `(()=>{const i=${input};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'');i.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+      );
+      await win.webContents.executeJavaScript(`${mic}.click()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="dictation-recording"]')`);
+      const seconds = Number(process.env.BEAGLEDOCK_SMOKE_SPEECH_SECONDS || 6);
+      await waitFor(win, `document.querySelector('[data-testid="dictation-recording"]').innerText.includes('0:0${seconds}')`);
+      const stoppedAt = Date.now();
+      await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Concluir ditado e transcrever"]').click()`);
+      await waitFor(win, `document.body.innerText.includes('Transcrevendo')`);
+      const start = Date.now();
+      let spoken = "";
+      while (Date.now() - start < 30000 && !spoken) {
+        spoken = await win.webContents.executeJavaScript(`${input}.value`);
+        if (!spoken) await pause();
+      }
+      console.log(`Desktop dictation local (${Date.now() - stoppedAt} ms após concluir): ${JSON.stringify(spoken)}`);
+      const expected = process.env.BEAGLEDOCK_SMOKE_SPEECH_EXPECT;
+      if (expected) assert.match(spoken, new RegExp(expected, "i"));
+      else assert.ok(spoken.length > 0);
+    }
+    const saved = await win.webContents.executeJavaScript(
+      `window.beagleAPI.saveAppSettings({voiceDictation:{engine:"api",baseUrl:${JSON.stringify(baseUrl)},vocabulary:"Rumofy"}})`,
+    );
+    assert.equal(saved.success, true);
+    await win.webContents.executeJavaScript(
+      `(()=>{const i=${input};Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,'Revise');i.dispatchEvent(new Event('input',{bubbles:true}));})()`,
+    );
+    // Esc descarta: nada é enviado para transcrição.
+    await win.webContents.executeJavaScript(
+      `window.dispatchEvent(new KeyboardEvent('keydown',{key:'M',ctrlKey:true,shiftKey:true,bubbles:true,cancelable:true}))`,
+    );
+    await waitFor(win, `!!document.querySelector('[data-testid="dictation-recording"]')`);
+    await win.webContents.executeJavaScript(
+      `window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`,
+    );
+    await waitFor(win, `!!${mic}`);
+    await win.webContents.executeJavaScript(`${mic}.click()`);
+    await waitFor(win, `!!document.querySelector('[data-testid="dictation-recording"]')`);
+    await waitFor(win, `document.querySelector('[data-testid="dictation-recording"]').innerText.includes('0:01')`);
+    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Concluir ditado e transcrever"]').click()`);
+    await waitFor(win, `document.body.innerText.includes('Transcrevendo')`);
+    const waitReceived = async () => {
+      const start = Date.now();
+      while (!received.length && Date.now() - start < 10000) await pause();
+    };
+    await waitReceived();
+    assert.equal(received.length, 1, "só a gravação concluída foi enviada");
+    // Ainda sem resposta do servidor: o campo não mudou.
+    assert.equal(await win.webContents.executeJavaScript(`${input}.value`), "Revise");
+    release();
+    await waitFor(win, `${input}.value === 'Revise texto ditado pelo microfone'`);
+    await waitFor(win, `!document.body.innerText.includes('Transcrevendo')`);
+    const { url, auth, body } = received[0];
+    assert.equal(url, "/v1/audio/transcriptions");
+    assert.equal(auth, undefined, "servidor local dispensa chave");
+    const riff = body.indexOf("RIFF");
+    assert.ok(riff > 0, "multipart traz o WAV");
+    assert.equal(body.toString("ascii", riff + 8, riff + 12), "WAVE");
+    assert.equal(body.readUInt32LE(riff + 24), 16000);
+    const dataBytes = body.readUInt32LE(riff + 40);
+    assert.ok(dataBytes >= 16000 * 2, `pelo menos 1 s de áudio (${dataBytes} bytes)`);
+    let peak = 0;
+    for (let i = 0; i < Math.min(dataBytes, 64000); i += 2) peak = Math.max(peak, Math.abs(body.readInt16LE(riff + 44 + i)));
+    assert.ok(peak > 1000, `o áudio do microfone não é silêncio (pico ${peak})`);
+    const text = body.toString("utf8");
+    assert.match(text, /gpt-4o-transcribe/);
+    assert.match(text, /Rumofy/);
+    server.close();
+    console.log("Desktop dictation: microfone, WAV 16 kHz, estado intermediário e texto no campo passaram.");
   }
   assert.deepEqual(failures, []);
   console.log(

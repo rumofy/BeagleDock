@@ -15,3 +15,4 @@ Thumbs.db
 *.pfx
 .capyai/
 .beagledock/
+vendor/
