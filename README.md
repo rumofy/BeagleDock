@@ -1,20 +1,38 @@
+<div align="center">
+
+<img src="public/brand/beagledock-logo.png" width="112" alt="BeagleDock">
+
 # BeagleDock
 
-**Multi-CLI for Developers · Apache-2.0**
+**Multi-CLI para desenvolvedores, no seu computador.**
 
-Toolkit desktop para usar Claude Code, Codex CLI e Antigravity com conversas persistentes, catálogo local de modelos, histórico e consumo registrado pelas ferramentas.
+Claude Code, Codex CLI e Antigravity num só lugar, com conversas persistentes,<br>
+catálogo local de modelos, histórico e o consumo registrado pelas próprias ferramentas.
 
-Código: [rumofy/BeagleDock](https://github.com/rumofy/BeagleDock). Mudanças por versão: [CHANGELOG.md](CHANGELOG.md). Licença: [Apache 2.0](LICENSE); avisos de terceiros: [NOTICE](NOTICE). Como contribuir: [CONTRIBUTING.md](CONTRIBUTING.md).
+[![Release](https://img.shields.io/github/v/release/rumofy/BeagleDock?color=3FB950&label=release)](https://github.com/rumofy/BeagleDock/releases/latest)
+[![Licença](https://img.shields.io/badge/licen%C3%A7a-Apache--2.0-1B1B1F)](LICENSE)
+[![Linux](https://img.shields.io/badge/Linux-x64%20%C2%B7%20homologado-1B1B1F?logo=linux&logoColor=white)](#plataformas)
+[![Windows](https://img.shields.io/badge/Windows-experimental-8A6D3B?logo=windows&logoColor=white)](#plataformas)
+[![macOS](https://img.shields.io/badge/macOS-n%C3%A3o%20testado-6E7681?logo=apple&logoColor=white)](#plataformas)
+[![Roda com](https://img.shields.io/badge/roda%20com-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-C8834B)](#conversas-e-permissões)
+
+[Releases](https://github.com/rumofy/BeagleDock/releases) · [Changelog](CHANGELOG.md) · [Como contribuir](CONTRIBUTING.md) · [Segurança](SECURITY.md) · [Avisos de terceiros](NOTICE)
+
+</div>
+
+---
 
 ## Plataformas
 
 | Plataforma | Situação |
 | --- | --- |
-| Linux x64 | **Suportada.** Desenvolvida, testada e empacotada (`.deb`/AppImage). |
+| Linux x64 (Debian 13) | **Homologada.** É onde o BeagleDock é desenvolvido, testado (unitários e `npm run test:desktop` com Electron) e empacotado (`.deb`/AppImage). |
+| Outras distribuições Linux x64 | **Devem funcionar, sem homologação.** O `.deb` serve para derivados do Debian (como o Ubuntu) e o AppImage para as demais; relatos são bem-vindos. |
 | Windows | **Experimental, aberta à comunidade.** O código trata caminhos, launchers `.cmd` e shell do Windows, mas o aplicativo nunca foi validado nessa plataforma. |
 | macOS | **Não testada.** Há tratamento de Homebrew e `zsh`, sem validação nem assinatura de código. |
+| Linux ARM64 | **Não testada.** Não há pacote gerado para essa arquitetura. |
 
-Quer ajudar a levar o BeagleDock para o Windows? Veja [o que precisa ser validado](CONTRIBUTING.md#windows) e abra um relato com o modelo **Relato de plataforma**.
+Testou em outra plataforma ou distribuição? [Abra uma issue](https://github.com/rumofy/BeagleDock/issues/new) contando o sistema, a versão e o resultado, funcionando ou não. Para levar o BeagleDock ao Windows, veja [o que precisa ser validado](CONTRIBUTING.md#windows).
 
 ## Desenvolvimento
 

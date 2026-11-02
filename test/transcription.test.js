@@ -298,8 +298,22 @@ test("nomes ditados com outra grafia são reconhecidos pelo som, sem mexer no po
 });
 
 test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
-  for (const s of ["package.json", "~/.beagledock", "CLAUDE_CONFIG_DIR", "dev:vite", "`beagledock --quit`", "beagledock-probes"])
-    assert.equal(t.applyVocabulary(s, {}), s);
+  for (const s of [
+    "package.json",
+    "~/.beagledock",
+    "CLAUDE_CONFIG_DIR",
+    "dev:vite",
+    "`beagledock --quit`",
+    "beagledock-probes",
+    // Regressão PR #73: o badge do README tinha `logo=linux` trocado por `logo=Linux`.
+    "https://img.shields.io/badge/Linux-x64?logo=linux&logoColor=white",
+    "www.github.com/rumofy/beagledock",
+  ])
+    assert.equal(t.applyVocabulary(s, {}), s, s);
+  assert.equal(
+    t.applyVocabulary("abre https://github.com/rumofy/beagledock no claude code", {}),
+    "abre https://github.com/rumofy/beagledock no Claude Code",
+  );
   assert.equal(t.applyVocabulary("abre o beagledock.", {}), "abre o BeagleDock.");
   assert.equal(t.applyVocabulary("usa json e o codex: ok", {}), "usa JSON e o Codex: ok");
 });

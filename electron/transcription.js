@@ -197,8 +197,18 @@ const wordPattern = (phrase) =>
  * Corrige a transcrição com o vocabulário: troca "errado => certo" e acerta a grafia de
  * termos conhecidos (ex.: "claude code" → "Claude Code"). Funciona com qualquer motor.
  */
-function applyVocabulary(transcript, { vocabulary = "", context = [] } = {}) {
-  let result = String(transcript || "");
+function applyVocabulary(transcript, options = {}) {
+  // URLs passam intactas (`?logo=linux` não vira `?logo=Linux`); só o texto em volta é corrigido.
+  return String(transcript || "")
+    .split(URL_PATTERN)
+    .map((part, i) => (i % 2 ? part : applyVocabularyToText(part, options)))
+    .join("");
+}
+
+const URL_PATTERN = /((?:https?:\/\/|www\.)[^\s<>()[\]`]+)/i;
+
+function applyVocabularyToText(text, { vocabulary = "", context = [] } = {}) {
+  let result = text;
   const { terms: own, replacements } = parseVocabulary(vocabulary);
   // As trocas da pessoa vêm antes das do app, para poder sobrepor qualquer uma delas.
   for (const { from, to } of [...replacements, ...BASE_REPLACEMENTS])
