@@ -782,6 +782,9 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("resolve-cli-approval", (_event, id, decision, message) =>
     approvals.resolve(id, decision, { message }),
   );
+  handle("set-live-permission", (_event, sessionId, permission) =>
+    cliRunner.setPermission({ sessionId, permission }),
+  );
   handle("get-global-permissions", () => globalPermissions.all());
   handle("save-global-permissions", (_event, id, changes) => {
     const policy = globalPermissions.save(id, changes);

@@ -20,6 +20,8 @@ export const beagleApi: BeagleAPI = {
   getAppVersion: () => backend().getAppVersion(),
   resolveCliApproval: (id, decision, message) =>
     backend().resolveCliApproval(id, decision, message),
+  setLivePermission: (sessionId, permission) =>
+    backend().setLivePermission(sessionId, permission),
   detectTools: () => backend().detectTools(),
   getAIMemoryStatus: () => backend().getAIMemoryStatus(),
   searchAIMemory: (query, isGlobal, workspace, project) =>

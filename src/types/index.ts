@@ -48,6 +48,14 @@ export interface ContextInfo {
   used: number | null;
   /** Cache de prompt da última chamada: lido (barato) e escrito (caro, cache expirado ou prefixo novo). */
   cache?: { read?: number; write?: number };
+  /** Horário (ms) da última chamada ao modelo: cada chamada lê o cache e renova sua validade. */
+  lastCallAt?: number;
+  /** Validade do cache informada pela CLI (Claude Code: 1 h ou 5 min). Ausente quando a CLI não informa. */
+  cacheTtlMs?: number;
+  /** Modelo da última chamada, como escolhido no app ("" = padrão da CLI). O cache é por modelo. */
+  model?: string;
+  /** Quanto o contexto cresceu na última resposta (sem compactação no meio). Só desta execução do app. */
+  turnGrowth?: number;
   window: number | null;
   /** A janela veio da CLI (true) ou é uma estimativa pelo nome do modelo (false). */
   windowKnown?: boolean;

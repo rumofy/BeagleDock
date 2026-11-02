@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
+import { staleContext } from "../../lib/staleContext";
+import { formatTokens } from "../../lib/tokens";
 import type { ChatSession } from "../../types";
 
 /** Uma conversa na lista: selecionar, renomear (duplo clique), arquivar e excluir com confirmação. */
-export function SessionRow({ session }: { session: ChatSession }) {
+export function SessionRow({ session, now }: { session: ChatSession; now: number }) {
   const {
     activeTab,
     setActiveTab,
@@ -16,6 +18,7 @@ export function SessionRow({ session }: { session: ChatSession }) {
     handleDeleteSession,
     renameSession,
     setSessionArchived,
+    contextBySession,
   } = useApp();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
@@ -53,6 +56,9 @@ export function SessionRow({ session }: { session: ChatSession }) {
   const waitingPermission = cliApprovals.some(
     (a) => a.sessionId === session.id,
   );
+  // Conversa grande com o cache expirado: retomar reprocessa o contexto inteiro.
+  const context = contextBySession[session.id];
+  const cold = session.status === "running" ? null : staleContext(context, now);
 
   return (
     <div
@@ -145,6 +151,15 @@ export function SessionRow({ session }: { session: ChatSession }) {
               title="A CLI respondeu sozinha (ex.: um agente em segundo plano terminou)"
             >
               novo
+            </span>
+          )}
+          {cold && (
+            <span
+              className="shrink-0 text-[9px] font-bold tracking-wider text-amber-800 bg-amber-100 rounded px-1"
+              title={`Parada há mais tempo que o cache de prompt${context?.cacheTtlMs ? "" : " (estimado em 1 h: esta CLI não informa a validade)"}. Retomar reprocessa cerca de ${formatTokens(cold.used)} tokens de contexto; compactar antes ou começar uma conversa nova sai mais barato.`}
+              data-testid="session-cold"
+            >
+              fria · {formatTokens(cold.used)}
             </span>
           )}
           {draftIds.includes(session.id) && session.id !== activeSessionId && (

@@ -10,6 +10,7 @@ import type {
   ChatAttachment,
   ChatEvent,
   ChatMessage,
+  PermissionLevel,
   ContextInfo,
   ChatSession,
   HistorySessionItem,
@@ -31,6 +32,13 @@ export interface ApprovalOption {
   danger?: boolean;
   /** Aceita uma instrução para a IA junto da negação. */
   allowsMessage?: boolean;
+}
+
+export interface LivePermissionResult {
+  ok: boolean;
+  applied?: "now" | "next";
+  approved?: number;
+  error?: string;
 }
 
 export interface CliApproval {
@@ -258,6 +266,12 @@ export interface BeagleAPI {
   getCliApprovals(): Promise<CliApproval[]>;
   /** `decision`: "allow" | "deny" ou o id de uma opção oferecida; `message` acompanha uma negação. */
   resolveCliApproval(id: string, decision: string, message?: string): Promise<unknown>;
+  /**
+   * Troca o nível de permissão da conversa com a CLI aberta. `applied`: "now" (a CLI em execução já
+   * usa o novo nível) ou "next" (vale a partir da próxima mensagem); `approved` = aprovações
+   * pendentes liberadas ao passar para "Acesso total".
+   */
+  setLivePermission(sessionId: string, permission: PermissionLevel): Promise<LivePermissionResult>;
   detectTools(): Promise<ToolsUpdate>;
   getAIMemoryStatus(): Promise<AIMemoryStatusResult>;
   searchAIMemory(query: string, isGlobal?: boolean, workspace?: string | null, project?: string | null): Promise<AIMemoryApiResult<any>>;

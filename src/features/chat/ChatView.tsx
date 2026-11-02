@@ -18,6 +18,7 @@ export function ChatView() {
     activeSessionId,
     currentMessages,
     currentSession,
+    currentModelSelection,
     setAppError,
     cliApprovals,
     resolveApproval,
@@ -123,6 +124,7 @@ export function ChatView() {
             <ContextBar
               info={contextBySession[currentSession.id]}
               providerId={currentSession.providerId}
+              selectedModel={currentModelSelection.model}
               busy={isExecutingPrompt}
               onCompact={() => void compactContext(currentSession)}
             />

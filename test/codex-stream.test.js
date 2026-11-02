@@ -445,11 +445,15 @@ test("Codex: a opção escolhida volta ao app-server no formato nativo (sessão,
 });
 
 test("Codex: contexto vem do tokenUsage, compactação é capturada e o comando nativo é enviado", async () => {
-  const h = harness(), runner = h.make(), pending = runner.execute(payload);
+  // O app escolhe um alias; o executor resolve para o modelo nativo passado ao app-server.
+  const resolveSelection = ({ model, effort }) => ({ model: model === "gpt-alias" ? "gpt-5.5" : model, effort });
+  const h = harness(), runner = h.make({ resolveSelection }), pending = runner.execute({ ...payload, model: "gpt-alias" });
   await tick();
   const ctxs = () => h.events.filter((e) => e.channel === "cli-context").map((e) => e.data);
   h.notify("thread/tokenUsage/updated", { tokenUsage: { last: { totalTokens: 8200 }, total: { totalTokens: 90000 }, modelContextWindow: 272000 } });
   assert.equal(ctxs().at(-1).used, 8200);
+  assert.equal(ctxs().at(-1).model, "gpt-alias", "o modelo do cache é o escolhido no app, não o resolvido");
+  assert.ok(h.calls[0].args.includes('model="gpt-5.5"'), "o app-server recebe o modelo resolvido");
   assert.equal(ctxs().at(-1).window, 272000);
   h.notify("item/started", { item: { id: "c1", type: "contextCompaction" } });
   assert.equal(ctxs().at(-1).compacting, true);

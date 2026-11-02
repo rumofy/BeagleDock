@@ -4,6 +4,21 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
+### Adicionado
+
+- A barra de contexto mostra por quanto tempo o cache de prompt continua válido. No Claude Code há contagem regressiva real (“cache expira em 42 min”), destacada nos últimos 5 minutos e trocada por “cache expirado” quando passa do prazo, para você saber quando a próxima mensagem vai reprocessar o contexto inteiro. O Codex CLI e o Antigravity não informam a validade do cache, então neles aparece o tempo desde a última chamada.
+- No Antigravity, a barra de contexto agora mostra quanto foi lido do cache na última resposta.
+- Ao trocar de modelo numa conversa grande (acima de 100 mil tokens), a barra de contexto avisa na hora que a próxima mensagem vai reprocessar o contexto inteiro, porque o cache é separado por modelo. Ao enviar, o app pergunta antes: dá para enviar assim mesmo, voltar ao modelo anterior (aproveitando o cache ainda quente), compactar no modelo anterior antes de trocar ou voltar a editar. Vale para Claude Code, Codex CLI e Antigravity.
+- A lista de conversas marca como “fria” as conversas grandes cujo cache já expirou, com o tamanho do contexto, para você ver antes de abrir que retomá-las vai sair caro.
+- A barra de contexto mostra quanto a última resposta acrescentou ao contexto e destaca quando foi muito (50 mil tokens ou mais), o que costuma ser um arquivo, log ou saída de comando grande que vai encarecer todas as mensagens seguintes.
+- O nível de permissão pode ser trocado durante a resposta (no seletor do cabeçalho e nos atalhos Alt+P/Alt+M). No Claude Code o novo nível vale na hora, na própria resposta em andamento. No Antigravity, a partir de “Aceitar edições”, as próximas ferramentas já seguem o novo nível; o restante da política entra na próxima mensagem. No Codex CLI vale a partir da próxima mensagem. Um aviso junto ao seletor diz qual foi o caso. Passar para “Acesso total” com uma aprovação esperando libera essa ação uma vez, sem gravar regra permanente.
+
+### Corrigido
+
+- O aviso de conversa grande e parada passa a usar a validade de cache informada pelo Claude Code (1 hora ou 5 minutos) e o horário da última resposta do modelo, em vez de supor sempre 1 hora.
+
 ## [0.5.2] - 2026-11-02
 
 ### Corrigido
@@ -189,7 +204,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rumofy/BeagleDock/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rumofy/BeagleDock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rumofy/BeagleDock/compare/v0.4.0...v0.5.0

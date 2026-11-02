@@ -44,6 +44,7 @@ function useAppStateValue() {
   });
   const composer = useComposer({
     currentSession: sessions.currentSession,
+    currentModel: sessions.currentModelSelection.model,
     pendingTurns: sessions.pendingTurns,
     setAppError,
     handleStopSession: sessions.handleStopSession,

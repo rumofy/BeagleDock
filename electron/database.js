@@ -182,6 +182,10 @@ function parseContext(json) {
               ? c.lastCompaction
               : undefined,
           updatedAt: Number.isFinite(c.updatedAt) ? c.updatedAt : undefined,
+          cache: c.cache && typeof c.cache === "object" ? c.cache : undefined,
+          lastCallAt: Number.isFinite(c.lastCallAt) ? c.lastCallAt : undefined,
+          cacheTtlMs: Number.isFinite(c.cacheTtlMs) ? c.cacheTtlMs : undefined,
+          model: typeof c.model === "string" ? c.model : undefined,
         }
       : undefined;
   } catch {
@@ -201,6 +205,10 @@ async function setSessionContext(id, context) {
       compactions: context.compactions || 0,
       lastCompaction: context.lastCompaction,
       updatedAt: context.updatedAt,
+      cache: context.cache,
+      lastCallAt: context.lastCallAt,
+      cacheTtlMs: context.cacheTtlMs,
+      model: typeof context.model === "string" ? context.model : undefined,
     }),
     id,
   ]);

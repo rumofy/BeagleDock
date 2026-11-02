@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   getCliApprovals: () => ipcRenderer.invoke("get-cli-approvals"),
   resolveCliApproval: (id, decision, message) =>
     ipcRenderer.invoke("resolve-cli-approval", id, decision, message),
+  setLivePermission: (sessionId, permission) =>
+    ipcRenderer.invoke("set-live-permission", sessionId, permission),
   detectTools: () => ipcRenderer.invoke("detect-tools"),
   getAIMemoryStatus: () => ipcRenderer.invoke("ai-memory-status"),
   searchAIMemory: (query, isGlobal = true, workspace = null, project = null) =>

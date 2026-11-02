@@ -518,9 +518,12 @@ test("Claude: contexto ao vivo pelo usage, janela real pelo result e compactaç�
   const child = h.calls[0].child;
   const contexts = () => h.emitted.filter((e) => e.ch === "cli-context").map((e) => e.data);
   child.event({ type: "system", subtype: "init", session_id: "claude-native-123" });
-  child.event({ type: "assistant", message: { model: "claude-haiku-5-5", usage: { input_tokens: 2, cache_creation_input_tokens: 6390, cache_read_input_tokens: 9014, output_tokens: 4 }, content: [{ type: "text", text: "ok" }] } });
+  child.event({ type: "assistant", message: { model: "claude-haiku-5-5", usage: { input_tokens: 2, cache_creation_input_tokens: 6390, cache_read_input_tokens: 9014, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 6390 }, output_tokens: 4 }, content: [{ type: "text", text: "ok" }] } });
   await tick();
   assert.equal(contexts().at(-1).used, 15406);
+  assert.equal(contexts().at(-1).cacheTtlMs, 3600000, "validade do cache vem da escrita ephemeral_1h");
+  assert.equal(contexts().at(-1).model, "", "modelo padrão da CLI fica registrado como escolhido no app");
+  assert.ok(Number.isFinite(contexts().at(-1).lastCallAt));
   assert.equal(contexts().at(-1).window, null, "sem janela real ainda: nada estimado");
   // subagente (sidechain) não conta como contexto da conversa principal
   child.event({ type: "assistant", parent_tool_use_id: "tool-9", message: { model: "claude-haiku-5-5", usage: { input_tokens: 999999 }, content: [] } });
@@ -565,6 +568,9 @@ test("AGY real: etapas de pedido e prompt de sistema não viram eventos; ferrame
   assert.equal(result.events[0].status, "done");
   assert.equal(result.context.used, 16572);
   assert.equal(result.context.window, null, "o AGY não informa a janela do modelo");
+  assert.deepEqual(result.context.cache, { read: 0 }, "cache_read_tokens da etapa vira leitura de cache");
+  assert.equal("cacheTtlMs" in result.context, false, "o AGY não informa a validade do cache");
+  assert.equal(result.context.model, "", "modelo do cache registrado também no AGY");
   assert.equal(result.context.source, "antigravity");
 });
 
@@ -1228,5 +1234,81 @@ test("antigravity: cada etapa de resposta é um trecho, e as partes da mesma eta
   const result = await run;
   // O `result` do AGY junta as etapas com "\n" (CLI real): o resultado final não pode apagar as caixas.
   assert.equal(result.output, `Olá mundo${SEGMENT_SEPARATOR}Fim.`);
+  runner.shutdown();
+});
+
+test("Claude: troca de permissão no meio da resposta vai ao vivo pelo set_permission_mode", async () => {
+  const h = harness();
+  const approved = [];
+  const approvals = {
+    askDetailed: () => new Promise(() => {}),
+    approveSession: (id) => (approved.push(id), 1),
+    cancelSession() {}, shutdown() {},
+  };
+  const runner = h.make({ approvals });
+  const first = runner.execute({ ...payload("claude"), permission: "edits" });
+  await tick();
+  const call = h.calls[0];
+  assert.ok(call.args.includes("--allow-dangerously-skip-permissions"), "habilita a troca para Acesso total sem ligá-la");
+  assert.ok(!call.args.includes("--dangerously-skip-permissions"));
+  call.child.event({ type: "system", subtype: "init", session_id: "claude-native-live" });
+  const controls = () => call.child.inputs.map((s) => JSON.parse(s)).filter((m) => m.type === "control_request");
+  const change = runner.setPermission({ sessionId: "app-session", permission: "full" });
+  await tick();
+  const sent = controls().at(-1);
+  assert.deepEqual(sent.request, { subtype: "set_permission_mode", mode: "bypassPermissions" });
+  call.child.event({ type: "control_response", response: { subtype: "success", request_id: sent.request_id, response: { mode: "bypassPermissions" } } });
+  assert.deepEqual(await change, { ok: true, applied: "now", approved: 1 });
+  assert.deepEqual(approved, ["app-session"], "Acesso total libera as aprovações pendentes");
+  call.child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
+  assert.equal((await first).ok, true);
+  // A próxima mensagem já com o novo nível reaproveita o mesmo processo (sem reiniciar a CLI).
+  const second = runner.execute({ ...payload("claude"), permission: "full" });
+  await tick();
+  assert.equal(h.calls.length, 1);
+  call.child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
+  assert.equal((await second).ok, true);
+  // Para somente leitura: modo plano; a CLI recusar deixa a troca para a próxima mensagem.
+  const refused = runner.setPermission({ sessionId: "app-session", permission: "plan" });
+  await tick();
+  const planReq = controls().at(-1);
+  assert.equal(planReq.request.mode, "plan");
+  call.child.event({ type: "control_response", response: { subtype: "error", request_id: planReq.request_id, error: "não" } });
+  assert.deepEqual(await refused, { ok: true, applied: "next", approved: 0 });
+  const third = runner.execute({ ...payload("claude"), permission: "plan" });
+  await tick();
+  assert.equal(h.calls.length, 2, "recusada ao vivo: reinicia com a nova política e retoma a conversa");
+  assert.ok(h.calls[1].args.includes("--resume"));
+  h.calls[1].child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
+  assert.equal((await third).ok, true);
+  runner.shutdown();
+});
+
+test("troca de permissão sem CLI aberta (ou Codex) vale na próxima mensagem; nível inválido é recusado", async () => {
+  const h = harness();
+  const runner = h.make({ approvals: { askDetailed: async () => ({ allow: false }), approveSession: () => 2, cancelSession() {}, shutdown() {} } });
+  assert.deepEqual(await runner.setPermission({ sessionId: "app-session", permission: "full" }), { ok: true, applied: "next", approved: 2 });
+  assert.deepEqual(await runner.setPermission({ sessionId: "app-session", permission: "edits" }), { ok: true, applied: "next", approved: 0 });
+  assert.equal((await runner.setPermission({ sessionId: "app-session", permission: "root" })).ok, false);
+  runner.shutdown();
+});
+
+test("Claude: conversa em Global da CLI também troca ao vivo; voltar ao global vale na próxima mensagem", async () => {
+  const h = harness();
+  const runner = h.make({ approvals: { askDetailed: () => new Promise(() => {}), approveSession: () => 0, cancelSession() {}, shutdown() {} } });
+  const first = runner.execute({ ...payload("claude"), permission: "inherit" });
+  await tick();
+  const { args, child } = h.calls[0];
+  assert.ok(!args.includes("--permission-mode"), "global: nenhum modo imposto");
+  assert.ok(args.includes("--allow-dangerously-skip-permissions"));
+  const change = runner.setPermission({ sessionId: "app-session", permission: "edits" });
+  await tick();
+  const sent = child.inputs.map((s) => JSON.parse(s)).filter((m) => m.type === "control_request").at(-1);
+  assert.equal(sent.request.mode, "acceptEdits");
+  child.event({ type: "control_response", response: { subtype: "success", request_id: sent.request_id, response: {} } });
+  assert.equal((await change).applied, "now");
+  assert.equal((await runner.setPermission({ sessionId: "app-session", permission: "inherit" })).applied, "next");
+  child.event({ type: "result", session_id: "x", result: "ok", is_error: false });
+  await first;
   runner.shutdown();
 });
