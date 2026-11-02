@@ -107,7 +107,6 @@
 :root[data-theme="dark"] .bg-\[\#262420\] { background-color: #dbdcdd; }
 :root[data-theme="dark"] .bg-\[\#27272a\] { background-color: #282829; }
 :root[data-theme="dark"] .bg-\[\#2c2822\] { background-color: #d7d8d9; }
-:root[data-theme="dark"] .bg-\[\#3f3f46\] { background-color: #414244; }
 :root[data-theme="dark"] .bg-\[\#a39b8b\] { background-color: #66676a; }
 :root[data-theme="dark"] .bg-\[\#d7d0bc\] { background-color: #363638; }
 :root[data-theme="dark"] .bg-\[\#dfdacd\] { background-color: #303032; }
@@ -158,7 +157,6 @@
 :root[data-theme="dark"] .from-\[\#fcfbfa\] { --tw-gradient-from: #1d1e1f; }
 :root[data-theme="dark"] .hover\:bg-\[\#2e2e33\]:hover { background-color: #303031; }
 :root[data-theme="dark"] .hover\:bg-\[\#32302b\]:hover { background-color: #d0d0d1; }
-:root[data-theme="dark"] .hover\:bg-\[\#52525b\]:hover { background-color: #555658; }
 :root[data-theme="dark"] .hover\:bg-\[\#d6cfbe\]:hover { background-color: #353638; }
 :root[data-theme="dark"] .hover\:bg-\[\#dfdacd\]:hover { background-color: #303032; }
 :root[data-theme="dark"] .hover\:bg-\[\#e2dcce\]:hover { background-color: #2f2f31; }
@@ -177,7 +175,6 @@
 :root[data-theme="dark"] .hover\:text-\[\#2c2822\]:hover { color: #dbdbdc; }
 :root[data-theme="dark"] .hover\:text-\[\#443e33\]:hover { color: #dbdbdc; }
 :root[data-theme="dark"] .hover\:text-\[\#b45309\]:hover { color: #e9a067; }
-:root[data-theme="dark"] .hover\:text-\[\#f4f4f5\]:hover { color: #f4f4f5; }
 :root[data-theme="dark"] .ring-\[\#d4cdbd\] { --tw-ring-color: #363738; }
 :root[data-theme="dark"] .ring-\[\#e4dec9\] { --tw-ring-color: #2f3031; }
 :root[data-theme="dark"] .ring-\[\#ede9de\] { --tw-ring-color: #28292a; }
@@ -224,6 +221,5 @@
 :root[data-theme="dark"] .text-\[\#b4540a\] { color: #e9a067; }
 :root[data-theme="dark"] .text-\[\#c5bea9\] { color: #a7a8aa; }
 :root[data-theme="dark"] .text-\[\#e4e4e7\] { color: #e5e5e6; }
-:root[data-theme="dark"] .text-\[\#f4f4f5\] { color: #f4f4f5; }
 :root[data-theme="dark"] .text-zinc-400 { color: oklch(70.5% 0.015 286.067); }
 :root[data-theme="dark"] .via-\[\#fcfbfa\] { --tw-gradient-via: #1d1e1f; }

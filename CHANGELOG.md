@@ -4,6 +4,12 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-02
+
+### Alterado
+
+- O shell da conversa voltou a ser um fluxo único com toda a saída, sem abas por comando, para ser possível acompanhar o que está rodando. A opção de fechar abas sozinha saiu das configurações.
+
 ## [0.6.0] - 2026-11-02
 
 ### Adicionado
@@ -204,7 +210,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rumofy/BeagleDock/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rumofy/BeagleDock/compare/v0.5.0...v0.5.1

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "BeagleDock local development bridge",
-    "version": "0.6.0",
+    "version": "0.6.1",
     "license": {
       "name": "Apache-2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
