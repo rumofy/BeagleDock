@@ -41,6 +41,9 @@ function useAppStateValue() {
     setActiveTab,
     setShowWorkspaceModal,
     autoCompactTokens: settings.settings.autoCompactTokens,
+    rememberSessionChoices: settings.settings.rememberSessionChoices,
+    lastSessionChoices: settings.settings.lastSessionChoices,
+    onSessionChoice: settings.recordSessionChoice,
   });
   const composer = useComposer({
     currentSession: sessions.currentSession,

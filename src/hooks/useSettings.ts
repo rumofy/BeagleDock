@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
-import type { AppSettings } from "../types";
+import { recordChoice, type SessionChoice } from "../lib/sessionDefaults";
+import type { AIProviderId, AppSettings } from "../types";
 import type { GlobalPolicy } from "../types/api";
 
 export function useSettings(setAppError: (message: string) => void) {
@@ -19,6 +20,27 @@ export function useSettings(setAppError: (message: string) => void) {
     theme: "cream",
     workspaces: [],
   });
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  // Última escolha de modelo, nível e permissão da CLI; vale para os próximos chats se a opção
+  // estiver ligada. Grava o mapa inteiro porque o servidor só mescla o primeiro nível.
+  const recordSessionChoice = (providerId: AIProviderId, choice: SessionChoice) => {
+    const lastSessionChoices = recordChoice(
+      settingsRef.current.lastSessionChoices,
+      providerId,
+      choice,
+    );
+    settingsRef.current = { ...settingsRef.current, lastSessionChoices };
+    setSettings((prev) => ({ ...prev, lastSessionChoices }));
+    if (!backendAvailable()) return;
+    beagleApi
+      .saveAppSettings({ lastSessionChoices } as Partial<AppSettings> as AppSettings)
+      .then((result) => {
+        if (!result?.success)
+          throw new Error(result?.error || "Falha ao guardar a escolha da conversa.");
+      })
+      .catch((error: Error) => setAppError(error.message));
+  };
   useEffect(() => {
     if (!backendAvailable()) return;
     beagleApi
@@ -55,5 +77,6 @@ export function useSettings(setAppError: (message: string) => void) {
     cliUpdating,
     setCliUpdating,
     handleSaveSettings,
+    recordSessionChoice,
   };
 }

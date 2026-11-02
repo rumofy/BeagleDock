@@ -4,6 +4,16 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-02
+
+### Adicionado
+
+- Opção “Começar com a última escolha de cada CLI”, em Configurações → Novos chats: ligada, o chat novo do Claude Code, do Codex CLI ou do Antigravity já abre com o modelo, o nível de raciocínio e a permissão (inclusive o acesso total) que você escolheu por último numa conversa da mesma CLI, sem precisar configurar tudo de novo. Se o modelo saiu da lista da CLI, o chat volta ao modelo padrão e mantém a permissão.
+
+### Corrigido
+
+- Reabrir pelo histórico uma conversa do terminal que já estava no BeagleDock não apaga mais o nível de raciocínio e a permissão escolhidos nela.
+
 ## [0.10.0] - 2026-11-02
 
 ### Adicionado
@@ -259,7 +269,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...v0.8.0

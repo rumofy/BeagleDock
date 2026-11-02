@@ -20,7 +20,7 @@ O aplicativo se chama BeagleDock e usa a licença Apache-2.0. A versão existe *
 - Nunca editar à mão as seções de versões já lançadas, a data nem os links do rodapé.
 - Lançar versão: `npm version patch|minor|major` (correção / funcionalidade / quebra de compatibilidade). O script move o `Unreleased` para `## [x.y.z] - AAAA-MM-DD`, atualiza os links de comparação e o `docs/openapi.json`. Ele não faz commit nem tag; isso só quando o usuário pedir. Os nomes antigos (CapyAI, Bleagle/BleagleDock) não são usados em código, identidades ou documentação; a migração única de dados, configurações e hooks antigos para as identidades BeagleDock deve continuar funcionando sem perder sessões nem duplicar aprovações.
 
-A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). O CI (`.github/workflows/`) só roda tipos, testes e build do frontend nos PRs e publica a release no GitHub quando a tag `vX.Y.Z` é enviada, com as notas do `CHANGELOG.md` e sem pacotes anexados. Não adicionar empacotamento no CI nem alvos para outras plataformas sem pedido explícito. Ao lançar uma versão e integrar a branch de release (`release/X.Y.Z`) na `main`, criar e enviar a tag da versão imediatamente (`git tag vX.Y.Z <commit> && git push origin vX.Y.Z`) para publicar a release no GitHub automaticamente.
+A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). O CI (`.github/workflows/`) só roda tipos, testes e build do frontend nos PRs e publica a release no GitHub com as notas do `CHANGELOG.md`, sem pacotes anexados. Não adicionar empacotamento no CI nem alvos para outras plataformas sem pedido explícito. A virada de release é automática: quando a branch de release (`release/X.Y.Z`) entra na `main`, o workflow `Release` cria a tag `vX.Y.Z` no commit integrado e publica a release. Não criar nem enviar a tag à mão; conferir só que o workflow passou.
 
 ## Estrutura do frontend
 
@@ -28,4 +28,4 @@ A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria 
 
 ## Git
 
-Somente criar commits e PRs quando solicitado. Ao concluir a integração de uma branch de release (`release/X.Y.Z`) na `main`, a criação e o push da tag `vX.Y.Z` são imediatos para disparar a release. Não incluir coautoria, atribuição de IA ou links de sessão em commits e PRs.
+Somente criar commits e PRs quando solicitado. A tag `vX.Y.Z` de uma release é criada pelo CI no merge da `release/X.Y.Z` na `main`. Não incluir coautoria, atribuição de IA ou links de sessão em commits e PRs.

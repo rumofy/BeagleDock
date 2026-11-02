@@ -3,6 +3,7 @@ import { ApiKeysCard } from "./ApiKeysCard";
 import { AppearanceCard } from "./AppearanceCard";
 import { BackgroundCard } from "./BackgroundCard";
 import { AutoCompactCard } from "./AutoCompactCard";
+import { NewChatDefaultsCard } from "./NewChatDefaultsCard";
 import { VoiceDictationCard } from "./VoiceDictationCard";
 
 export function SettingsTab() {
@@ -11,6 +12,7 @@ export function SettingsTab() {
               <div className="max-w-4xl w-full mx-auto space-y-6">
                 <AppearanceCard />
                 <BackgroundCard />
+                <NewChatDefaultsCard />
                 <AutoCompactCard />
                 <VoiceDictationCard />
                 <CliSettingsCard />

@@ -1026,6 +1026,56 @@ async function send(win, text, expected) {
     server.close();
     console.log("Desktop dictation: microfone, WAV 16 kHz, estado intermediário e texto no campo passaram.");
   }
+  if (stage === "first") {
+    // Novos chats: com a opção ligada, o + de cada CLI repete o modelo, o nível e a permissão
+    // escolhidos por último numa conversa dela; desligada, volta ao padrão da CLI.
+    const js = (code) => win.webContents.executeJavaScript(code);
+    const setSelect = (control, value) =>
+      js(`(()=>{const s=document.querySelector('select[data-control="${control}"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(s,${JSON.stringify(value)});s.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    const selected = () =>
+      js(`({model:document.querySelector('select[data-control="model"]')?.value||"",effort:document.querySelector('select[data-control="effort"]')?.value||"",permission:document.querySelector('select[data-control="permission"]').value})`);
+    const toggle = `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Começar com a última escolha'))`;
+    const initialIds = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>x.id))`);
+    const newChat = async (index) => {
+      const before = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.length)`);
+      await js(`document.querySelectorAll('button[title="Abrir nova conversa"]')[${index}].click()`);
+      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.sessions.length>${before})`);
+      await waitFor(win, `!!document.querySelector('select[data-control="permission"]')`);
+    };
+    await js(`document.querySelector('button[title^="Configurações"]').click()`);
+    await waitFor(win, `!!${toggle}`);
+    await js(`${toggle}.click()`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.rememberSessionChoices===true)`);
+    for (const index of [0, 1, 2]) {
+      await newChat(index);
+      // Último modelo e último nível da lista (diferentes do padrão da fixture) e acesso total.
+      const model = await js(`[...document.querySelector('select[data-control="model"]').options].map(o=>o.value).filter(Boolean).pop()||""`);
+      if (model) await setSelect("model", model);
+      await waitFor(win, `document.querySelector('select[data-control="model"]').value===${JSON.stringify(model)}`);
+      const effort = await js(`(()=>{const s=document.querySelector('select[data-control="effort"]');return s&&!s.disabled?[...s.options].map(o=>o.value).filter(Boolean).pop()||"":""})()`);
+      if (effort) {
+        await setSelect("effort", effort);
+        await waitFor(win, `document.querySelector('select[data-control="effort"]').value===${JSON.stringify(effort)}`);
+      }
+      await setSelect("permission", "full");
+      await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full'`);
+      const chosen = await selected();
+      await newChat(index);
+      await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full'`);
+      assert.deepEqual(await selected(), chosen, `o chat novo da CLI ${index} repete a última escolha`);
+    }
+    await js(`document.querySelector('button[title^="Configurações"]').click()`);
+    await waitFor(win, `!!${toggle}`);
+    await js(`${toggle}.click()`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.rememberSessionChoices===false)`);
+    await newChat(0);
+    assert.equal((await selected()).permission, "inherit", "desligada, o chat novo usa o padrão da CLI");
+    // As conversas deste cenário não entram na contagem da reinicialização.
+    const created = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>x.id))`);
+    for (const id of created.filter((id) => !initialIds.includes(id)))
+      assert.equal((await js(`window.beagleAPI.deleteSession(${JSON.stringify(id)})`))?.success, true);
+    console.log("Desktop novos chats: Claude, Codex e AGY repetem modelo, nível e permissão quando a opção está ligada.");
+  }
   assert.deepEqual(failures, []);
   console.log(
     `Desktop smoke ${stage}: três provedores, mensagens e IDs persistentes passaram.`,
