@@ -6,6 +6,8 @@ Pedidos de funcionalidade e correções nas integrações abrangem **Claude Code
 
 Manter testes de contrato dos três protocolos, testes unitários das regras e testes integrados do aplicativo. Ao validar streaming, verificar dados intermediários antes da conclusão; eventos finais simulados não comprovam saída ao vivo. Registrar versões verificadas e distinguir evidência simulada de diagnóstico com CLI real.
 
+Diagnóstico com CLI real roda sempre numa pasta criada por `node test/probe-dir.cjs <nome>` (ou `makeProbeDir` nos scripts de teste), nunca em `/tmp` solto nem em `mktemp -d`: o `.ai-memory.toml` dela concentra as sessões no projeto `beagledock-probes` em vez de criar um projeto novo no ai-memory a cada pasta.
+
 ## Versões e distribuição
 
 O aplicativo se chama BeagleDock e usa a licença Apache-2.0. A versão existe **só** em `package.json`: nunca escrever o número da versão em README, docs, código ou nomes de arquivo fixos. Quem precisa dela lê de `package.json`/`app.getVersion()`; `docs/openapi.json` é sincronizado pelo script de versão e verificado nos testes.

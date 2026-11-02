@@ -42,6 +42,9 @@ export const beagleApi: BeagleAPI = {
     backend().deleteAIMemoryPage(workspace, project, pagePath, confirmProtected),
   purgeAIMemoryProject: (workspace, project, confirmName) =>
     backend().purgeAIMemoryProject(workspace, project, confirmName),
+  previewAIMemoryTempCleanup: () => backend().previewAIMemoryTempCleanup(),
+  runAIMemoryTempCleanup: (opts) => backend().runAIMemoryTempCleanup(opts),
+  setAIMemoryTempCleanupDays: (days) => backend().setAIMemoryTempCleanupDays(days),
   getAIMemoryMaintenancePrompt: (opts) => backend().getAIMemoryMaintenancePrompt(opts),
   getAIMemoryMaintenanceCwd: () => backend().getAIMemoryMaintenanceCwd(),
   runAIMemoryCommand: (subcmdArgs, cwd) => backend().runAIMemoryCommand(subcmdArgs, cwd),

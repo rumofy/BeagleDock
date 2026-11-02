@@ -204,7 +204,9 @@ async function getOverview(ws, p, opts) {
   };
 }
 async function listSessions(ws, p, opts) {
-  const d = await fetchJson(`${projectBase(ws, p)}/sessions`, opts);
+  // Sem `limit` o servidor devolve só 20 (100 é o máximo) e, sem `include_open`, omite as
+  // sessões que nunca receberam o encerramento (CLI de teste interrompido, por exemplo).
+  const d = await fetchJson(`${projectBase(ws, p)}/sessions?limit=100&include_open=true`, opts);
   return arr(d, "sessions").map((s) => ({
     sessionId: str(s.session_id),
     cwd: str(s.cwd),

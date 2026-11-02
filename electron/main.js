@@ -27,6 +27,7 @@ const {
 const aiMemoryApi = require("./ai-memory-api");
 const { resolveAiMemoryScope } = require("./ai-memory-scope");
 const memoryMaintenance = require("./memory-maintenance");
+const memoryTempCleanup = require("./memory-temp-cleanup");
 const { createCatalogs } = require("./catalogs");
 const { createAgyUsage } = require("./agy-usage");
 const { createProviderUsage } = require("./provider-usage");
@@ -974,6 +975,45 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("ai-memory-project-sessions", (_e, ws, p) =>
     httpCall(() => aiMemoryApi.listSessions(ws, p)),
   );
+  const purgeProject = (ws, p) =>
+    runAiMemoryJson(
+      ["purge-project", "--workspace", ws, "--project", p, "--confirm"],
+      undefined,
+      120000,
+    );
+  const tempCleanup = memoryTempCleanup.createTempCleanup({
+    api: aiMemoryApi,
+    getDays: async () => (await getAppSettings())?.aiMemoryTempCleanupDays,
+    purge: (ws, p) => {
+      if (!memoryMaintenance.canPurgeProject(ws, p))
+        return { ok: false, error: "Este projeto não pode ser excluído." };
+      return purgeProject(ws, p);
+    },
+    log: (msg) => console.log(msg),
+  });
+  tempCleanup.start();
+  handle("ai-memory-temp-cleanup-preview", async () => {
+    try {
+      return { ok: true, ...(await tempCleanup.preview()) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("ai-memory-temp-cleanup-run", async (_e, opts) => {
+    try {
+      const result = await tempCleanup.run({ all: opts?.all === true });
+      projectsCache = { at: 0, list: null };
+      return result;
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  handle("ai-memory-temp-cleanup-set-days", async (_e, value) => {
+    const days = memoryTempCleanup.normalizeDays(value);
+    const result = await saveAppSettings({ aiMemoryTempCleanupDays: days });
+    if (!result?.success) return { ok: false, error: "Falha ao salvar a configuração." };
+    return { ok: true, days };
+  });
   handle("ai-memory-delete-page", async (_e, ws, p, pagePath, confirmProtected) => {
     try {
       aiMemoryApi.validName(ws, "workspace");
@@ -1004,11 +1044,7 @@ module.exports.ready = app.whenReady().then(async () => {
       return { ok: false, error: "Este projeto não pode ser excluído." };
     if (confirmName !== `${ws}/${p}`)
       return { ok: false, error: "Confirmação não confere com workspace/projeto." };
-    return await runAiMemoryJson(
-      ["purge-project", "--workspace", ws, "--project", p, "--confirm"],
-      undefined,
-      120000,
-    );
+    return await purgeProject(ws, p);
   });
   handle("ai-memory-maintenance-prompt", (_e, opts) => {
     const { workspace, project, mode, maxDeletions } = opts || {};

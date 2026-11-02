@@ -7,6 +7,7 @@ import {
 import { useMemoryExplorerState } from "./MemoryExplorerContext";
 import { relativeTime } from "./memoryUtils";
 import { PaneMessage } from "./PaneMessage";
+import { TempCleanupPanel } from "./TempCleanupPanel";
 
 export function ProjectList() {
   const {
@@ -121,6 +122,7 @@ export function ProjectList() {
               );
             })}
           </div>
+          <TempCleanupPanel onCleaned={refreshAll} />
           {hiddenCount > 0 && (
             <button
               onClick={() => setShowHidden((v) => !v)}

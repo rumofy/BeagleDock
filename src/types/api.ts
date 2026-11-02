@@ -327,6 +327,9 @@ export interface BeagleAPI {
   listAIMemoryProjectSessions(workspace: string, project: string): Promise<AIMemoryApiResult<any>>;
   deleteAIMemoryPage(workspace: string, project: string, pagePath: string, confirmProtected?: string): Promise<AIMemoryApiResult<any>>;
   purgeAIMemoryProject(workspace: string, project: string, confirmName: string): Promise<AIMemoryApiResult<any>>;
+  previewAIMemoryTempCleanup(): Promise<AIMemoryTempCleanupPreview>;
+  runAIMemoryTempCleanup(opts?: { all?: boolean }): Promise<AIMemoryTempCleanupResult>;
+  setAIMemoryTempCleanupDays(days: number): Promise<{ ok: boolean; days?: number; error?: string }>;
   getAIMemoryMaintenancePrompt(opts: MaintenancePromptOptions): Promise<string>;
   getAIMemoryMaintenanceCwd(): Promise<string>;
   runAIMemoryCommand(subcmdArgs: string[], cwd?: string): Promise<AIMemoryCommandResult>;
@@ -385,4 +388,32 @@ declare global {
   interface Window {
     beagleAPI?: BeagleAPI;
   }
+}
+
+/** Projeto do ai-memory em que todas as sessões vieram de uma pasta temporária. */
+export interface AIMemoryTempProject {
+  workspace: string;
+  project: string;
+  sessionCount: number;
+  pageCount: number;
+  lastSeen: string | null;
+  /** Parado há mais dias do que o prazo configurado: será apagado na próxima limpeza. */
+  stale: boolean;
+  folders: string[];
+}
+export interface AIMemoryTempCleanupPreview {
+  ok: boolean;
+  error?: string;
+  /** Prazo em dias; 0 desliga a limpeza automática. */
+  days?: number;
+  lastRun?: { at: string; removed: number; failed: number } | null;
+  projects?: AIMemoryTempProject[];
+}
+export interface AIMemoryTempCleanupResult {
+  ok: boolean;
+  error?: string;
+  days?: number;
+  removed?: string[];
+  failed?: { name: string; error: string }[];
+  skipped?: string;
 }

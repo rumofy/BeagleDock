@@ -4,6 +4,19 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-02
+
+### Adicionado
+
+- Busca na conversa aberta com Ctrl+F: realça todas as ocorrências, mostra quantas são (“3 de 12”) e navega com Enter e Shift+Enter (ou F3). Não diferencia maiúsculas nem acentos (“acao” acha “Ação”), acompanha o texto que ainda está chegando e já busca pelo trecho selecionado, se houver. Esc fecha.
+- Limpeza dos projetos temporários do ai-memory na Wiki: testes com CLI real em pastas temporárias criavam um projeto novo a cada pasta, e ninguém os apagava. Agora você escolhe em quantos dias um projeto temporário parado é apagado sozinho (padrão de 7 dias, 0 desliga) e tem o botão “Limpar temporários agora”. Só entram projetos em que todas as sessões vieram de pastas temporárias; projetos de verdade, como os seus repositórios, nunca são apagados.
+- Ditado por voz com glossário de desenvolvimento já cadastrado (GitHub, TypeScript, Supabase, pull request, deploy e outros) e com as confusões mais comuns resolvidas pela expressão: “cloud code” vira “Claude Code”, mas “cloud” sozinho continua sendo nuvem.
+
+### Corrigido
+
+- O ditado local agora reconhece os nomes das CLIs, do projeto aberto e dos termos que você cadastra mesmo quando o modelo os escreve de outro jeito: “Bigodok” vira “BeagleDock”, “iMemory” vira “ai-memory”, “Rumofine Next” vira “RumofyNext”. Antes, só acertava as maiúsculas de um nome que já tinha saído escrito certo. Palavras em português parecidas, como “memória” ou “bigode”, não são trocadas.
+- O ditado não altera mais texto dentro de caminhos, nomes de arquivo e variáveis (por exemplo, `package.json` virava `package.JSON`).
+
 ## [0.9.0] - 2026-11-02
 
 ### Adicionado
@@ -246,7 +259,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...v0.7.0

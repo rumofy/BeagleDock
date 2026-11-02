@@ -6,6 +6,7 @@ const os = require("os");
 const path = require("path");
 const spawn = require("cross-spawn");
 const { redact } = require("./redact");
+const { fixNamesBySound } = require("./speech-names");
 
 const DEFAULTS = Object.freeze({
   engine: "local",
@@ -20,32 +21,104 @@ const MIN_AUDIO_BYTES = 44 + 3200; // cabeçalho + ~0,1 s
 const TIMEOUT_MS = 180_000;
 const MAX_PROMPT_CHARS = 1500;
 
-// Termos que um modelo genérico costuma errar quando ditados em português.
+// Termos do dia a dia de quem programa que um modelo genérico costuma errar em português.
+// Os que têm grafia própria (BeagleDock, TypeScript…) também são corrigidos pelo som.
 const BASE_VOCABULARY = [
   "Claude Code",
   "Codex CLI",
+  "Codex",
   "Antigravity",
   "BeagleDock",
   "ai-memory",
+  "Claude",
+  "Anthropic",
+  "OpenAI",
+  "Gemini",
+  "ChatGPT",
+  "Sonnet",
+  "Opus",
+  "Haiku",
+  "GitHub",
+  "GitLab",
+  "TypeScript",
+  "JavaScript",
+  "Node.js",
+  "Next.js",
+  "React",
+  "Electron",
+  "Vite",
+  "Tailwind",
+  "Python",
+  "Docker",
+  "Kubernetes",
+  "PostgreSQL",
+  "SQLite",
+  "MongoDB",
+  "Redis",
+  "Supabase",
+  "Vercel",
+  "Postman",
+  "Sentry",
+  "Figma",
+  "VS Code",
+  "Linux",
+  "Ubuntu",
+  "Debian",
+  "MCP",
+  "API",
+  "JSON",
+  "YAML",
+  "SQL",
+  "CI/CD",
+  "npm",
   "handoff",
   "commit",
   "merge",
+  "rebase",
   "pull request",
   "branch",
+  "worktree",
   "deploy",
   "refactor",
   "endpoint",
   "frontend",
   "backend",
-  "TypeScript",
-  "React",
-  "Electron",
+  "webhook",
+  "token",
   "hook",
   "prompt",
   "build",
   "bug",
-  "API",
-  "JSON",
+  "debug",
+  "log",
+  "release",
+  "changelog",
+  "plan mode",
+  "skill",
+];
+
+// Nomes de uma palavra só que podem ser corrigidos pelo som: não soam como nenhuma palavra
+// do português ("Sentry" ficaria perto de "sentir", "Postman" de "postam"; esses ficam fora).
+const SOUND_SAFE_NAMES = ["Codex", "Anthropic", "Supabase", "Kubernetes", "ChatGPT"];
+
+// Confusões frequentes que o som sozinho não resolve: "cloud" (nuvem) existe de verdade,
+// então só a expressão completa vira o nome da ferramenta.
+const BASE_REPLACEMENTS = [
+  { from: "cloud code", to: "Claude Code" },
+  { from: "clode code", to: "Claude Code" },
+  { from: "cloud desktop", to: "Claude Desktop" },
+  { from: "cloud sonnet", to: "Claude Sonnet" },
+  { from: "cloud opus", to: "Claude Opus" },
+  { from: "cloud haiku", to: "Claude Haiku" },
+  { from: "codex cli", to: "Codex CLI" },
+  { from: "anti gravity", to: "Antigravity" },
+  { from: "ai memory", to: "ai-memory" },
+  { from: "pul request", to: "pull request" },
+  { from: "git hub", to: "GitHub" },
+  { from: "type script", to: "TypeScript" },
+  { from: "java script", to: "JavaScript" },
+  { from: "node js", to: "Node.js" },
+  { from: "next js", to: "Next.js" },
 ];
 
 class SpeechModelMissingError extends Error {
@@ -100,8 +173,13 @@ function vocabularyTerms({ vocabulary = "", context = [] } = {}) {
 }
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// Palavra inteira e solta: não mexe dentro de caminho, arquivo ou variável (`~/.app`,
+// `package.json`, `APP_DIR`).
 const wordPattern = (phrase) =>
-  new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(phrase).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}])`, "giu");
+  new RegExp(
+    `(?<![\\p{L}\\p{N}_./\\\\:\`@-])${escapeRegExp(phrase).replace(/ /g, "\\s+")}(?![\\p{L}\\p{N}_/\\\\\`@-]|\\.[\\p{L}\\p{N}])`,
+    "giu",
+  );
 
 /**
  * Corrige a transcrição com o vocabulário: troca "errado => certo" e acerta a grafia de
@@ -109,11 +187,19 @@ const wordPattern = (phrase) =>
  */
 function applyVocabulary(transcript, { vocabulary = "", context = [] } = {}) {
   let result = String(transcript || "");
-  const { replacements } = parseVocabulary(vocabulary);
-  for (const { from, to } of replacements) result = result.replace(wordPattern(from), to);
+  const { terms: own, replacements } = parseVocabulary(vocabulary);
+  // As trocas da pessoa vêm antes das do app, para poder sobrepor qualquer uma delas.
+  for (const { from, to } of [...replacements, ...BASE_REPLACEMENTS])
+    result = result.replace(wordPattern(from), to);
   // Nomes da sessão (pasta, workspace) podem ser palavras comuns ("Testes"): só entram os
   // que têm grafia claramente própria, como "RumofyNext".
   const distinctive = context.filter((term) => /\p{Lu}/u.test(String(term).slice(1)));
+  // O que soa como um nome conhecido ("Bigodok") vira o nome ("BeagleDock").
+  result = fixNamesBySound(
+    result,
+    [...distinctive, ...BASE_VOCABULARY],
+    [...own, ...replacements.map((r) => r.to), ...SOUND_SAFE_NAMES],
+  );
   for (const term of vocabularyTerms({ vocabulary, context: distinctive })) {
     if (term.length < 3 || term === term.toLowerCase()) continue; // só termos com grafia própria
     result = result.replace(wordPattern(term), term);

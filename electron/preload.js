@@ -32,6 +32,12 @@ contextBridge.exposeInMainWorld("beagleAPI", {
     ipcRenderer.invoke("ai-memory-delete-page", ws, p, pagePath, confirmProtected),
   purgeAIMemoryProject: (ws, p, confirmName) =>
     ipcRenderer.invoke("ai-memory-purge-project", ws, p, confirmName),
+  previewAIMemoryTempCleanup: () =>
+    ipcRenderer.invoke("ai-memory-temp-cleanup-preview"),
+  runAIMemoryTempCleanup: (opts) =>
+    ipcRenderer.invoke("ai-memory-temp-cleanup-run", opts),
+  setAIMemoryTempCleanupDays: (days) =>
+    ipcRenderer.invoke("ai-memory-temp-cleanup-set-days", days),
   getAIMemoryMaintenancePrompt: (opts) =>
     ipcRenderer.invoke("ai-memory-maintenance-prompt", opts),
   getAIMemoryMaintenanceCwd: () =>

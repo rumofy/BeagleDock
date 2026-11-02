@@ -32,3 +32,20 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
 }
+
+/* Busca na conversa (Ctrl+F): todas as ocorrências e a atual. */
+::highlight(chat-find) {
+  background-color: rgba(250, 204, 21, 0.45);
+  color: inherit;
+}
+::highlight(chat-find-current) {
+  background-color: #f97316;
+  color: #ffffff;
+}
+:root[data-theme="dark"] ::highlight(chat-find) {
+  background-color: rgba(234, 179, 8, 0.4);
+}
+:root[data-theme="dark"] ::highlight(chat-find-current) {
+  background-color: #ea580c;
+  color: #ffffff;
+}

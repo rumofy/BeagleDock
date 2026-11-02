@@ -259,3 +259,52 @@ test("chave de transcrição fica cifrada no cofre, some das configurações pú
   const again = protectSettings({ voiceDictation: { model: "n" } }, stored, storage);
   assert.deepEqual(again.transcriptionApiKey, stored.transcriptionApiKey);
 });
+
+test("nomes ditados com outra grafia são reconhecidos pelo som, sem mexer no português", () => {
+  const fix = (s, opts = {}) => t.applyVocabulary(s, opts);
+  // Casos reais do Parakeet com fala rápida.
+  assert.equal(fix("o Bigodok está ótimo"), "o BeagleDock está ótimo");
+  assert.equal(fix("Bigaloc ou é o próprio iMemory?"), "BeagleDock ou é o próprio ai-memory?");
+  assert.equal(fix("Clod Code e o Codecs"), "Claude Code e o Codex");
+  assert.equal(fix("o anti gravity travou"), "o Antigravity travou");
+  assert.equal(fix("subi no git hub em type script"), "subi no GitHub em TypeScript");
+  // Pasta da sessão e termos cadastrados pela pessoa também entram.
+  const rumofy = { vocabulary: "Rumofy", context: ["RumofyNext"] };
+  assert.equal(fix("projeto do Rumopy Next", rumofy), "projeto do RumofyNext");
+  assert.equal(fix("alimentando o Bigodoc e não o Remofi", rumofy), "alimentando o BeagleDock e não o Rumofy");
+  // "cloud" sozinho é nuvem; só a expressão vira o nome da ferramenta.
+  assert.equal(fix("abre o cloud code"), "abre o Claude Code");
+  assert.equal(fix("guarda na cloud da AWS"), "guarda na cloud da AWS");
+  // Português e palavras parecidas ficam como estão.
+  for (const s of [
+    "a memória do projeto",
+    "o bigode dele",
+    "um bloco de código",
+    "vamos sentir o código",
+    "eles postam no blog",
+    "Codex pelo terminal",
+    "GitHub e GitLab",
+    "o codigo",
+  ])
+    assert.equal(fix(s), s);
+});
+
+test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
+  for (const s of ["package.json", "~/.beagledock", "CLAUDE_CONFIG_DIR", "dev:vite", "`beagledock --quit`", "beagledock-probes"])
+    assert.equal(t.applyVocabulary(s, {}), s);
+  assert.equal(t.applyVocabulary("abre o beagledock.", {}), "abre o BeagleDock.");
+  assert.equal(t.applyVocabulary("usa json e o codex: ok", {}), "usa JSON e o Codex: ok");
+});
+
+test("documentação em português não sofre correções indevidas", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const root = path.join(__dirname, "..");
+  // Só as versões já lançadas: o texto novo cita de propósito exemplos de troca ("Bigodok").
+  const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
+  const released = changelog.slice(changelog.indexOf("## [0.9.0]")).replace(/cloud code/gi, "");
+  const text = [released, ...["README.md", "AGENTS.md"].map((f) => fs.readFileSync(path.join(root, f), "utf8"))].join("\n");
+  const lines = text.split("\n").filter((l) => l.trim());
+  const changed = lines.filter((l) => t.applyVocabulary(l, { context: ["BeagleDock"] }) !== l);
+  assert.deepEqual(changed, []);
+});
