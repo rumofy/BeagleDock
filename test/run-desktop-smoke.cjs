@@ -28,6 +28,11 @@ const env = {
   PATH: bin + path.delimiter + process.env.PATH,
 };
 delete env.ELECTRON_RUN_AS_NODE;
+// Diagnóstico real do ditado: reaproveita modelos já baixados (sem baixar 669 MB no teste).
+if (process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS) {
+  fs.mkdirSync(path.join(root, "data"), { recursive: true });
+  fs.symlinkSync(path.resolve(process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS), path.join(root, "data", "models"));
+}
 try {
   for (const stage of ["first", "restart"]) {
     const result = spawnSync(

@@ -8,8 +8,12 @@ import {
   Compass,
   Wand2,
   Clock,
+  Mic,
+  Check,
+  Loader2,
+  Download,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { useNativeCommands } from "../../hooks/useNativeCommands";
 import { controlForCommand, openSessionControl } from "../../lib/sessionControls";
@@ -17,6 +21,12 @@ import { CommandSuggestions } from "./CommandSuggestions";
 import { FileSuggestions } from "./FileSuggestions";
 import { useProjectFiles } from "../../hooks/useProjectFiles";
 import { applyMention, mentionAt } from "../../lib/attachments";
+import { insertDictation } from "../../lib/wav";
+import { dictationAvailable, useVoiceDictation } from "./useVoiceDictation";
+import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
+
+const clock = (total: number) =>
+  `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 
 export function ChatComposer() {
   const {
@@ -38,6 +48,8 @@ export function ChatComposer() {
     handleFileUpload,
     removeAttachment,
     handleSendMessage,
+    workspaces,
+    setAppError,
   } = useApp();
   const suggestions = useNativeCommands(
     currentProvider?.id,
@@ -65,6 +77,76 @@ export function ChatComposer() {
       inputRef.current?.setSelectionRange(next.caret, next.caret);
     });
   };
+  // Ditado por voz: o texto entra onde estava o cursor, para revisar antes de enviar.
+  const latest = useRef({ inputMessage, caret });
+  latest.current = { inputMessage, caret };
+  const canDictate = dictationAvailable();
+  // Ditado local: o modelo de voz é baixado uma vez, quando o microfone é usado pela primeira vez.
+  const speechModel = useDictationModel(setAppError);
+  const [offerModel, setOfferModel] = useState(false);
+  const dictation = useVoiceDictation({
+    onModelMissing: () => {
+      setOfferModel(true);
+      void speechModel.refresh();
+    },
+    onText: (spoken) => {
+      const { inputMessage: current, caret: at } = latest.current;
+      const next = insertDictation(current, at, spoken);
+      setInputMessage(next.text);
+      setCaret(next.caret);
+      requestAnimationFrame(() => {
+        inputRef.current?.focus();
+        inputRef.current?.setSelectionRange(next.caret, next.caret);
+      });
+    },
+    onError: setAppError,
+    context: () => {
+      const cwd = currentSession?.cwd || "";
+      const folder = cwd.split(/[\\/]/).filter(Boolean).pop();
+      const workspace = workspaces.find((w) => w.path === cwd)?.name;
+      const mentioned = latest.current.inputMessage.match(/@[^\s]+/g) || [];
+      return [workspace, folder, currentProvider?.name, ...mentioned.map((m) => m.slice(1))].filter(
+        (t): t is string => !!t,
+      );
+    },
+  });
+  const toggleDictation = async () => {
+    if (dictation.state === "recording") return dictation.stop();
+    if (dictation.state !== "idle" || speechModel.download) return;
+    // Confere na hora: o motor ou o modelo podem ter mudado nas configurações.
+    const status = await speechModel.refresh();
+    if (status?.engine === "local" && !status.model.installed) setOfferModel(true);
+    else void dictation.start();
+  };
+  const downloadModel = async () => {
+    setOfferModel(false);
+    if (await speechModel.start()) inputRef.current?.focus();
+  };
+  // Ctrl+Shift+M liga e desliga o ditado; Esc durante a gravação descarta o áudio.
+  const toggleRef = useRef(toggleDictation);
+  toggleRef.current = toggleDictation;
+  useEffect(() => {
+    if (!canDictate) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === "m") {
+        e.preventDefault();
+        void toggleRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [canDictate]);
+  const { state: dictationState, cancel: cancelDictation } = dictation;
+  useEffect(() => {
+    if (dictationState !== "recording") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      cancelDictation();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [dictationState, cancelDictation]);
   const [picked, setPicked] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const open = suggestions.active && dismissed !== inputMessage;
@@ -207,6 +289,117 @@ export function ChatComposer() {
                     >
                       <Clock size={16} />
                     </button>
+
+                    {speechModel.download && (
+                      <div
+                        role="status"
+                        data-testid="dictation-model-download"
+                        className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#665e4f]"
+                      >
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>
+                          Baixando modelo de voz{" "}
+                          {speechModel.download.total
+                            ? `${Math.floor((speechModel.download.received / speechModel.download.total) * 100)}%`
+                            : "…"}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void speechModel.cancel()}
+                          aria-label="Cancelar download do modelo de voz"
+                          className="p-1 rounded-lg hover:bg-[#eae4d5]"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    )}
+                    {offerModel && !speechModel.download && speechModel.status && (
+                      <div
+                        data-testid="dictation-model-offer"
+                        className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#443e33]"
+                      >
+                        <span title="O ditado roda no seu computador: nada de conta, chave ou internet depois do download.">
+                          Ditado local precisa do modelo de voz ({formatMegabytes(speechModel.status.model.size)})
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void downloadModel()}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1b18] text-white hover:bg-[#32302b]"
+                        >
+                          <Download size={12} />
+                          Baixar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setOfferModel(false)}
+                          aria-label="Agora não"
+                          className="p-1 rounded-lg hover:bg-[#eae4d5]"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
+                    )}
+                    {canDictate && dictation.state === "idle" && !speechModel.download && !offerModel && (
+                      <button
+                        type="button"
+                        onClick={() => void toggleDictation()}
+                        aria-label="Ditar mensagem por voz"
+                        className="p-2 rounded-xl text-[#7d7565] hover:text-[#1c1b18] hover:bg-[#ede9de] transition"
+                        title="Ditar por voz (Ctrl+Shift+M)"
+                      >
+                        <Mic size={16} />
+                      </button>
+                    )}
+                    {dictation.state === "recording" && (
+                      <div
+                        data-testid="dictation-recording"
+                        className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-xl bg-rose-50 border border-rose-200 text-rose-800"
+                      >
+                        <span className="relative flex h-2.5 w-2.5">
+                          <span className="absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75 animate-ping" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-rose-600" />
+                        </span>
+                        <span
+                          aria-hidden
+                          className="w-10 h-1.5 rounded-full bg-rose-200 overflow-hidden"
+                        >
+                          <span
+                            className="block h-full bg-rose-600 transition-[width] duration-75"
+                            style={{ width: `${Math.round(dictation.level * 100)}%` }}
+                          />
+                        </span>
+                        <span className="text-[11px] font-mono font-semibold tabular-nums">
+                          {clock(dictation.seconds)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={dictation.stop}
+                          aria-label="Concluir ditado e transcrever"
+                          title="Concluir e transcrever (Ctrl+Shift+M)"
+                          className="p-1 rounded-lg hover:bg-rose-100"
+                        >
+                          <Check size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={dictation.cancel}
+                          aria-label="Descartar ditado"
+                          title="Descartar (Esc)"
+                          className="p-1 rounded-lg hover:bg-rose-100"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    )}
+                    {dictation.state === "transcribing" && (
+                      <span
+                        role="status"
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#665e4f]"
+                      >
+                        <Loader2 size={13} className="animate-spin" />
+                        Transcrevendo…
+                      </span>
+                    )}
 
                     <input
                       ref={inputRef}

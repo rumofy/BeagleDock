@@ -6,6 +6,8 @@ const {
   protectSettings,
   publicSettings,
   dropUnreadableSecrets,
+  revealSecret,
+  SECRET_KEYS,
 } = require("./secure-settings");
 const {
   toStoredAttachments,
@@ -657,6 +659,12 @@ async function dropUnreadableCredentials(storage) {
   if (dropped.length) await writeSettings(settings);
   return dropped;
 }
+// Credencial em claro para o processo principal (nunca vai para o renderer).
+async function getSecret(key) {
+  if (!SECRET_KEYS.includes(key)) throw new Error("Credencial desconhecida.");
+  await initDatabase();
+  return revealSecret((await rawSettings())[key]);
+}
 async function getAppSettings() {
   await initDatabase();
   const current = await rawSettings();
@@ -705,5 +713,6 @@ module.exports = {
   getWorkspaces,
   saveAppSettings,
   getAppSettings,
+  getSecret,
   dropUnreadableCredentials,
 };

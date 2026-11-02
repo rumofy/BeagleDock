@@ -3,6 +3,7 @@ const SECRET_KEYS = [
   "anthropicApiKey",
   "openaiApiKey",
   "geminiApiKey",
+  "transcriptionApiKey",
 ];
 function systemStorage() {
   try {
@@ -74,7 +75,17 @@ function dropUnreadableSecrets(settings, storage = systemStorage()) {
   }
   return { settings: result, dropped };
 }
+// Devolve o valor em claro de uma credencial guardada (só para uso no processo principal).
+function revealSecret(value, storage = systemStorage()) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value !== "object" || value.encrypted !== 1) return "";
+  if (!storage?.isEncryptionAvailable())
+    throw new Error("O cofre do sistema não está disponível para ler a credencial.");
+  return storage.decryptString(Buffer.from(String(value.ciphertext), "base64"));
+}
 module.exports = {
+  revealSecret,
   protectSettings,
   publicSettings,
   dropUnreadableSecrets,

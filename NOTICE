@@ -7,6 +7,11 @@ https://github.com/rumofy/BeagleDock
 Third-party dependencies retain their own licenses and notices, included with
 their packages. Electron includes its own license and Chromium notices.
 
+Local voice dictation bundles parakeet-cli built from whisper.cpp (MIT, ggml
+authors); its license ships as speech/LICENSE.whisper.cpp. The Parakeet TDT
+0.6B v3 model (NVIDIA, CC-BY-4.0, GGML conversion by ggml-org) is downloaded by
+the user on first use and is not distributed with BeagleDock.
+
 Claude, OpenAI/Codex and Antigravity names and logos are trademarks of their
 respective owners. Their brand assets are not relicensed under Apache-2.0.
 Sources and hashes are documented in public/providers/SOURCES.md in the source

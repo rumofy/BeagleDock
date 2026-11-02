@@ -241,6 +241,17 @@ export interface ChatMessage {
   events?: ChatEvent[];
 }
 
+export interface VoiceDictationSettings {
+  /** "local": Parakeet na própria máquina (padrão); "api": API compatível com OpenAI. */
+  engine?: "api" | "local";
+  baseUrl?: string;
+  model?: string;
+  /** Código ISO do idioma falado ("pt", "en"…) ou "auto". */
+  language?: string;
+  /** Termos com grafia própria e trocas "errado => certo", separados por vírgula ou linha. */
+  vocabulary?: string;
+}
+
 export interface AppSettings {
   configuredSecrets?: Record<string, boolean>;
   securityWarning?: string;
@@ -248,7 +259,10 @@ export interface AppSettings {
   anthropicApiKey?: string;
   openaiApiKey?: string;
   geminiApiKey?: string;
+  /** Chave da API de transcrição do ditado por voz (OpenAI ou compatível). */
+  transcriptionApiKey?: string;
   customEndpoint?: string;
+  voiceDictation?: VoiceDictationSettings;
   defaultProvider: AIProviderId;
   theme: "cream" | "dark" | "system";
   /** Fator de zoom da interface (0,7 a 1,6). */

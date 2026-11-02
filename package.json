@@ -1,6 +1,6 @@
 {
   "name": "beagledock",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Multi-CLI for Developers — Claude Code, Codex CLI and Antigravity",
   "main": "electron/main.js",
   "type": "commonjs",
@@ -15,7 +15,8 @@
     "install:local": "node scripts/install-local.mjs",
     "test": "node --test test/*.test.js",
     "typecheck": "tsc --noEmit",
-    "build": "npm run typecheck && npm run build:vite && npm run build:electron",
+    "build:speech": "node scripts/build-speech.mjs",
+    "build": "npm run typecheck && npm run build:vite && npm run build:speech && npm run build:electron",
     "postinstall": "electron-builder install-app-deps",
     "test:desktop": "npm run build:vite && node test/run-desktop-smoke.cjs",
     "test:cli-live": "node test/native-cli-canary.cjs",
@@ -122,6 +123,10 @@
       {
         "from": "public/providers/SOURCES.md",
         "to": "legal/PROVIDER-ICONS.md"
+      },
+      {
+        "from": "vendor/speech",
+        "to": "speech"
       }
     ],
     "nsis": {

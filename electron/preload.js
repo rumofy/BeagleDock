@@ -66,6 +66,12 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   setZoom: (factor) => ipcRenderer.invoke("set-zoom", factor),
   saveAppSettings: (settingsObj) =>
     ipcRenderer.invoke("save-app-settings", settingsObj),
+  transcribeAudio: (request) => ipcRenderer.invoke("transcribe-audio", request),
+  getDictationStatus: () => ipcRenderer.invoke("dictation-status"),
+  downloadDictationModel: () => ipcRenderer.invoke("download-dictation-model"),
+  cancelDictationModelDownload: () =>
+    ipcRenderer.invoke("cancel-dictation-model-download"),
+  removeDictationModel: () => ipcRenderer.invoke("remove-dictation-model"),
   replaceChatMessages: (id, messages) =>
     ipcRenderer.invoke("replace-chat-messages", id, messages),
   saveChatMessage: (msg) => ipcRenderer.invoke("save-chat-message", msg),
@@ -93,6 +99,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "cli-notice",
         "open-session",
         "cli-approvals",
+        "dictation-model-progress",
       ].includes(channel)
     )
       throw new Error("Evento não permitido.");
