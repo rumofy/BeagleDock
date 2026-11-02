@@ -35,3 +35,31 @@ export function permissionShortcut(e: ShortcutKey): "plan" | "cycle" | null {
   const key = e.key.toLowerCase();
   return key === "p" ? "plan" : key === "m" ? "cycle" : null;
 }
+
+export interface LivePermissionOutcome {
+  ok: boolean;
+  applied?: "now" | "next";
+  approved?: number;
+}
+
+/**
+ * Explica uma troca de permissão feita com a resposta em andamento: se a CLI já usa o novo nível ou
+ * só na próxima mensagem, e quantas aprovações pendentes foram liberadas. Sem nada a explicar, null.
+ */
+export function livePermissionNotice(
+  result: LivePermissionOutcome | undefined,
+  executing: boolean,
+): string | null {
+  if (!result?.ok) return null;
+  const approved = result.approved || 0;
+  const released =
+    approved === 1
+      ? " 1 aprovação pendente foi liberada."
+      : approved > 1
+        ? ` ${approved} aprovações pendentes foram liberadas.`
+        : "";
+  if (!executing) return released ? released.trim() : null;
+  return result.applied === "now"
+    ? `Novo nível aplicado à resposta em andamento.${released}`
+    : `A resposta em andamento segue com o nível anterior; o novo vale a partir da próxima mensagem.${released}`;
+}

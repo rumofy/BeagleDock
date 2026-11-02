@@ -82,6 +82,19 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
         }),
       };
     },
+    // A conversa passou para "Acesso total": o que estava esperando é autorizado uma vez, como se a
+    // pessoa clicasse em permitir (nunca uma opção que grava regra permanente).
+    approveSession(id) {
+      let count = 0;
+      for (const [key, r] of requests) {
+        if (r.public.sessionId !== id) continue;
+        const option =
+          r.options.find((o) => o.kind === "allow" && !o.persistent && o.id === ALLOW_ONCE.id) ||
+          r.options.find((o) => o.kind === "allow" && !o.persistent);
+        if (option && finish(key, { optionId: option.id, allow: true })) count++;
+      }
+      return count;
+    },
     cancelSession(id) {
       for (const [key, r] of requests)
         if (r.public.sessionId === id) finish(key, { optionId: "deny", allow: false, cancelled: true });

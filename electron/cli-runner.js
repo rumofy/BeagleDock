@@ -28,6 +28,8 @@ const { createEventTracker } = require("./stream-events");
 const {
   claudeContextUsed,
   claudeCacheUsage,
+  claudeCacheTtl,
+  agyCacheUsage,
   pickModelWindow,
   createContextTracker,
 } = require("./context-usage");
@@ -91,8 +93,13 @@ function buildArgs({
       if (interactive) args.push("--permission-prompt-tool", "stdio");
       if (permission === "full" && !readonly)
         args.push("--dangerously-skip-permissions");
-      else if (permission !== "inherit")
-        args.push("--permission-mode", readonly ? "plan" : "acceptEdits");
+      else {
+        if (permission !== "inherit")
+          args.push("--permission-mode", readonly ? "plan" : "acceptEdits");
+        // Só habilita (não liga) o modo sem confirmação: sem isso o Claude Code recusa a troca
+        // para "Acesso total" durante a sessão (set_permission_mode, verificado no 2.1.316).
+        if (interactive) args.push("--allow-dangerously-skip-permissions");
+      }
       if (nativeId) args.push("--resume", nativeId);
     } else {
       if (permission !== "inherit")
@@ -162,6 +169,9 @@ function createCliRunner({
     const entry = processes.get(sessionId);
     if (!entry) return;
     processes.delete(sessionId);
+    for (const waiting of entry.controls?.values() || [])
+      waiting.reject(new Error("CLI encerrada."));
+    entry.controls?.clear();
     entry.approvalBridge?.close();
     void entry.liveFiles?.stop();
     if (entry.turn)
@@ -252,6 +262,7 @@ function createCliRunner({
       if (providerId === "codex")
         return await codex.execute({
           ...payload,
+          requestedModel,
           input: built.input,
           bin,
           cwd,
@@ -267,17 +278,22 @@ function createCliRunner({
           ? agyPermissionSettings(permission, readAgyPermissions(), !!approvals)
           : undefined;
       const autoCompactTokens = providerId === "claude" ? resolveAutoCompactTokens(getAutoCompactTokens()) : 0;
-      const key = JSON.stringify([
-        providerId,
-        bin,
-        cwd,
-        model,
-        effort,
-        permission,
-        agySettings,
-        globalFingerprint(providerId),
-        autoCompactTokens,
-      ]);
+      const fingerprint = globalFingerprint(providerId);
+      // A permissão faz parte da chave: mudar reinicia a CLI na próxima mensagem, exceto quando a
+      // troca já foi aplicada ao vivo (setPermission atualiza a chave do processo em andamento).
+      const keyFor = (level, settings) =>
+        JSON.stringify([
+          providerId,
+          bin,
+          cwd,
+          model,
+          effort,
+          level,
+          settings,
+          fingerprint,
+          autoCompactTokens,
+        ]);
+      const key = keyFor(permission, agySettings);
       let entry = processes.get(sessionId);
       if (
         entry &&
@@ -336,6 +352,12 @@ function createCliRunner({
           approvalBridge,
           child,
           key,
+          keyFor,
+          model,
+          effort,
+          permission,
+          controls: new Map(),
+          controlSeq: 0,
           cwd,
           selection: JSON.stringify([model, effort, permission]),
           providerId,
@@ -369,6 +391,7 @@ function createCliRunner({
           emit,
           sessionId,
           source: providerId,
+          model: requestedModel,
         });
         const decoder = new StringDecoder("utf8");
         const startLiveFiles = (id, baseline) => {
@@ -595,7 +618,10 @@ function createCliRunner({
                 Number.isFinite(step.usage?.input_tokens) &&
                 step.usage.input_tokens > 0
               )
-                current.context.update({ used: step.usage.input_tokens });
+                current.context.update({
+                  used: step.usage.input_tokens,
+                  cache: agyCacheUsage(step.usage),
+                });
               if (
                 step.step_type === "agent_response" &&
                 typeof step.text_delta === "string"
@@ -795,6 +821,15 @@ function createCliRunner({
               );
             };
             void response().catch(() => kill(sessionId));
+          } else if (ev.type === "control_response") {
+            // Resposta a um comando enviado pelo app (ex.: troca do modo de permissão ao vivo).
+            const res = ev.response || {};
+            const waiting = current.controls.get(res.request_id);
+            if (waiting) {
+              current.controls.delete(res.request_id);
+              if (res.subtype === "success") waiting.resolve(res.response || {});
+              else waiting.reject(new Error(res.error || "A CLI recusou o comando."));
+            }
           } else if (ev.type === "system") {
             if (ev.subtype === "compact_boundary") {
               const id = `compact-${++current.eventSeq}`;
@@ -954,6 +989,7 @@ function createCliRunner({
                   windowKnown: Number.isFinite(current.contextWindow),
                   model: current.model,
                   cache: claudeCacheUsage(ev.message?.usage),
+                  cacheTtlMs: claudeCacheTtl(ev.message?.usage),
                 });
               }
             }
@@ -1319,10 +1355,66 @@ function createCliRunner({
       return false;
     }
   }
+  // Comando de controle do Claude Code pelo stdin (stream-json), com resposta casada pelo request_id.
+  function control(entry, request, timeout = 5000) {
+    if (!entry.child.stdin?.writable) return Promise.reject(new Error("CLI sem entrada."));
+    const id = `beagledock-${++entry.controlSeq}`;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        entry.controls.delete(id);
+        reject(new Error("A CLI não respondeu ao comando."));
+      }, timeout);
+      timer.unref?.();
+      entry.controls.set(id, {
+        resolve: (value) => (clearTimeout(timer), resolve(value)),
+        reject: (error) => (clearTimeout(timer), reject(error)),
+      });
+      entry.child.stdin.write(JSON.stringify({ type: "control_request", request_id: id, request }) + "\n");
+    });
+  }
+  // Troca do nível de permissão com a conversa aberta (inclusive no meio de uma resposta).
+  // `applied: "now"` = a CLI em execução já usa o novo nível; `"next"` = vale a partir da próxima
+  // mensagem (a CLI é reiniciada com a nova política e retoma a mesma conversa).
+  // Passar para "Acesso total" também libera as aprovações que estavam esperando nesta conversa.
+  async function setPermission(payload) {
+    const { sessionId, permission } = payload || {};
+    if (typeof sessionId !== "string" || !PERMISSIONS.has(permission))
+      return { ok: false, error: "Sessão ou permissão inválida." };
+    const entry = processes.get(sessionId);
+    let applied = "next";
+    if (entry && entry.child.exitCode === null && !entry.child.killed) {
+      const readonly = (level) => level === "plan" || level === "ask";
+      if (entry.providerId === "claude") {
+        // "Global da CLI" não tem modo equivalente para enviar: volta a ele reiniciando na próxima.
+        if (permission !== "inherit" && entry.effort !== "plan") {
+          const mode = readonly(permission) ? "plan" : permission === "full" ? "bypassPermissions" : "acceptEdits";
+          try {
+            await control(entry, { subtype: "set_permission_mode", mode });
+            if (processes.get(sessionId) === entry) {
+              entry.permission = permission;
+              entry.key = entry.keyFor(permission, undefined);
+              entry.selection = JSON.stringify([entry.model, entry.effort, permission]);
+              applied = "now";
+            }
+          } catch {
+            // Sem a troca ao vivo, a chave antiga faz a próxima mensagem reiniciar com o novo nível.
+          }
+        }
+      } else if (entry.providerId === "antigravity" && entry.approvalBridge) {
+        // A ponte de aprovação decide cada ferramenta na hora; o que o AGY fixa na partida (modo
+        // plano, regras de negação, sandbox) só muda quando ele reinicia na próxima mensagem.
+        entry.approvalBridge.setPermission(permission);
+        if (entry.permission === "edits" && permission !== "inherit") applied = "now";
+      }
+    }
+    const approved = permission === "full" ? approvals?.approveSession?.(sessionId) || 0 : 0;
+    return { ok: true, applied, approved };
+  }
   return {
     execute,
     inject,
     kill,
+    setPermission,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),
     busyCount: () => busy.size,
     // Compactação nativa: só o Codex tem comando próprio fora da conversa; no Claude Code e no AGY

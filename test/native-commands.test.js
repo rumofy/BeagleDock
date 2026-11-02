@@ -241,3 +241,18 @@ test("modo de permissão por atalho: ciclo, plano liga/desliga e só Alt+P/Alt+M
   assert.equal(permissionShortcut(key("p", { shiftKey: true })), null);
   assert.equal(permissionShortcut(key("x")), null);
 });
+
+test("aviso da troca de permissão durante a resposta: ao vivo, na próxima mensagem e aprovações liberadas", () => {
+  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/permissionModes.ts"), "utf8").replace(/^import .*$/gm, ""), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const ctx = { exports: {} };
+  vm.runInNewContext(compiled, ctx);
+  const { livePermissionNotice } = ctx.exports;
+  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 0 }, true), "Novo nível aplicado à resposta em andamento.");
+  assert.match(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, true), /próxima mensagem/);
+  assert.match(livePermissionNotice({ ok: true, applied: "now", approved: 2 }, true), /2 aprovações pendentes foram liberadas/);
+  assert.equal(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, false), null, "parada: nada a explicar");
+  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 1 }, false), "1 aprovação pendente foi liberada.");
+  assert.equal(livePermissionNotice({ ok: false }, true), null);
+});

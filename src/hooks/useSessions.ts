@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
 import { conversationTitle } from "../lib/conversationTitle";
 import { modelSelection } from "../lib/modelSelection";
+import { livePermissionNotice } from "../lib/permissionModes";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
 import { appendShellOutput } from "../lib/shellTabs";
@@ -13,6 +14,7 @@ import { PROVIDER_NAMES } from "../lib/approvalLabels";
 import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
+import { turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
 import type {
   AIProviderId,
   AIProviderStatus,
@@ -63,6 +65,8 @@ export function useSessions({
   const [contextBySession, setContextBySession] = useState<
     Record<string, ContextInfo>
   >({});
+  // Contexto ao fim da última resposta de cada conversa: base para medir o crescimento da próxima.
+  const turnMarks = useRef(new Map<string, TurnMark>());
   const [executingSessions, setExecutingSessions] = useState<
     Record<string, number>
   >({});
@@ -132,6 +136,12 @@ export function useSessions({
           .filter((s) => s.context)
           .map((s) => [s.id, s.context as ContextInfo]),
       ),
+    );
+    turnMarks.current = new Map(
+      sessions.flatMap((s) => {
+        const mark = turnMark(s.context as ContextInfo | undefined);
+        return mark ? [[s.id, mark] as const] : [];
+      }),
     );
   };
 
@@ -270,7 +280,22 @@ export function useSessions({
     });
     const unsubscribeTurnFinished = beagleApi.on(
       "cli-turn-finished",
-      ({ sessionId, responseMessageId, ok, text, error, events, discard }) => {
+      ({ sessionId, responseMessageId, ok, text, error, events, discard, context }) => {
+        // Crescimento do contexto nesta resposta, comparado ao fim da anterior (sobrevive a reiniciar
+        // a CLI, porque a base vem do contexto salvo). Compactação no meio não tem comparação justa.
+        const mark = turnMark(context);
+        if (mark) {
+          const growth = turnGrowth(turnMarks.current.get(sessionId), mark);
+          turnMarks.current.set(sessionId, mark);
+          setContextBySession((prev) => {
+            if (!prev[sessionId]) return prev;
+            const { turnGrowth: _old, ...rest } = prev[sessionId];
+            return {
+              ...prev,
+              [sessionId]: growth === null ? rest : { ...rest, turnGrowth: growth },
+            };
+          });
+        }
         setMessages((prev) => {
           const list = prev[sessionId];
           if (!list) return prev;
@@ -401,9 +426,32 @@ export function useSessions({
           : currentSession.permission,
     });
   };
+  // Aviso discreto junto ao seletor quando a troca acontece com a resposta em andamento.
+  const [permissionNotice, setPermissionNotice] = useState<{
+    sessionId: string;
+    text: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!permissionNotice) return;
+    const timer = setTimeout(() => setPermissionNotice(null), 8000);
+    return () => clearTimeout(timer);
+  }, [permissionNotice]);
+  // Pode trocar a qualquer momento: a conversa grava o nível e a CLI aberta o recebe ao vivo quando
+  // consegue (Claude Code; AGY pela ponte de aprovação). Senão vale a partir da próxima mensagem.
   const handlePermissionChange = (permission: PermissionLevel) => {
-    if (currentSession && !isExecutingPrompt)
-      void persistSession({ ...currentSession, permission });
+    if (!currentSession || permission === (currentSession.permission || "inherit")) return;
+    const session = currentSession;
+    const executing = isExecutingPrompt;
+    void persistSession({ ...session, permission }).then(async (saved) => {
+      if (!saved || !backendAvailable()) return;
+      try {
+        const result = await beagleApi.setLivePermission(session.id, permission);
+        const text = livePermissionNotice(result, executing);
+        setPermissionNotice(text ? { sessionId: session.id, text } : null);
+      } catch (error) {
+        setAppError((error as Error).message);
+      }
+    });
   };
 
   const handleReasoningChange = (reasoningEffort: string) => {
@@ -974,6 +1022,7 @@ export function useSessions({
     handleWorkspaceChange,
     handleModelChange,
     handlePermissionChange,
+    permissionNotice,
     handleReasoningChange,
     handleTriggerHandoff,
     handleContinueInCli,

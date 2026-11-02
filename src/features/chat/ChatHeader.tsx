@@ -95,6 +95,7 @@ export function ChatHeader() {
     handleWorkspaceChange,
     handleModelChange,
     handlePermissionChange,
+    permissionNotice,
     handleReasoningChange,
     handleTriggerHandoff,
     memoryStatus,
@@ -200,8 +201,7 @@ export function ChatHeader() {
                     handlePermissionChange(e.target.value as PermissionLevel)
                   }
                   className="text-xs font-semibold bg-inherit outline-none cursor-pointer"
-                  disabled={isExecutingPrompt}
-                  title="Permissões da conversa (Alt+P liga o plano · Alt+M troca de modo); solicitações elegíveis aparecem no painel de aprovação"
+                  title="Permissões da conversa (Alt+P liga o plano · Alt+M troca de modo); pode trocar durante a resposta. Solicitações elegíveis aparecem no painel de aprovação"
                 >
                   <option value="inherit">Global da CLI</option>
                   <option value="plan">🔍 Somente leitura (plano)</option>
@@ -214,6 +214,15 @@ export function ChatHeader() {
               </div>
             )}
 
+            {permissionNotice?.sessionId === currentSession?.id && (
+              <span
+                role="status"
+                data-testid="permission-notice"
+                className="text-[10px] text-[#665e4f] max-w-xs leading-tight"
+              >
+                {permissionNotice?.text}
+              </span>
+            )}
             {waitingApproval && (
               <span
                 role="status"

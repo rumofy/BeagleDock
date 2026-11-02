@@ -41,6 +41,25 @@ function claudeCacheUsage(usage) {
   return cacheUsage(usage.cache_read_input_tokens, usage.cache_creation_input_tokens);
 }
 
+// Validade do cache que a chamada escreveu. O Claude Code informa por TTL (verificado com a CLI real,
+// 2.1.316: cache_creation.ephemeral_1h_input_tokens). Uma chamada só de leitura não diz nada: null.
+const CACHE_TTL_1H = 60 * 60 * 1000;
+const CACHE_TTL_5M = 5 * 60 * 1000;
+function claudeCacheTtl(usage) {
+  const created = usage?.cache_creation;
+  if (!created || typeof created !== "object") return null;
+  if (num(created.ephemeral_1h_input_tokens) > 0) return CACHE_TTL_1H;
+  if (num(created.ephemeral_5m_input_tokens) > 0) return CACHE_TTL_5M;
+  return null;
+}
+
+// AGY 1.4.12: usage.cache_read_tokens da etapa agent_response (subconjunto de input_tokens).
+// Não informa escrita nem validade do cache.
+function agyCacheUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  return cacheUsage(usage.cache_read_tokens, undefined);
+}
+
 function codexContext(tokenUsage) {
   const used = num(tokenUsage?.last?.totalTokens);
   const window = Number.isFinite(tokenUsage?.modelContextWindow) ? tokenUsage.modelContextWindow : null;
@@ -49,8 +68,21 @@ function codexContext(tokenUsage) {
   return { used, window, ...(cache ? { cache } : {}) };
 }
 
-function createContextTracker({ emit = () => {}, sessionId, source, now = Date.now }) {
-  const state = { used: null, cache: null, window: null, windowKnown: false, compacting: false, compactions: 0, last: null };
+// `model` é o modelo como escolhido no app (antes de resolver aliases): o cache de prompt é separado
+// por modelo, então trocar a escolha reprocessa o contexto inteiro.
+function createContextTracker({ emit = () => {}, sessionId, source, model, now = Date.now }) {
+  const state = {
+    used: null,
+    cache: null,
+    // Última chamada ao modelo (lê e renova o cache) e validade do cache, quando a CLI informa.
+    lastCallAt: null,
+    cacheTtlMs: null,
+    window: null,
+    windowKnown: false,
+    compacting: false,
+    compactions: 0,
+    last: null,
+  };
   const publish = () =>
     emit("cli-context", { sessionId, ...snapshot() });
   function snapshot() {
@@ -58,6 +90,9 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
       source,
       used: state.used,
       ...(state.cache ? { cache: state.cache } : {}),
+      ...(state.lastCallAt !== null ? { lastCallAt: state.lastCallAt } : {}),
+      ...(state.cacheTtlMs !== null ? { cacheTtlMs: state.cacheTtlMs } : {}),
+      ...(typeof model === "string" ? { model } : {}),
       window: state.window,
       windowKnown: state.windowKnown,
       compacting: state.compacting,
@@ -67,9 +102,13 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
     };
   }
   return {
-    update({ used, window, windowKnown, model, cache }) {
-      if (Number.isFinite(used)) state.used = used;
+    update({ used, window, windowKnown, model, cache, cacheTtlMs }) {
+      if (Number.isFinite(used)) {
+        state.used = used;
+        state.lastCallAt = now();
+      }
       if (cache) state.cache = cache;
+      if (Number.isFinite(cacheTtlMs) && cacheTtlMs > 0) state.cacheTtlMs = cacheTtlMs;
       if (Number.isFinite(window)) {
         state.window = window;
         state.windowKnown = windowKnown !== false;
@@ -119,6 +158,8 @@ function createContextTracker({ emit = () => {}, sessionId, source, now = Date.n
 module.exports = {
   claudeContextUsed,
   claudeCacheUsage,
+  claudeCacheTtl,
+  agyCacheUsage,
   pickModelWindow,
   codexContext,
   createContextTracker,

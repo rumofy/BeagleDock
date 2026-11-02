@@ -473,6 +473,17 @@ process.stdin.on("data", (chunk) => {
   for (const line of lines)
     if (line.trim()) {
       const input = JSON.parse(line);
+      // Troca do modo de permissão ao vivo (protocolo do Claude Code 2.1.316): confirma e registra.
+      if (name === "claude" && input.type === "control_request" && input.request?.subtype === "set_permission_mode") {
+        fs.appendFileSync(path.join(root, "permission-modes-claude.jsonl"), JSON.stringify(input.request.mode) + "\n");
+        process.stdout.write(
+          JSON.stringify({
+            type: "control_response",
+            response: { subtype: "success", request_id: input.request_id, response: { mode: input.request.mode } },
+          }) + "\n",
+        );
+        continue;
+      }
       if (input.type === "control_response" && approvalPending) {
         approvalPending = false;
         const answer =

@@ -230,3 +230,50 @@ test("aprovação pendente não é negada por tempo: espera a decisão", async (
   broker.resolve(broker.list()[0].id, "allow");
   assert.equal(await pending, true);
 });
+
+test("troca para Acesso total libera só as aprovações pendentes daquela conversa, sem regra permanente", async () => {
+  const broker = createApprovalBroker();
+  const persistent = { id: "always", label: "Permitir sempre", kind: "allow", persistent: true };
+  const a = broker.askDetailed({ sessionId: "a", providerId: "claude", tool: "Bash", options: [persistent, { id: "allow", label: "Permitir uma vez", kind: "allow" }, { id: "deny", label: "Negar", kind: "deny" }] });
+  const b = broker.askDetailed({ sessionId: "b", providerId: "codex", tool: "command" });
+  assert.equal(broker.approveSession("a"), 1);
+  const decided = await a;
+  assert.equal(decided.allow, true);
+  assert.equal(decided.optionId, "allow", "nunca escolhe a opção que grava regra permanente");
+  assert.deepEqual(broker.list().map((r) => r.sessionId), ["b"]);
+  assert.equal(broker.approveSession("a"), 0);
+  broker.shutdown();
+  assert.equal((await b).allow, false);
+});
+
+test("AGY: a ponte de aprovação aplica a troca de permissão ao vivo", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-approval-live-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const asks = [];
+  const make = (permission) =>
+    createAgyApprovalBridge({
+      home, env: {}, node: "/fixture/node", script: "/fixture/hook.cjs",
+      sessionId: "local-session", permission,
+      getNativeId: () => "native-session-123",
+      ask: async (p) => (asks.push(p), true),
+    });
+  const bridge = await make("edits");
+  t.after(() => bridge.close());
+  const { BEAGLEDOCK_APPROVAL_SOCKET: socket, BEAGLEDOCK_APPROVAL_TOKEN: token } = bridge.env;
+  const call = (name, args = {}) =>
+    send(socket, { token, request: { conversationId: "native-session-123", toolCall: { name, args } } });
+  assert.equal((await call("run_command", { CommandLine: "ls" })).decision, "auto_approve");
+  assert.equal(asks.length, 1, "em Aceitar edições o comando pergunta");
+  bridge.setPermission("full");
+  assert.equal((await call("run_command", { CommandLine: "ls" })).decision, "allow");
+  assert.equal(asks.length, 1, "em Acesso total não pergunta mais");
+  bridge.setPermission("plan");
+  const denied = await call("write_to_file", { TargetFile: "a.txt" });
+  assert.equal(denied.decision, "deny", "partiu podendo escrever: a ponte bloqueia até reiniciar em modo plano");
+  assert.match(denied.reason, /somente leitura/);
+  assert.equal((await call("run_command", { CommandLine: "ls" })).decision, "deny");
+  assert.equal((await call("view_file", { AbsolutePath: "/x" })).decision, "allow", "leitura continua liberada");
+  bridge.setPermission("edits");
+  assert.equal((await call("write_to_file", { TargetFile: "a.txt" })).decision, "allow");
+  assert.equal(asks.length, 1);
+});

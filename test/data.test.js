@@ -349,6 +349,20 @@ test("database persists native links across processes and initializes before fir
   assert.equal(result[0].nativeSessionId, "native-id-123");
   assert.equal(result[0].status, "idle");
 });
+test("database keeps the prompt cache state of a conversation across restarts", (t) => {
+  const home = fixture(t);
+  const database = path.resolve("electron/database.js");
+  const env = { ...process.env, BEAGLEDOCK_DATA_DIR: home };
+  const context = { used: 15406, window: 1000000, windowKnown: true, source: "claude", updatedAt: 2000, lastCallAt: 1500, cacheTtlMs: 3600000, model: "opus", cache: { read: 9014, write: 6390 } };
+  const first = `const db=require(${JSON.stringify(database)});(async()=>{await db.saveSession({id:'cache-session',providerId:'claude',cwd:'/project',title:'saved'});await db.setSessionContext('cache-session',${JSON.stringify(context)});await new Promise((r,j)=>db.db.close(e=>e?j(e):r()));})().catch(e=>{console.error(e.message);process.exit(1)});`;
+  execFileSync(process.execPath, ["-e", first], { env });
+  const second = `const db=require(${JSON.stringify(database)});(async()=>{const sessions=await db.getSavedSessions();console.log(JSON.stringify(sessions));await new Promise((r,j)=>db.db.close(e=>e?j(e):r()));})().catch(e=>{console.error(e.message);process.exit(1)});`;
+  const [saved] = JSON.parse(execFileSync(process.execPath, ["-e", second], { env, encoding: "utf8" }));
+  assert.equal(saved.context.lastCallAt, 1500);
+  assert.equal(saved.context.cacheTtlMs, 3600000);
+  assert.equal(saved.context.model, "opus", "o modelo do cache sobrevive para avisar sobre troca depois de reabrir");
+  assert.deepEqual(saved.context.cache, { read: 9014, write: 6390 });
+});
 test("platform discovery includes macOS Homebrew and Windows npm; shells use platform arguments", (t) => {
   const home = fixture(t);
   const bin = write(home, ".local/bin/claude", "#!/bin/sh\n");

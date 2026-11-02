@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const ts = require("typescript");
-const { claudeContextUsed, claudeCacheUsage, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
+const { claudeContextUsed, claudeCacheUsage, claudeCacheTtl, agyCacheUsage, pickModelWindow, codexContext, createContextTracker } = require("../electron/context-usage");
 
 const out = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/tokens.ts"), "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -135,4 +135,53 @@ test("cache: sem dado de cache (AGY) o snapshot não traz o campo", () => {
   const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "antigravity" });
   t.update({ used: 1200 });
   assert.equal("cache" in sent.at(-1), false);
+});
+
+// Claude Code 2.1.316 real: a escrita vem separada por validade em cache_creation.
+test("validade do cache: Claude informa 1 h ou 5 min pela escrita; leitura pura não diz nada", () => {
+  assert.equal(claudeCacheTtl({ cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 3905 } }), 3600000);
+  assert.equal(claudeCacheTtl({ cache_creation: { ephemeral_5m_input_tokens: 812, ephemeral_1h_input_tokens: 0 } }), 300000);
+  assert.equal(claudeCacheTtl({ cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 0 } }), null);
+  assert.equal(claudeCacheTtl({ cache_read_input_tokens: 9000 }), null);
+  assert.equal(claudeCacheTtl(undefined), null);
+});
+
+test("cache do AGY: cache_read_tokens vira leitura, sem escrita nem validade", () => {
+  assert.deepEqual(agyCacheUsage({ input_tokens: 16572, cache_read_tokens: 9626 }), { read: 9626 });
+  assert.deepEqual(agyCacheUsage({ input_tokens: 16572, cache_read_tokens: 0 }), { read: 0 });
+  assert.equal(agyCacheUsage({ input_tokens: 16572 }), null);
+  assert.equal(agyCacheUsage(undefined), null);
+});
+
+test("validade do cache: o rastreador marca cada chamada e mantém a validade conhecida", () => {
+  const sent = [];
+  let clock = 1000;
+  const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "claude", now: () => clock });
+  t.setWindow(1000000, true);
+  assert.equal("lastCallAt" in sent.at(-1), false, "sem chamada ao modelo não há horário");
+  t.update({ used: 15406, cacheTtlMs: 3600000 });
+  assert.equal(sent.at(-1).lastCallAt, 1000);
+  assert.equal(sent.at(-1).cacheTtlMs, 3600000);
+  clock = 5000;
+  t.compacting(true);
+  assert.equal(sent.at(-1).lastCallAt, 1000, "mudar só o estado não renova o cache");
+  t.update({ used: 15500, cacheTtlMs: null });
+  assert.equal(sent.at(-1).lastCallAt, 5000, "uma chamada de leitura renova o cache");
+  assert.equal(sent.at(-1).cacheTtlMs, 3600000, "leitura pura não apaga a validade conhecida");
+});
+
+test("modelo do cache: o rastreador publica o modelo escolhido no app, inclusive o padrão", () => {
+  const sent = [];
+  createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "claude", model: "" }).update({ used: 10 });
+  assert.equal(sent.at(-1).model, "");
+  createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "claude" }).update({ used: 10 });
+  assert.equal("model" in sent.at(-1), false, "sem modelo conhecido não publica");
+});
+
+test("validade do cache: Codex e AGY não informam validade", () => {
+  const sent = [];
+  const t = createContextTracker({ emit: (c, d) => sent.push(d), sessionId: "s", source: "codex", now: () => 42 });
+  t.update(codexContext({ last: { totalTokens: 9000, cachedInputTokens: 7000 }, modelContextWindow: 272000 }));
+  assert.equal(sent.at(-1).lastCallAt, 42);
+  assert.equal("cacheTtlMs" in sent.at(-1), false);
 });

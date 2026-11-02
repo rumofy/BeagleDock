@@ -10,9 +10,12 @@ import {
 } from "../../lib/format";
 import { CompanyIcon } from "../../components/CompanyIcon";
 import { SessionRow } from "./SessionRow";
+import { useNow } from "../../hooks/useNow";
 
 export function ProviderList() {
   const { providers, handleCreateSession } = useApp();
+  // Um relógio só para a lista: o selo "fria" das conversas muda na escala de minutos.
+  const now = useNow(true, 60_000);
   const [showArchived, setShowArchived] = useState<Record<string, boolean>>({});
   // Detalhes da cota (leitura, reinício, tokens, grupos): recolhidos por padrão para sobrar espaço
   // à lista de conversas; os percentuais de 5h e semana continuam no cabeçalho do provedor.
@@ -205,7 +208,7 @@ export function ProviderList() {
                     </div>
                   ) : (
                     active.map((session) => (
-                      <SessionRow key={session.id} session={session} />
+                      <SessionRow key={session.id} session={session} now={now} />
                     ))
                   )}
                   {archived.length > 0 && (
@@ -226,7 +229,7 @@ export function ProviderList() {
                       </button>
                       {showArchived[provider.id] &&
                         archived.map((session) => (
-                          <SessionRow key={session.id} session={session} />
+                          <SessionRow key={session.id} session={session} now={now} />
                         ))}
                     </>
                   )}

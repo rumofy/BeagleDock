@@ -128,7 +128,12 @@ function createCodexStream({
         pid: () => child.pid,
         onLate: onLateEvents,
       });
-      e.context = createContextTracker({ emit, sessionId, source: "codex" });
+      e.context = createContextTracker({
+        emit,
+        sessionId,
+        source: "codex",
+        model: typeof p.requestedModel === "string" ? p.requestedModel : model,
+      });
       entries.set(sessionId, e);
       const current = e;
       // `shellId` é o id do evento da linha do tempo do comando que produziu a saída.

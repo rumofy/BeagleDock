@@ -1,5 +1,13 @@
 import { memo } from "react";
-import { Minimize2 } from "lucide-react";
+import { Minimize2, Timer } from "lucide-react";
+import { useNow } from "../hooks/useNow";
+import {
+  cacheStatus,
+  formatIdle,
+  formatRemaining,
+  GROWTH_ALERT,
+  modelSwitch,
+} from "../lib/staleContext";
 import { contextLevel, contextPercent, formatTokens } from "../lib/tokens";
 import type { ContextInfo } from "../types";
 
@@ -25,15 +33,86 @@ function cacheText(cache?: { read?: number; write?: number }): string {
   return parts.length ? `cache: ${parts.join(" · ")}` : "";
 }
 
+/** Faltando isto, o cache quente é destacado: vale mandar a próxima mensagem logo. */
+const CACHE_ENDING_MS = 5 * 60 * 1000;
+
+/**
+ * Validade do cache de prompt. Com a validade informada pela CLI (Claude Code), mostra a contagem
+ * regressiva até o cache expirar; sem ela (Codex, AGY), só o tempo desde a última chamada.
+ */
+function CacheTimer({ info, busy }: { info?: ContextInfo; busy: boolean }) {
+  // Relógio de 1 s só no último minuto; antes disso 15 s bastam para a contagem em minutos.
+  const initial = cacheStatus(info, Date.now());
+  const fast = initial?.kind === "warm" && initial.remainingMs <= 70_000;
+  const now = useNow(!!initial && !busy, fast ? 1000 : 15_000);
+  const status = cacheStatus(info, Math.max(now, Date.now() - 1000));
+  if (!status) return null;
+  if (busy)
+    return (
+      <span className="shrink-0 flex items-center gap-1 text-emerald-700" data-testid="context-cache-timer">
+        <Timer size={11} /> cache em uso
+      </span>
+    );
+  if (status.kind === "unknown")
+    return (
+      <span
+        className="shrink-0 flex items-center gap-1 text-[#938b7a]"
+        title="Esta CLI não informa por quanto tempo o cache de prompt fica guardado. Quanto mais tempo parada, maior a chance de a próxima mensagem reprocessar o contexto inteiro."
+        data-testid="context-cache-timer"
+      >
+        <Timer size={11} /> última chamada há {formatIdle(status.idleMs)} · validade do cache não informada
+      </span>
+    );
+  const ttl = formatRemaining(status.ttlMs);
+  if (status.kind === "expired")
+    return (
+      <span
+        className="shrink-0 flex items-center gap-1 font-semibold text-amber-800"
+        title={`O cache de prompt (validade de ${ttl}) expirou: a próxima mensagem reprocessa o contexto inteiro e consome mais cota. Depois dela o cache volta a ficar quente.`}
+        data-testid="context-cache-timer"
+      >
+        <Timer size={11} /> cache expirado há {formatIdle(status.idleMs - status.ttlMs)}
+      </span>
+    );
+  const ending = status.remainingMs <= CACHE_ENDING_MS;
+  const percent = (status.remainingMs / status.ttlMs) * 100;
+  return (
+    <span
+      className={`shrink-0 flex items-center gap-1.5 ${ending ? "font-semibold text-amber-800" : "text-emerald-700"}`}
+      title={`Cache de prompt quente (validade de ${ttl}, renovada a cada mensagem). Enquanto estiver quente, a próxima mensagem lê o contexto do cache, o que é bem mais barato.`}
+      data-testid="context-cache-timer"
+    >
+      <Timer size={11} />
+      <span
+        className="relative h-1.5 w-10 rounded-full bg-[#e6e0d2] overflow-hidden"
+        role="progressbar"
+        aria-label="Validade restante do cache"
+        aria-valuenow={Math.round(percent)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <span
+          className={`absolute inset-y-0 left-0 ${ending ? "bg-amber-500" : "bg-emerald-500"}`}
+          style={{ width: `${percent}%` }}
+        />
+      </span>
+      cache expira em {formatRemaining(status.remainingMs)}
+    </span>
+  );
+}
+
 /** Barra do contexto da sessão: ocupação da janela do modelo, compactação em curso e a última feita. */
 export const ContextBar = memo(function ContextBar({
   info,
   providerId,
+  selectedModel,
   busy,
   onCompact,
 }: {
   info?: ContextInfo;
   providerId?: string;
+  /** Modelo que vai na próxima mensagem; diferente do da última chamada, o cache não serve. */
+  selectedModel?: string;
   busy: boolean;
   onCompact?: () => void;
 }) {
@@ -46,6 +125,9 @@ export const ContextBar = memo(function ContextBar({
   const cache = info?.cache;
   const cacheLabel = cacheText(cache);
   const cacheHeavy = (cache?.write ?? 0) >= CACHE_WRITE_ALERT;
+  const growth = info?.turnGrowth;
+  const growthHeavy = (growth ?? 0) >= GROWTH_ALERT;
+  const switched = selectedModel === undefined ? null : modelSwitch(info, selectedModel);
   return (
     <div
       className="flex items-center gap-3 px-3 py-1.5 rounded-xl border border-[#e4dec9] bg-[#faf8f4] text-[11px]"
@@ -90,6 +172,30 @@ export const ContextBar = memo(function ContextBar({
             >
               {cacheLabel}
             </span>
+          )}
+          {growth !== undefined && growth >= 1000 && (
+            <span
+              className={`shrink-0 font-mono ${growthHeavy ? "font-bold text-amber-800" : "text-[#938b7a]"}`}
+              title={
+                growthHeavy
+                  ? "A última resposta acrescentou muito ao contexto, em geral um arquivo grande, um log ou a saída longa de um comando. Isso fica no histórico e encarece cada mensagem seguinte e cada retomada. Peça trechos menores (ex.: só as linhas relevantes) ou compacte."
+                  : "Quanto a última resposta acrescentou ao contexto."
+              }
+              data-testid="context-growth"
+            >
+              +{formatTokens(growth)} na última resposta
+            </span>
+          )}
+          {switched && !busy ? (
+            <span
+              className="shrink-0 font-semibold text-amber-800"
+              title="O cache de prompt é separado por modelo: com o modelo trocado, a próxima mensagem reprocessa o contexto inteiro, mesmo com o cache quente."
+              data-testid="context-model-switch"
+            >
+              modelo trocado: a próxima mensagem reprocessa {formatTokens(switched.used)}
+            </span>
+          ) : (
+            <CacheTimer info={info} busy={busy} />
           )}
         </>
       )}

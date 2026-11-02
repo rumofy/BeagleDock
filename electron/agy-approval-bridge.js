@@ -140,6 +140,8 @@ async function createAgyApprovalBridge({
   script,
 }) {
   ensureHook({ home, env, node, script });
+  // Nível escolhido agora na conversa; `permission` continua sendo o da partida do AGY.
+  let livePermission = permission;
   const token = crypto.randomBytes(32).toString("hex");
   const socket =
     process.platform === "win32"
@@ -195,16 +197,30 @@ async function createAgyApprovalBridge({
       onConversation(request.conversationId);
       const name = request.toolCall.name;
       const args = request.toolCall.args || {};
-      const activePermission = effectivePermission(permission, { home, env });
+      const activePermission = effectivePermission(livePermission, { home, env });
+      const launchedReadonly = ["plan", "ask"].includes(
+        effectivePermission(permission, { home, env }),
+      );
       const isReadMcp =
         name === "call_mcp_tool" &&
         args.ServerName === "ai-memory" &&
         READ_MCP_TOOLS.has(args.ToolName);
+      const isRead = READ_TOOLS.has(name) || isReadMcp;
       let result = { decision: "allow" };
       if (
+        !isRead &&
+        ["plan", "ask"].includes(activePermission) &&
+        !launchedReadonly
+      )
+        // Trocado para somente leitura durante a execução: o AGY partiu podendo escrever, então a
+        // ponte nega o que não é leitura até ele reiniciar com o modo plano na próxima mensagem.
+        result = {
+          decision: "deny",
+          reason: "O modo da conversa foi trocado para somente leitura no BeagleDock.",
+        };
+      else if (
         !["full", "plan", "ask"].includes(activePermission) &&
-        !READ_TOOLS.has(name) &&
-        !isReadMcp &&
+        !isRead &&
         !(activePermission === "edits" && WRITE_TOOLS.has(name))
       ) {
         const allow = await ask({
@@ -235,6 +251,9 @@ async function createAgyApprovalBridge({
     env: {
       BEAGLEDOCK_APPROVAL_SOCKET: socket,
       BEAGLEDOCK_APPROVAL_TOKEN: token,
+    },
+    setPermission(level) {
+      livePermission = level;
     },
     close() {
       if (closed) return;

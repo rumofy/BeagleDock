@@ -1,11 +1,17 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadDrafts, saveDrafts, updateDraft, type DraftMap } from "../lib/drafts";
 import { attachmentProblem, sizeText } from "../lib/attachments";
-import { staleContext, type StaleContext } from "../lib/staleContext";
+import { modelSwitch, staleContext } from "../lib/staleContext";
 import type { ChatAttachment, ChatSession, ContextInfo } from "../types";
 
-/** Mensagem retida até a pessoa decidir o que fazer com o contexto grande e o cache expirado. */
-export interface StaleNotice extends StaleContext {
+/**
+ * Mensagem retida até a pessoa decidir o que fazer numa conversa grande cujo contexto seria
+ * reprocessado inteiro: cache expirado (`idleMs`) e/ou modelo trocado (`switched`).
+ */
+export interface StaleNotice {
+  used: number;
+  idleMs?: number;
+  switched?: { from: string; to: string };
   session: ChatSession;
   text: string;
   attachments: ChatAttachment[];
@@ -13,6 +19,8 @@ export interface StaleNotice extends StaleContext {
 
 interface Params {
   currentSession: ChatSession | undefined;
+  /** Modelo que vai ser enviado na conversa atual, já normalizado pelo catálogo. */
+  currentModel: string;
   pendingTurns: React.MutableRefObject<Map<string, number>>;
   setAppError: (message: string) => void;
   handleStopSession: (id: string) => Promise<void>;
@@ -29,6 +37,7 @@ interface Params {
 /** Texto digitado, anexos e envio da mensagem do chat. */
 export function useComposer({
   currentSession,
+  currentModel,
   pendingTurns,
   setAppError,
   handleStopSession,
@@ -172,13 +181,22 @@ export function useComposer({
       await handleTriggerHandoff();
       return;
     }
-    // Conversa grande parada além do cache: avisa antes de gastar, só quando não há fila nem /compact.
-    const stale =
-      promptText === "/compact" || (pendingTurns.current.get(currentSession.id) || 0) > 0
-        ? null
-        : staleContext(contextBySession[currentSession.id], Date.now());
-    if (stale) {
-      setStaleNotice({ ...stale, session: currentSession, text: promptText, attachments });
+    // Conversa grande que seria reprocessada inteira (cache expirado ou modelo trocado): avisa antes
+    // de gastar, só quando não há fila nem /compact.
+    const check =
+      promptText !== "/compact" && !((pendingTurns.current.get(currentSession.id) || 0) > 0);
+    const info = contextBySession[currentSession.id];
+    const stale = check ? staleContext(info, Date.now()) : null;
+    const switched = check ? modelSwitch(info, currentModel) : null;
+    if (stale || switched) {
+      setStaleNotice({
+        used: (stale || switched)!.used,
+        ...(stale ? { idleMs: stale.idleMs } : {}),
+        ...(switched ? { switched: { from: switched.from, to: switched.to } } : {}),
+        session: currentSession,
+        text: promptText,
+        attachments,
+      });
       return;
     }
     const sending = attachments;
@@ -187,15 +205,24 @@ export function useComposer({
     await sendPrompt(currentSession, promptText, sending);
   };
 
-  // Decisão sobre a mensagem retida: enviar assim mesmo, compactar antes de enviar, ou voltar a editar.
-  const resolveStaleNotice = async (choice: "send" | "compact" | "cancel") => {
+  // Decisão sobre a mensagem retida: enviar assim mesmo, compactar antes de enviar, voltar ao modelo
+  // anterior (cache ainda quente) ou voltar a editar.
+  const resolveStaleNotice = async (choice: "send" | "compact" | "previous" | "cancel") => {
     const notice = staleNotice;
     if (!notice) return;
     setStaleNotice(null);
     if (choice === "cancel") return;
     setInputMessage("");
     setAttachments([]);
-    if (choice === "compact") await compactContext(notice.session);
+    const previous = notice.switched
+      ? { ...notice.session, currentModel: notice.switched.from }
+      : notice.session;
+    if (choice === "previous") {
+      await sendPrompt(previous, notice.text, notice.attachments);
+      return;
+    }
+    // Com troca de modelo, compacta no modelo anterior: o novo só lê o resumo.
+    if (choice === "compact") await compactContext(previous);
     await sendPrompt(notice.session, notice.text, notice.attachments);
   };
 

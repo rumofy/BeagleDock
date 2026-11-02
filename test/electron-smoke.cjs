@@ -494,6 +494,8 @@ async function send(win, text, expected) {
       for (const [prompt, button, answer] of [
         ["smoke-approval allow", "Permitir uma vez", "APPROVED_ACTION_DONE"],
         ["smoke-approval deny", "Negar", "DENIED_ACTION_DONE"],
+        // Trocar para Acesso total com a resposta parada na aprovação libera a ação pendente.
+        ["smoke-approval allow", "__full__", "APPROVED_ACTION_DONE"],
         ...(index > 0 ? [
           ["smoke-approval-child allow", "Permitir uma vez", "APPROVED_ACTION_DONE"],
           ["smoke-approval-child deny", "Negar", "DENIED_ACTION_DONE"],
@@ -544,9 +546,29 @@ async function send(win, text, expected) {
           ),
           0,
         );
-        await win.webContents.executeJavaScript(
-          `[...document.querySelectorAll('[aria-label="Autorizar ação da CLI"] button')].find(b=>b.textContent.startsWith(${JSON.stringify(button)})).click()`,
-        );
+        const permissionBefore = button === "__full__"
+          ? await win.webContents.executeJavaScript(`document.querySelector('select[data-control="permission"]').value`)
+          : null;
+        const choosePermission = (value) =>
+          win.webContents.executeJavaScript(
+            `(()=>{const s=document.querySelector('select[data-control="permission"]');Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(s,${JSON.stringify("__VALUE__")});s.dispatchEvent(new Event('change',{bubbles:true}));})()`.replace("__VALUE__", value),
+          );
+        if (button === "__full__") {
+          assert.equal(
+            await win.webContents.executeJavaScript(`document.querySelector('select[data-control="permission"]').disabled`),
+            false,
+            "seletor de permissão liberado durante a execução",
+          );
+          await choosePermission("full");
+          await waitFor(win, `!!document.querySelector('[data-testid="permission-notice"]')`);
+          const notice = await win.webContents.executeJavaScript(`document.querySelector('[data-testid="permission-notice"]').innerText`);
+          assert.match(notice, /1 aprovação pendente foi liberada/);
+          if (index === 0) assert.match(notice, /Novo nível aplicado/);
+          if (index === 1) assert.match(notice, /próxima mensagem/);
+        } else
+          await win.webContents.executeJavaScript(
+            `[...document.querySelectorAll('[aria-label="Autorizar ação da CLI"] button')].find(b=>b.textContent.startsWith(${JSON.stringify(button)})).click()`,
+          );
         if (prompt === "smoke-approval-child allow") {
           await waitFor(win, `window.__liveOutput.includes('CHILD_FIRST')`);
           assert.equal(await win.webContents.executeJavaScript(`document.querySelector('header').innerText.includes('EXECUTANDO CLI')`), true, "saída do subagente chega ao shell antes da conclusão");
@@ -564,6 +586,16 @@ async function send(win, text, expected) {
           assert.equal(await win.webContents.executeJavaScript(`window.__liveOutput.split('CHILD_FIRST').length-1`), 1);
         }
         if (prompt.includes("-child")) await win.webContents.executeJavaScript("void window.__unsubscribeLive()");
+        if (button === "__full__") {
+          if (index === 0)
+            assert.deepEqual(
+              require("fs").readFileSync(require("path").join(process.env.BEAGLEDOCK_SMOKE_ROOT, "permission-modes-claude.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).slice(-1),
+              ["bypassPermissions"],
+              "Claude recebe a troca ao vivo pelo stdin",
+            );
+          await choosePermission(permissionBefore);
+          await waitFor(win, `document.querySelector('select[data-control="permission"]').value===${JSON.stringify(permissionBefore)}`);
+        }
       }
       console.log(
         `Desktop streaming and allow/deny: provider ${index} passed before completion.`,
