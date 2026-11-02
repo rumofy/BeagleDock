@@ -4,6 +4,10 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+### Corrigido
+
+- O ditado não altera mais o texto dentro de links: em `https://...?logo=linux`, o “linux” deixava de ficar como foi escrito e virava “Linux”. O texto em volta do link continua sendo corrigido normalmente.
+
 ## [0.12.0] - 2026-11-02
 
 ### Adicionado
