@@ -8,6 +8,10 @@
   code, pre, .font-mono {
     font-family: 'JetBrains Mono', monospace;
   }
+  select option, select optgroup {
+    background-color: #fcfbfa;
+    color: #1c1b18;
+  }
 }
 
 /* Custom scrollbars matching the Tucano cream minimalist palette */

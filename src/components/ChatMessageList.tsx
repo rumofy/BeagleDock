@@ -60,7 +60,7 @@ const MessageRow = memo(
       <div key={msg.id} className="flex gap-3">
         {msg.sender === "user" ? (
           <div
-            className="w-8 h-8 rounded-xl bg-[#262420] text-amber-200 flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ring-1 ring-[#e4dec9]"
+            className="w-8 h-8 rounded-xl bg-[#262420] text-amber-50 flex items-center justify-center font-bold text-xs shrink-0 shadow-xs ring-1 ring-[#e4dec9]"
             title={userProfile.fullName}
           >
             {userProfile.initials || "U"}
