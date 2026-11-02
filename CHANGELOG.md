@@ -4,6 +4,18 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-02
+
+### Adicionado
+
+- Botão “Aprovar plano e executar” no campo de mensagem, no Claude Code, no Codex CLI e no Antigravity: quando a conversa está no modo plano e a IA terminou de apresentar o plano, um clique tira a conversa do modo plano (Aceitar edições) e pede para ela implementar. Antes, responder “sim” deixava a conversa presa no modo somente leitura.
+
+### Corrigido
+
+- Aprovar o plano no pedido do Claude Code agora tira a conversa do modo plano de verdade: o seletor passa para “Aceitar edições”, a IA executa sem pedir cada edição e a próxima mensagem não volta ao modo plano. Antes, a aprovação não ficava registrada no BeagleDock, e a conversa podia voltar ao plano no meio do trabalho. O pedido também mostra o plano em texto legível e as opções “Aprovar o plano e executar” e “Continuar planejando”.
+- No Antigravity, trocar o nível de permissão, o modelo ou o raciocínio com a conversa aberta não faz mais a mensagem seguinte terminar em “Execução interrompida”.
+- O ditado reconhece mais formas faladas dos nomes das CLIs: “cloud coding”, “Claudio Coding” e “Cláudio Code” viram “Claude Code”, e “ag” vira “AGY”.
+
 ## [0.11.1] - 2026-11-02
 
 ### Corrigido
@@ -275,7 +287,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...v0.10.0

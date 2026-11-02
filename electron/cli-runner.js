@@ -123,6 +123,13 @@ function buildArgs({
   return args;
 }
 
+// Para onde a conversa vai quando o plano é aprovado: mantém "Acesso total" se ele já foi escolhido
+// (inclusive durante a espera); de resto, "Aceitar edições", como o atalho que desliga o plano.
+function planExit(entry) {
+  const permission = entry.permission === "full" ? "full" : "edits";
+  return { permission, mode: permission === "full" ? "bypassPermissions" : "acceptEdits" };
+}
+
 function createCliRunner({
   store,
   emit = () => {},
@@ -171,10 +178,12 @@ function createCliRunner({
   // sem ele, a saída não pôde ser atribuída a uma origem e fica só na visão geral.
   const output = (sessionId, data, pid, shellId) =>
     emit("pty-data", { sessionId, data, pid, ...(shellId ? { shellId } : {}) });
-  function kill(sessionId) {
+  // `restart`: a própria execução troca o processo (nível, modelo ou esforço mudou). Não marca a
+  // mensagem que está começando como cancelada; antes, no AGY ela acabava em "Execução interrompida".
+  function kill(sessionId, { restart = false } = {}) {
     approvals?.cancelSession(sessionId);
     codex.kill(sessionId);
-    if (busy.has(sessionId)) cancelled.add(sessionId);
+    if (busy.has(sessionId) && !restart) cancelled.add(sessionId);
     const entry = processes.get(sessionId);
     if (!entry) return;
     processes.delete(sessionId);
@@ -312,7 +321,7 @@ function createCliRunner({
           entry.child.exitCode !== null ||
           entry.child.killed)
       ) {
-        kill(sessionId);
+        kill(sessionId, { restart: true });
         entry = null;
       }
       if (!entry) {
@@ -798,12 +807,19 @@ function createCliRunner({
                   sessionId,
                   providerId,
                   tool: request.display_name || request.tool_name,
-                  input: request.input,
+                  // O plano em texto (o JSON escaparia as quebras de linha do Markdown).
+                  input:
+                    request.tool_name === "ExitPlanMode" && typeof request.input?.plan === "string"
+                      ? request.input.plan
+                      : request.input,
                   options,
                   native,
                 });
               }
               if (child.killed || child.exitCode !== null) return;
+              // Plano aprovado: o Claude Code sai do modo plano no modo que a resposta informar
+              // (sem ele, cai no "default" e pediria cada edição). Verificado no 2.1.316.
+              const exitPlan = decision.allow && decision.native?.exitPlan ? planExit(current) : null;
               child.stdin.write(
                 JSON.stringify({
                   type: "control_response",
@@ -814,12 +830,14 @@ function createCliRunner({
                       ? {
                           behavior: "allow",
                           updatedInput: request.input || {},
-                          ...(decision.native?.updatedPermissions
-                            ? {
-                                updatedPermissions:
-                                  decision.native.updatedPermissions,
-                              }
-                            : {}),
+                          ...(exitPlan
+                            ? { updatedPermissions: [{ type: "setMode", mode: exitPlan.mode, destination: "session" }] }
+                            : decision.native?.updatedPermissions
+                              ? {
+                                  updatedPermissions:
+                                    decision.native.updatedPermissions,
+                                }
+                              : {}),
                         }
                       : {
                           behavior: "deny",
@@ -830,6 +848,14 @@ function createCliRunner({
                   },
                 }) + "\n",
               );
+              if (exitPlan) {
+                // A conversa deixa de ser somente leitura: a próxima mensagem não reinicia a CLI
+                // no modo plano, e a interface troca o nível mostrado.
+                current.permission = exitPlan.permission;
+                current.key = current.keyFor(exitPlan.permission, undefined);
+                current.selection = JSON.stringify([current.model, current.effort, exitPlan.permission]);
+                emit("cli-permission-changed", { sessionId, permission: exitPlan.permission, reason: "plan-approved" });
+              }
             };
             void response().catch(() => kill(sessionId));
           } else if (ev.type === "control_response") {
@@ -1475,4 +1501,4 @@ function createCliRunner({
     },
   };
 }
-module.exports = { createCliRunner, buildArgs };
+module.exports = { planExit, createCliRunner, buildArgs };

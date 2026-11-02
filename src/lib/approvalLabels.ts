@@ -1,5 +1,6 @@
 /** Nome legível da ação que pede permissão (o Codex informa o método do protocolo). */
 export function approvalTitle(tool: string): string {
+  if (tool === "ExitPlanMode") return "Aprovar o plano";
   if (/commandExecution\/requestApproval$/.test(tool)) return "Executar um comando";
   if (/fileChange\/requestApproval$/.test(tool)) return "Editar arquivos";
   if (/permissions\/requestApproval$/.test(tool)) return "Permissão adicional";

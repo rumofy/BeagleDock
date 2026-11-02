@@ -103,6 +103,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "cli-turn-started",
         "cli-turn-finished",
         "cli-notice",
+        "cli-permission-changed",
         "open-session",
         "cli-approvals",
         "dictation-model-progress",

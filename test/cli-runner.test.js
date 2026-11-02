@@ -3,7 +3,7 @@ const { SEGMENT_SEPARATOR } = require("../electron/message-segments");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const { PassThrough, Writable } = require("node:stream");
-const { createCliRunner, buildArgs } = require("../electron/cli-runner");
+const { createCliRunner, buildArgs, planExit } = require("../electron/cli-runner");
 function harness() {
   const links = new Map();
   const calls = [];
@@ -483,6 +483,67 @@ test("Claude: a escolha 'permitir nesta sessão' volta à CLI como updatedPermis
   child.event({ type: "result", session_id: "claude-native-777", result: "ok", is_error: false });
   child.close(0);
   await pending;
+});
+
+test("Claude: aprovar o plano (ExitPlanMode) sai do modo plano para aceitar edições e avisa a interface", async () => {
+  // Pedido real do Claude Code 2.1.316 no modo plano (sem permission_suggestions).
+  const request = {
+    subtype: "can_use_tool", tool_name: "ExitPlanMode", display_name: "ExitPlanMode",
+    input: { plan: "# Plano\n\n1. Criar hello.txt", planFilePath: "/home/u/.claude/plans/p.md" },
+    tool_use_id: "toolu_plan", requires_user_interaction: true,
+  };
+  const asked = [];
+  const approvals = {
+    askDetailed: async (req) => (asked.push(req), { allow: true, optionId: "approve-plan", native: { exitPlan: true } }),
+    cancelSession() {}, shutdown() {},
+  };
+  const calls = [], emitted = [];
+  const spawn = (bin, args) => {
+    const child = new EventEmitter();
+    Object.assign(child, { pid: 901, exitCode: null, killed: false, stdout: new PassThrough(), stderr: new PassThrough(), inputs: [] });
+    child.stdin = new Writable({ write(chunk, enc, done) { child.inputs.push(chunk.toString()); done(); } });
+    child.event = (d) => child.stdout.write(JSON.stringify(d) + "\n");
+    child.close = (code) => { child.exitCode = code; child.emit("close", code); };
+    child.kill = () => { child.killed = true; queueMicrotask(() => child.close(143)); };
+    calls.push({ bin, args, child });
+    return child;
+  };
+  const links = new Map();
+  const runner = createCliRunner({
+    store: { getNativeSession: async (id) => links.get(id), setNativeSession: async (id, p, n, c) => links.set(id, { nativeId: n, cwd: c }) },
+    spawn, find: (n) => n, emit: (ch, data) => emitted.push({ ch, data }), checkCwd: (c) => c, approvals,
+  });
+  const first = runner.execute({ ...payload("claude"), permission: "plan" });
+  await tick();
+  const child = calls[0].child;
+  assert.ok(calls[0].args.join(" ").includes("--permission-mode plan"));
+  child.event({ type: "system", subtype: "init", session_id: "claude-native-plan" });
+  child.event({ type: "control_request", request_id: "req-plan", request });
+  await tick();
+  assert.deepEqual(asked[0].options.map((o) => o.id), ["approve-plan", "deny"]);
+  assert.equal(asked[0].input, request.input.plan);
+  const response = child.inputs.map((s) => JSON.parse(s)).find((m) => m.type === "control_response").response.response;
+  assert.equal(response.behavior, "allow");
+  assert.deepEqual(response.updatedInput, request.input);
+  assert.deepEqual(response.updatedPermissions, [{ type: "setMode", mode: "acceptEdits", destination: "session" }]);
+  assert.deepEqual(emitted.find((e) => e.ch === "cli-permission-changed")?.data, {
+    sessionId: payload("claude").sessionId, permission: "edits", reason: "plan-approved",
+  });
+  child.event({ type: "result", session_id: "claude-native-plan", result: "ok", is_error: false });
+  await first;
+  // A próxima mensagem já vem com "Aceitar edições": segue no mesmo processo, sem voltar ao plano.
+  const second = runner.execute({ ...payload("claude"), permission: "edits", prompt: "continua" });
+  await tick();
+  assert.equal(calls.length, 1);
+  child.event({ type: "result", session_id: "claude-native-plan", result: "ok", is_error: false });
+  child.close(0);
+  await second;
+});
+
+test("planExit mantém o acesso total escolhido durante a espera; senão vai para aceitar edições", () => {
+  assert.deepEqual(planExit({ permission: "plan" }), { permission: "edits", mode: "acceptEdits" });
+  assert.deepEqual(planExit({ permission: "ask" }), { permission: "edits", mode: "acceptEdits" });
+  assert.deepEqual(planExit({ permission: "full" }), { permission: "full", mode: "bypassPermissions" });
 });
 
 test("Claude: thinking_tokens (texto do raciocínio vem vazio) vira progresso visível na etapa", async () => {

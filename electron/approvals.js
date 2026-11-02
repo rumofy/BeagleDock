@@ -22,7 +22,10 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
           sessionId: request.sessionId,
           providerId: request.providerId,
           tool: String(request.tool || "Ferramenta").slice(0, 200),
-          input: JSON.stringify(request.input || {}, null, 2).slice(0, 16000),
+          input: (typeof request.input === "string"
+            ? request.input
+            : JSON.stringify(request.input || {}, null, 2)
+          ).slice(0, 16000),
           options: options.map(({ id: optionId, label, kind, description, persistent, danger, allowsMessage }) => ({
             id: optionId,
             label: String(label).slice(0, 300),
