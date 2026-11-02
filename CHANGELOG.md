@@ -4,6 +4,12 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-02
+
+### Corrigido
+
+- O ditado por voz sempre continua no fim do texto do campo de mensagem, com o cursor indo para o fim, e dá para gravar várias observações seguidas e enviar tudo de uma vez. Antes, um trecho novo podia entrar no meio ou no início do que já estava escrito.
+
 ## [0.11.0] - 2026-11-02
 
 ### Adicionado
@@ -269,7 +275,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/rumofy/BeagleDock/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...v0.9.0

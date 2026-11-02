@@ -21,7 +21,7 @@ import { CommandSuggestions } from "./CommandSuggestions";
 import { FileSuggestions } from "./FileSuggestions";
 import { useProjectFiles } from "../../hooks/useProjectFiles";
 import { applyMention, mentionAt } from "../../lib/attachments";
-import { insertDictation } from "../../lib/wav";
+import { appendDictation } from "../../lib/wav";
 import { dictationAvailable, useVoiceDictation } from "./useVoiceDictation";
 import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
 
@@ -77,7 +77,7 @@ export function ChatComposer() {
       inputRef.current?.setSelectionRange(next.caret, next.caret);
     });
   };
-  // Ditado por voz: o texto entra onde estava o cursor, para revisar antes de enviar.
+  // Ditado por voz: cada gravação continua no fim do texto, para juntar várias antes de enviar.
   const latest = useRef({ inputMessage, caret });
   latest.current = { inputMessage, caret };
   const canDictate = dictationAvailable();
@@ -90,8 +90,7 @@ export function ChatComposer() {
       void speechModel.refresh();
     },
     onText: (spoken) => {
-      const { inputMessage: current, caret: at } = latest.current;
-      const next = insertDictation(current, at, spoken);
+      const next = appendDictation(latest.current.inputMessage, spoken);
       setInputMessage(next.text);
       setCaret(next.caret);
       requestAnimationFrame(() => {

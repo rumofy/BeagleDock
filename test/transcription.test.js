@@ -51,6 +51,14 @@ test("texto ditado entra no cursor com espaços só onde faltam", () => {
   assert.deepEqual({ ...wav.insertDictation("abc", 99, "") }, { text: "abc", caret: 99 });
 });
 
+test("appendDictation continua no fim do texto e deixa o cursor no fim", () => {
+  const first = wav.appendDictation("", "Primeira observação.");
+  const second = wav.appendDictation(first.text, "Segunda observação.");
+  assert.deepEqual({ ...second }, { text: "Primeira observação. Segunda observação.", caret: 40 });
+  assert.deepEqual({ ...wav.appendDictation("linha ", " mais") }, { text: "linha mais", caret: 10 });
+  assert.deepEqual({ ...wav.appendDictation("abc", "  ") }, { text: "abc", caret: 3 });
+});
+
 test("decodeWav recusa vazio, formato errado, curto demais e acima de 25 MB", () => {
   assert.throws(() => t.decodeWav(""), /vazio/);
   assert.throws(() => t.decodeWav(Buffer.from("OggS".padEnd(5000, "x")).toString("base64")), /inválido/);

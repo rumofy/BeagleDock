@@ -71,3 +71,11 @@ export function insertDictation(current: string, caret: number, dictated: string
   const inserted = `${lead}${text}${trail}`;
   return { text: before + inserted + after, caret: at + inserted.length - trail.length };
 }
+
+/**
+ * Ditado em sequência: cada trecho continua no fim do que já foi escrito (não onde o
+ * cursor ficou), e o cursor vai para o fim, pronto para o próximo.
+ */
+export function appendDictation(current: string, dictated: string) {
+  return insertDictation(current, current.length, dictated);
+}
