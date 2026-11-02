@@ -94,18 +94,20 @@
   --color-zinc-950: oklch(98.5% 0 none);
 }
 :root[data-theme="dark"] body { background: #1e1e1e; color: #d4d4d4; }
+:root[data-theme="dark"] select option, :root[data-theme="dark"] select optgroup { background-color: #252526; color: #dbdbdc; }
+:root[data-theme="dark"] select option:disabled { color: #757679; }
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }
 :root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }
-:root[data-theme="dark"] .bg-\[\#141416\] { background-color: #eaeaea; }
-:root[data-theme="dark"] .bg-\[\#141416\]\/95 { background-color: color-mix(in oklab, #eaeaea 95%, transparent); }
-:root[data-theme="dark"] .bg-\[\#18181b\] { background-color: #e5e5e6; }
+:root[data-theme="dark"] .bg-\[\#141416\] { background-color: #151515; }
+:root[data-theme="dark"] .bg-\[\#141416\]\/95 { background-color: color-mix(in oklab, #151515 95%, transparent); }
+:root[data-theme="dark"] .bg-\[\#18181b\] { background-color: #19191a; }
 :root[data-theme="dark"] .bg-\[\#1c1b18\] { background-color: #e4e5e6; }
-:root[data-theme="dark"] .bg-\[\#1e1e21\] { background-color: #dfdfe0; }
-:root[data-theme="dark"] .bg-\[\#1e1e21\]\/90 { background-color: color-mix(in oklab, #dfdfe0 90%, transparent); }
+:root[data-theme="dark"] .bg-\[\#1e1e21\] { background-color: #1f1f20; }
+:root[data-theme="dark"] .bg-\[\#1e1e21\]\/90 { background-color: color-mix(in oklab, #1f1f20 90%, transparent); }
 :root[data-theme="dark"] .bg-\[\#262420\] { background-color: #dbdcdd; }
-:root[data-theme="dark"] .bg-\[\#27272a\] { background-color: #d6d6d7; }
+:root[data-theme="dark"] .bg-\[\#27272a\] { background-color: #282829; }
 :root[data-theme="dark"] .bg-\[\#2c2822\] { background-color: #d7d8d9; }
-:root[data-theme="dark"] .bg-\[\#3f3f46\] { background-color: #bbbcbe; }
+:root[data-theme="dark"] .bg-\[\#3f3f46\] { background-color: #414244; }
 :root[data-theme="dark"] .bg-\[\#a39b8b\] { background-color: #66676a; }
 :root[data-theme="dark"] .bg-\[\#d7d0bc\] { background-color: #363638; }
 :root[data-theme="dark"] .bg-\[\#dfdacd\] { background-color: #303032; }
@@ -129,9 +131,9 @@
 :root[data-theme="dark"] .bg-\[\#fde6e3\] { background-color: #260703; }
 :root[data-theme="dark"] .bg-\[\#ffffff\] { background-color: #1b1c1d; }
 :root[data-theme="dark"] .border-\[\#1c1b18\] { border-color: #e4e5e6; }
-:root[data-theme="dark"] .border-\[\#27272a\] { border-color: #d6d6d7; }
-:root[data-theme="dark"] .border-\[\#2e2e33\] { border-color: #cececf; }
-:root[data-theme="dark"] .border-\[\#3f3f46\] { border-color: #bbbcbe; }
+:root[data-theme="dark"] .border-\[\#27272a\] { border-color: #282829; }
+:root[data-theme="dark"] .border-\[\#2e2e33\] { border-color: #303031; }
+:root[data-theme="dark"] .border-\[\#3f3f46\] { border-color: #414244; }
 :root[data-theme="dark"] .border-\[\#968d7a\] { border-color: #757679; }
 :root[data-theme="dark"] .border-\[\#d6cfbe\] { border-color: #353638; }
 :root[data-theme="dark"] .border-\[\#d8d2c3\] { border-color: #343436; }
@@ -154,9 +156,9 @@
 :root[data-theme="dark"] .focus-within\:border-\[\#968d7a\]:focus-within { border-color: #757679; }
 :root[data-theme="dark"] .focus\:border-\[\#968d7a\]:focus { border-color: #757679; }
 :root[data-theme="dark"] .from-\[\#fcfbfa\] { --tw-gradient-from: #1d1e1f; }
-:root[data-theme="dark"] .hover\:bg-\[\#2e2e33\]:hover { background-color: #cececf; }
+:root[data-theme="dark"] .hover\:bg-\[\#2e2e33\]:hover { background-color: #303031; }
 :root[data-theme="dark"] .hover\:bg-\[\#32302b\]:hover { background-color: #d0d0d1; }
-:root[data-theme="dark"] .hover\:bg-\[\#52525b\]:hover { background-color: #a7a8aa; }
+:root[data-theme="dark"] .hover\:bg-\[\#52525b\]:hover { background-color: #555658; }
 :root[data-theme="dark"] .hover\:bg-\[\#d6cfbe\]:hover { background-color: #353638; }
 :root[data-theme="dark"] .hover\:bg-\[\#dfdacd\]:hover { background-color: #303032; }
 :root[data-theme="dark"] .hover\:bg-\[\#e2dcce\]:hover { background-color: #2f2f31; }
@@ -175,6 +177,7 @@
 :root[data-theme="dark"] .hover\:text-\[\#2c2822\]:hover { color: #dbdbdc; }
 :root[data-theme="dark"] .hover\:text-\[\#443e33\]:hover { color: #dbdbdc; }
 :root[data-theme="dark"] .hover\:text-\[\#b45309\]:hover { color: #e9a067; }
+:root[data-theme="dark"] .hover\:text-\[\#f4f4f5\]:hover { color: #f4f4f5; }
 :root[data-theme="dark"] .ring-\[\#d4cdbd\] { --tw-ring-color: #363738; }
 :root[data-theme="dark"] .ring-\[\#e4dec9\] { --tw-ring-color: #2f3031; }
 :root[data-theme="dark"] .ring-\[\#ede9de\] { --tw-ring-color: #28292a; }
@@ -204,7 +207,7 @@
 :root[data-theme="dark"] .text-\[\#6b6251\] { color: #bebfc1; }
 :root[data-theme="dark"] .text-\[\#6d6657\] { color: #bdbebf; }
 :root[data-theme="dark"] .text-\[\#6e6656\] { color: #bdbebf; }
-:root[data-theme="dark"] .text-\[\#71717a\] { color: #b6b7b9; }
+:root[data-theme="dark"] .text-\[\#71717a\] { color: #bbbcbe; }
 :root[data-theme="dark"] .text-\[\#7d7565\] { color: #b7b8ba; }
 :root[data-theme="dark"] .text-\[\#7e7565\] { color: #b7b8ba; }
 :root[data-theme="dark"] .text-\[\#847b6a\] { color: #b5b6b8; }
@@ -215,12 +218,12 @@
 :root[data-theme="dark"] .text-\[\#9a927f\] { color: #aeafb1; }
 :root[data-theme="dark"] .text-\[\#9c9381\] { color: #adaeb0; }
 :root[data-theme="dark"] .text-\[\#9d9483\] { color: #acadb0; }
-:root[data-theme="dark"] .text-\[\#a1a1aa\] { color: #a7a8aa; }
+:root[data-theme="dark"] .text-\[\#a1a1aa\] { color: #c3c4c5; }
 :root[data-theme="dark"] .text-\[\#b42318\] { color: #e97067; }
 :root[data-theme="dark"] .text-\[\#b45309\] { color: #e9a067; }
 :root[data-theme="dark"] .text-\[\#b4540a\] { color: #e9a067; }
 :root[data-theme="dark"] .text-\[\#c5bea9\] { color: #a7a8aa; }
-:root[data-theme="dark"] .text-\[\#e4e4e7\] { color: #a7a8aa; }
+:root[data-theme="dark"] .text-\[\#e4e4e7\] { color: #e5e5e6; }
+:root[data-theme="dark"] .text-\[\#f4f4f5\] { color: #f4f4f5; }
 :root[data-theme="dark"] .text-zinc-400 { color: oklch(70.5% 0.015 286.067); }
-:root[data-theme="dark"] .text-zinc-500 { color: oklch(70.5% 0.015 286.067); }
 :root[data-theme="dark"] .via-\[\#fcfbfa\] { --tw-gradient-via: #1d1e1f; }

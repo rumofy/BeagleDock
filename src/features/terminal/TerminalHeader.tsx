@@ -11,7 +11,7 @@ export function TerminalHeader() {
   return (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-[#18181b] text-white">
+                <div className="p-2 rounded-xl bg-[#1c1b18] text-white">
                   <Terminal size={20} />
                 </div>
                 <div>

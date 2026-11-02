@@ -48,6 +48,8 @@ test("conversão para o escuro segue o padrão VS Code, inverte luminosidade e m
   };
   assert.ok(lum(darkHex("#fcfbfa")) < 0.15, "fundo creme vira quase preto (editor VS Code)");
   assert.ok(lum(darkHex("#1c1b18", "text")) > 0.85, "texto escuro vira claro");
+  assert.ok(lum(darkHex("#141416")) < 0.15, "console PTY já escuro permanece escuro no tema escuro");
+  assert.ok(lum(darkHex("#1e1e21")) < 0.18, "barra do console PTY permanece escura no tema escuro");
   assert.equal(darkHex("#ffffff80").length, 9, "mantém o canal alfa");
   assert.match(darkHex("#fff"), /^#[0-9a-f]{6}$/);
 });
@@ -59,12 +61,13 @@ test("o CSS do tema escuro está em dia com as cores usadas no app e segue o pad
   assert.equal(current, css, "rode `npm run theme:gen`");
   assert.deepEqual(unsupported, [], "há variantes de cor sem tema escuro");
   assert.match(css, /:root\[data-theme="dark"\] body \{ background: #1e1e1e; color: #d4d4d4; \}/);
+  assert.match(css, /:root\[data-theme="dark"\] select option, :root\[data-theme="dark"\] select optgroup \{ background-color: #252526; color: #dbdbdc; \}/);
   assert.match(css, /--color-white: #252526;/);
   assert.match(css, /:root\[data-theme="dark"\] \.hover\\:bg-\\\[\\#/);
 });
 
 test("todo texto em hexadecimal do tema escuro tem contraste mínimo de 4,5:1 sobre a superfície mais clara", async () => {
-  const { generateDarkCss, contrastRatio } = await import("../scripts/gen-dark-theme.mjs");
+  const { generateDarkCss, contrastRatio, darkHex } = await import("../scripts/gen-dark-theme.mjs");
   const { css } = generateDarkCss();
   const low = [];
   let checked = 0;
@@ -86,7 +89,7 @@ test("cinza médio do tema claro (#7d7565, #938b7a, #8c8270) fica legível no es
 });
 
 test("texto de paleta nomeada (300–500) e os pares texto/fundo do cartão de permissão ficam legíveis no escuro", async () => {
-  const { generateDarkCss, contrastRatio } = await import("../scripts/gen-dark-theme.mjs");
+  const { generateDarkCss, contrastRatio, darkHex } = await import("../scripts/gen-dark-theme.mjs");
   const { css } = generateDarkCss();
   // OKLCH: Y ≈ (L/100)^3; superfície mais clara do escuro (#24211c) tem Y ≈ 0,0154.
   const ratioOklch = (l) => ((l / 100) ** 3 + 0.05) / (0.0154 + 0.05);
@@ -100,12 +103,16 @@ test("texto de paleta nomeada (300–500) e os pares texto/fundo do cartão de p
   }
   assert.ok(found.length >= 1, "há texto de paleta nomeada com regra própria");
   assert.deepEqual(low, []);
-  // Cartão de permissão: texto âmbar/zinc sobre o fundo âmbar-50 trocado (amber-950).
-  const vars = Object.fromEntries([...css.matchAll(/--color-(amber-\d+): oklch\(([\d.]+)%/g)].map((m) => [m[1], Number(m[2])]));
-  const yBg = (vars["amber-50"] / 100) ** 3;
-  for (const text of ["amber-900", "amber-800"]) {
-    const y = (vars[text] / 100) ** 3;
-    assert.ok((Math.max(y, yBg) + 0.05) / (Math.min(y, yBg) + 0.05) >= 4.5, `${text} sobre o fundo do cartão`);
+  // Cartão de permissão e badges de cota: texto 800/900 sobre o fundo 50 trocado (950).
+  const vars = Object.fromEntries([...css.matchAll(/--color-((?:amber|rose|emerald)-\d+): oklch\(([\d.]+)%/g)].map((m) => [m[1], Number(m[2])]));
+  for (const palette of ["amber", "rose", "emerald"]) {
+    const yBg = (vars[`${palette}-50`] / 100) ** 3;
+    for (const shade of ["900", "800"]) {
+      const y = (vars[`${palette}-${shade}`] / 100) ** 3;
+      assert.ok((Math.max(y, yBg) + 0.05) / (Math.min(y, yBg) + 0.05) >= 4.5, `${palette}-${shade} sobre ${palette}-50`);
+    }
   }
+  assert.ok(contrastRatio(darkHex("#a1a1aa", "text"), darkHex("#1e1e21")) >= 4.5, "texto do cabeçalho PTY sobre a barra escura");
+  assert.ok(contrastRatio(darkHex("#71717a", "text"), darkHex("#1e1e21")) >= 4.5, "texto do rodapé PTY sobre a barra escura");
   assert.ok(contrastRatio("#ffffff") > 4.5);
 });

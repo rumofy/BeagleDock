@@ -102,20 +102,26 @@ export function darkHex(hex, role = "surface") {
     // Padrão de cinzas neutros do VS Code (Dark+ / Dark Modern)
     targetH = 220;
     targetS = 0.02;
+    const isTerminalNeutral = isCoolNeutral && !isWarmNeutral;
     if (role === "text") {
-      targetL = hsl.l < 0.25 ? 0.86 : Math.max(TEXT_MIN_LIGHTNESS, 0.88 - hsl.l * 0.35);
+      targetL = isTerminalNeutral
+        ? Math.max(0.74, hsl.l < 0.75 ? hsl.l + 0.12 : hsl.l)
+        : hsl.l < 0.25
+          ? 0.86
+          : Math.max(TEXT_MIN_LIGHTNESS, 0.88 - hsl.l * 0.35);
+    } else if (isTerminalNeutral && hsl.l < 0.45) {
+      // Superfícies neutras frias já escuras (console PTY / abas de shell) permanecem escuras no tema escuro.
+      targetL = hsl.l;
+    } else if (hsl.l >= 0.70) {
+      // Mapeia superfícies claras para a escala do VS Code:
+      // #fcfbfa (l=0.98) -> ~#1e1e1e (editor VS Code, l≈0.12)
+      // #f7f5ef (l=0.95) -> ~#202122
+      // #ede9de (l=0.90) -> ~#28292a (sidebar/cards)
+      // #f4f1e8 (l=0.93) -> ~#242526 (chips/inputs)
+      // #dfdacd (l=0.84) -> ~#313234 (bordas)
+      targetL = 0.11 + (1 - hsl.l) * 0.5;
     } else {
-      if (hsl.l >= 0.70) {
-        // Mapeia superfícies claras para a escala do VS Code:
-        // #fcfbfa (l=0.98) -> ~#1e1e1e (editor VS Code, l≈0.12)
-        // #f7f5ef (l=0.95) -> ~#202122
-        // #ede9de (l=0.90) -> ~#28292a (sidebar/cards)
-        // #f4f1e8 (l=0.93) -> ~#242526 (chips/inputs)
-        // #dfdacd (l=0.84) -> ~#313234 (bordas)
-        targetL = 0.11 + (1 - hsl.l) * 0.5;
-      } else {
-        targetL = Math.min(0.95, Math.max(0.12, inverted));
-      }
+      targetL = Math.min(0.95, Math.max(0.12, inverted));
     }
   } else {
     // Cores com saturação/matiz próprio (status, acentos)
@@ -207,6 +213,8 @@ export function generateDarkCss() {
     ...vars,
     "}",
     ':root[data-theme="dark"] body { background: #1e1e1e; color: #d4d4d4; }',
+    ':root[data-theme="dark"] select option, :root[data-theme="dark"] select optgroup { background-color: #252526; color: #dbdbdc; }',
+    ':root[data-theme="dark"] select option:disabled { color: #757679; }',
     ':root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }',
     ':root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }',
     ...[...rules.keys()].sort().map((k) => rules.get(k)),

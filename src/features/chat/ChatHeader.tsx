@@ -129,7 +129,7 @@ export function ChatHeader() {
                   aria-label="Modelo"
                   data-control="model"
                   onChange={(e) => handleModelChange(e.target.value)}
-                  className="text-xs font-semibold bg-transparent text-[#2c2822] outline-none cursor-pointer"
+                  className="text-xs font-semibold bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
                   disabled={isExecutingPrompt}
                   title={
                     currentProvider.modelsError ||
@@ -165,7 +165,7 @@ export function ChatHeader() {
                       e.target.value as ReasoningEffortLevel,
                     )
                   }
-                  className="text-xs font-semibold bg-transparent text-[#2c2822] outline-none cursor-pointer"
+                  className="text-xs font-semibold bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
                   disabled={
                     isExecutingPrompt ||
                     !currentModelSelection.option?.efforts.length
@@ -199,7 +199,7 @@ export function ChatHeader() {
                   onChange={(e) =>
                     handlePermissionChange(e.target.value as PermissionLevel)
                   }
-                  className="text-xs font-semibold bg-transparent outline-none cursor-pointer"
+                  className="text-xs font-semibold bg-inherit outline-none cursor-pointer"
                   disabled={isExecutingPrompt}
                   title="Permissões da conversa (Alt+P liga o plano · Alt+M troca de modo); solicitações elegíveis aparecem no painel de aprovação"
                 >
@@ -231,7 +231,7 @@ export function ChatHeader() {
               </span>
             ) : (
               currentSession?.status === "running" && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">
+                <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   READY
                 </span>
@@ -255,7 +255,7 @@ export function ChatHeader() {
                     handleWorkspaceChange(e.target.value);
                   }
                 }}
-                className="text-[11px] font-mono font-medium bg-transparent text-[#2c2822] outline-none cursor-pointer"
+                className="text-[11px] font-mono font-medium bg-[#f4f1e8] hover:bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
                 disabled={
                   !!currentSession?.nativeSessionId || isExecutingPrompt
                 }
@@ -357,7 +357,7 @@ export function ChatHeader() {
           onClick={() => setShowInlineTerminal((prev) => !prev)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
             showInlineTerminal
-              ? "bg-[#18181b] text-white shadow-xs"
+              ? "bg-[#1c1b18] text-white shadow-xs"
               : "bg-[#ede9de] hover:bg-[#e2dcce] text-[#36322b]"
           }`}
           title="Exibir ou ocultar o terminal PTY flutuante"

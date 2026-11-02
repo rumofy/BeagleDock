@@ -119,7 +119,7 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
             role="tab"
             aria-selected={current === ALL}
             onClick={() => setSelected(ALL)}
-            className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-mono ${current === ALL ? "bg-[#3f3f46] text-white" : "text-[#a1a1aa] hover:bg-[#2e2e33]"}`}
+            className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-mono ${current === ALL ? "bg-[#3f3f46] text-[#f4f4f5]" : "text-[#a1a1aa] hover:bg-[#2e2e33]"}`}
           >
             Tudo
           </button>
@@ -132,7 +132,7 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
                 aria-selected={current === tab.id}
                 onClick={() => setSelected(tab.id)}
                 title={tab.agent ? `${tab.agent} › ${tab.label}` : tab.label}
-                className={`shrink-0 max-w-[180px] flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono ${current === tab.id ? "bg-[#3f3f46] text-white" : "text-[#a1a1aa] hover:bg-[#2e2e33]"}`}
+                className={`shrink-0 max-w-[180px] flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono ${current === tab.id ? "bg-[#3f3f46] text-[#f4f4f5]" : "text-[#a1a1aa] hover:bg-[#2e2e33]"}`}
               >
                 <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${dot(tab.status)}`} />
                 <span className="truncate">{tab.label}</span>
@@ -149,7 +149,7 @@ export function SessionShell({ sessionId }: { sessionId: string }) {
                       if (current === tab.id) setSelected(ALL);
                       closeTabs([tab.id]);
                     }}
-                    className="shrink-0 -mr-1 px-1 rounded hover:bg-[#52525b] text-[#a1a1aa] hover:text-white"
+                    className="shrink-0 -mr-1 px-1 rounded hover:bg-[#52525b] text-[#a1a1aa] hover:text-[#f4f4f5]"
                   >
                     ×
                   </span>

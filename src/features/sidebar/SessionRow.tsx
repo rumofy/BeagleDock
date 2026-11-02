@@ -149,7 +149,7 @@ export function SessionRow({ session }: { session: ChatSession }) {
           )}
           {draftIds.includes(session.id) && session.id !== activeSessionId && (
             <span
-              className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-amber-700 bg-amber-100 rounded px-1"
+              className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 rounded px-1"
               title="Mensagem não enviada"
             >
               rascunho
@@ -162,7 +162,7 @@ export function SessionRow({ session }: { session: ChatSession }) {
             {session.currentModel.replace("Claude ", "").replace("Gemini ", "")}
           </span>
           {session.reasoningEffort === "plan" && (
-            <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1 py-0.2 rounded">
+            <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1 py-0.2 rounded">
               PLAN
             </span>
           )}

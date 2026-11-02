@@ -56,7 +56,7 @@ export function SkillsModal() {
                   Skills reais instaladas no seu ambiente (
                   {installedSkills.length})
                 </span>
-                <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                <span className="text-[10px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
                   Clique para chamar a skill
                 </span>
               </div>

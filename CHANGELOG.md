@@ -4,6 +4,12 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-11-02
+
+### Corrigido
+
+- No tema escuro, os indicadores de cota (5h e semanal), o cabeçalho e o rodapé do terminal flutuante/aba de shells e as listas suspensas de seleção de workspace, modelo, nível de raciocínio e permissão agora têm contraste alto e permanecem legíveis.
+
 ## [0.5.1] - 2026-11-02
 
 ### Alterado
@@ -183,7 +189,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/rumofy/BeagleDock/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/rumofy/BeagleDock/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/rumofy/BeagleDock/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/rumofy/BeagleDock/compare/v0.3.2...v0.4.0

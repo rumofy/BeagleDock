@@ -13,7 +13,7 @@ export function SidebarFooter() {
         <div className="p-3 border-t border-[#dfdacd] flex items-center justify-between bg-[#ede9de]">
           <div className="flex items-center gap-2.5 truncate">
             <div
-              className="w-7 h-7 rounded-xl bg-[#262420] text-amber-200 flex items-center justify-center font-bold text-xs ring-1 ring-[#d4cdbd] shrink-0"
+              className="w-7 h-7 rounded-xl bg-[#262420] text-amber-50 flex items-center justify-center font-bold text-xs ring-1 ring-[#d4cdbd] shrink-0"
               title={`Usuário do Sistema Operacional: ${userProfile.fullName} (${userProfile.email})`}
             >
               {userProfile.initials || "U"}

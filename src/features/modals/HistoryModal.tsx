@@ -58,7 +58,7 @@ export function HistoryModal() {
                 <span>
                   Histórico de sessões locais (Claude Code & Codex CLI)
                 </span>
-                <span className="text-[10px] text-indigo-700 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                <span className="text-[10px] text-indigo-800 font-semibold bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
                   Clique para abrir a conversa inteira com todas as mensagens
                 </span>
               </div>
@@ -122,7 +122,7 @@ export function HistoryModal() {
                           <Copy size={11} />
                         </button>
 
-                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 group-hover:bg-indigo-600 group-hover:text-white font-mono text-[10px] font-bold text-indigo-700 transition flex items-center gap-1 shadow-2xs">
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 group-hover:bg-indigo-600 group-hover:text-white font-mono text-[10px] font-bold text-indigo-800 transition flex items-center gap-1 shadow-2xs">
                           <span>Abrir Conversa</span>
                           <ChevronRight size={12} />
                         </span>

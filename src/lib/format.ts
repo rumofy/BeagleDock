@@ -39,10 +39,10 @@ export function localUtcLabel(now = new Date()): string {
 }
 
 export const getQuotaColor = (percent: number | null) => {
-  if (percent === null) return "text-zinc-500 bg-zinc-50 border-zinc-200";
-  if (percent >= 80) return "text-rose-600 bg-rose-50 border-rose-200";
-  if (percent >= 50) return "text-amber-600 bg-amber-50 border-amber-200";
-  return "text-emerald-700 bg-emerald-50 border-emerald-200";
+  if (percent === null) return "text-zinc-700 bg-zinc-100 border-zinc-300";
+  if (percent >= 80) return "text-rose-800 bg-rose-50 border-rose-200";
+  if (percent >= 50) return "text-amber-800 bg-amber-50 border-amber-200";
+  return "text-emerald-800 bg-emerald-50 border-emerald-200";
 };
 
 export const providerQuota = (provider: AIProviderStatus) =>
@@ -61,6 +61,6 @@ export const permissionStyle = (level: PermissionLevel) => {
     case "edits":
       return "bg-amber-100/70 border-amber-200 text-amber-800";
     case "full":
-      return "bg-rose-100/80 border-rose-300 text-rose-700";
+      return "bg-rose-100/80 border-rose-300 text-rose-800";
   }
 };

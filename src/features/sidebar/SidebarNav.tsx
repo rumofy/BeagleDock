@@ -46,7 +46,7 @@ export function SidebarNav() {
                 <BrainCircuit size={16} className="text-[#847b6a]" />
                 <span>ai-memory v{memoryStatus.version}</span>
               </div>
-              <span className="flex items-center gap-1 text-[10px] text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full font-bold">
+              <span className="flex items-center gap-1 text-[10px] text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded-full font-bold">
                 {memoryStatus.totalPages} docs
               </span>
             </button>

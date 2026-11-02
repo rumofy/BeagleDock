@@ -147,7 +147,7 @@ export function ChatView() {
             scrollToEnd();
             setAwayFromEnd(false);
           }}
-          className="absolute bottom-28 right-8 z-10 flex items-center gap-1.5 rounded-full bg-[#262420] text-amber-100 text-xs font-bold px-3 py-1.5 shadow-lg"
+          className="absolute bottom-28 right-8 z-10 flex items-center gap-1.5 rounded-full bg-[#262420] text-amber-50 text-xs font-bold px-3 py-1.5 shadow-lg"
           data-testid="chat-jump-to-end"
         >
           <ArrowDown size={13} /> Ir para o fim
