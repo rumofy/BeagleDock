@@ -33,7 +33,10 @@ const {
   pickModelWindow,
   createContextTracker,
 } = require("./context-usage");
-const { DEFAULT_AUTO_COMPACT_TOKENS, resolveAutoCompactTokens } = require("./auto-compact");
+const {
+  DEFAULT_AUTO_COMPACT_TOKENS,
+  resolveAutoCompactForWindow,
+} = require("./auto-compact");
 const { askApproval, claudeApprovalOptions } = require("./approval-options");
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 const PERMISSIONS = new Set(["inherit", "plan", "ask", "edits", "full"]);
@@ -144,7 +147,13 @@ function createCliRunner({
   // Pasta onde os anexos de cada conversa são gravados.
   attachmentsRoot = dataRoot(),
 }) {
+  // Janela de cada modelo, aprendida com as respostas: o limite de compactação automático depende dela.
+  const knownWindows = new Map();
+  const windowKey = (providerId, model) => `${providerId}:${model || ""}`;
+  const autoCompactFor = (providerId, model) =>
+    resolveAutoCompactForWindow(getAutoCompactTokens(), knownWindows.get(windowKey(providerId, model)));
   const codex = createCodexStream({
+    onWindow: (model, window) => knownWindows.set(windowKey("codex", model), window),
     spawn,
     store,
     emit,
@@ -271,13 +280,14 @@ function createCliRunner({
           permission,
           nativeId,
           fingerprint: globalFingerprint(providerId),
-          autoCompactTokens: resolveAutoCompactTokens(getAutoCompactTokens()),
+          autoCompactTokens: autoCompactFor(providerId, requestedModel),
+          autoCompactKey: getAutoCompactTokens() ?? "auto",
         });
       const agySettings =
         providerId === "antigravity" && permission !== "inherit"
           ? agyPermissionSettings(permission, readAgyPermissions(), !!approvals)
           : undefined;
-      const autoCompactTokens = providerId === "claude" ? resolveAutoCompactTokens(getAutoCompactTokens()) : 0;
+      const autoCompactTokens = providerId === "claude" ? autoCompactFor(providerId, model) : 0;
       const fingerprint = globalFingerprint(providerId);
       // A permissão faz parte da chave: mudar reinicia a CLI na próxima mensagem, exceto quando a
       // troca já foi aplicada ao vivo (setPermission atualiza a chave do processo em andamento).
@@ -291,7 +301,8 @@ function createCliRunner({
           level,
           settings,
           fingerprint,
-          autoCompactTokens,
+          // O valor escolhido (não o derivado da janela): aprender a janela não reinicia a CLI.
+          getAutoCompactTokens() ?? "auto",
         ]);
       const key = keyFor(permission, agySettings);
       let entry = processes.get(sessionId);
@@ -1104,6 +1115,7 @@ function createCliRunner({
               const window = pickModelWindow(ev.modelUsage, current.model);
               if (window) {
                 current.contextWindow = window;
+                knownWindows.set(windowKey("claude", current.model), window);
                 current.context.setWindow(window, true);
               }
             }

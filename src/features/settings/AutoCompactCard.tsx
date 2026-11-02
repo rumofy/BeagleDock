@@ -1,16 +1,22 @@
 import { beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
-import { AUTO_COMPACT_CHOICES, DEFAULT_AUTO_COMPACT_TOKENS, resolveAutoCompact } from "../../lib/autoCompact";
+import { AUTO_COMPACT_CHOICES, isAutoCompactChosen, resolveAutoCompact } from "../../lib/autoCompact";
 import { formatTokens } from "../../lib/tokens";
 import type { AppSettings } from "../../types";
 
 /** Compactação automática: mantém o contexto pequeno enquanto o cache de prompt ainda está quente. */
 export function AutoCompactCard() {
   const { settings, setSettings, setAppError } = useApp();
-  const value = resolveAutoCompact(settings.autoCompactTokens);
-  const choices = AUTO_COMPACT_CHOICES.includes(value) || value === 0 ? AUTO_COMPACT_CHOICES : [...AUTO_COMPACT_CHOICES, value].sort((a, b) => a - b);
+  const picked = isAutoCompactChosen(settings.autoCompactTokens)
+    ? resolveAutoCompact(settings.autoCompactTokens)
+    : null;
+  const choices =
+    picked === null || AUTO_COMPACT_CHOICES.includes(picked) || picked === 0
+      ? AUTO_COMPACT_CHOICES
+      : [...AUTO_COMPACT_CHOICES, picked].sort((a, b) => a - b);
 
-  const save = async (autoCompactTokens: number) => {
+  // null volta ao automático (acompanha a janela do modelo).
+  const save = async (autoCompactTokens: number | null) => {
     const previous = settings;
     setSettings({ ...settings, autoCompactTokens });
     try {
@@ -33,21 +39,23 @@ export function AutoCompactCard() {
         Compactar sozinho a partir de
         <select
           aria-label="Limite de contexto para compactar sozinho"
-          value={value}
-          onChange={(e) => void save(Number(e.target.value))}
+          value={picked === null ? "auto" : picked}
+          onChange={(e) => void save(e.target.value === "auto" ? null : Number(e.target.value))}
           className="rounded-lg border border-[#d6cfbe] bg-[#faf8f4] px-2 py-1 text-xs"
         >
+          <option value="auto">Automático (conforme o modelo)</option>
           <option value={0}>Nunca (desligado)</option>
           {choices.map((tokens) => (
             <option key={tokens} value={tokens}>
-              {formatTokens(tokens)} tokens{tokens === DEFAULT_AUTO_COMPACT_TOKENS ? " (padrão)" : ""}
+              {formatTokens(tokens)} tokens
             </option>
           ))}
         </select>
       </label>
       <p className="mt-3 text-xs text-[#7d7565]">
         No Claude Code e no Codex CLI o limite é aplicado pela própria CLI (vale a partir da próxima mensagem). No
-        Antigravity o BeagleDock envia /compact ao fim da resposta quando o contexto passa do limite. Desligado, cada CLI
+        Antigravity o BeagleDock envia /compact ao fim da resposta quando o contexto passa do limite. No automático o limite é 40% da janela do modelo
+        (400 mil numa janela de 1 milhão; 200 mil se a janela for de 200 mil ou ainda desconhecida). Desligado, cada CLI
         segue o comportamento dela.
       </p>
     </div>

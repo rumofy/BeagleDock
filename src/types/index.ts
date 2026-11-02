@@ -262,7 +262,7 @@ export interface AppSettings {
   /** Segundos desde a última vez que a aba esteve na tela (padrão: 120). */
   shellAutoCloseSeconds?: number;
   /** Contexto (em tokens) a partir do qual a conversa é compactada sozinha; 0 desliga (padrão: 200 mil). */
-  autoCompactTokens?: number;
+  autoCompactTokens?: number | null;
   workspaces: WorkspaceItem[];
 }
 
