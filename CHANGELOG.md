@@ -4,6 +4,24 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-02
+
+### Adicionado
+
+- O histórico (Ctrl+H) agora lista as conversas salvas no BeagleDock, abertas e fechadas, com título, pasta e número de mensagens. Clicar reabre a própria conversa com tudo o que foi salvo, e a busca procura também no texto das mensagens.
+- Dá para apagar uma conversa definitivamente pelo histórico, com confirmação. Isso remove as mensagens, as imagens e também o arquivo da conversa no Claude Code, no Codex CLI ou no Antigravity.
+- Imagens coladas ou anexadas são otimizadas antes do envio: são convertidas para WebP e reduzidas quando o maior lado passa de 2576 px, o limite que os modelos aproveitam. Assim ocupam menos espaço sem perder legibilidade.
+
+### Alterado
+
+- Na barra lateral, “Arquivar” e “Excluir” deram lugar a “Fechar”: a conversa sai da lista, a CLI é encerrada e a conversa continua no histórico, pronta para ser reaberta. As conversas que você tinha arquivado aparecem no histórico como fechadas.
+- A lista de conversas na barra lateral não mostra mais o nome do modelo, para sobrar espaço ao assunto. Com o mouse em cima, aparecem o assunto completo e o modelo.
+- As imagens das conversas passam a ficar em arquivos na pasta de dados do BeagleDock, e não mais dentro do banco. O banco fica bem menor e as conversas fechadas não são carregadas ao abrir o app. As imagens que já estavam salvas são migradas sozinhas, sem perder nada.
+
+### Corrigido
+
+- O histórico não mostrava as conversas feitas pelo BeagleDock nem as do Claude Code abertas sem o terminal interativo. Agora elas aparecem, e as sessões vazias criadas por testes e sondagens deixam de poluir a lista.
+
 ## [0.7.0] - 2026-11-02
 
 ### Adicionado
@@ -220,7 +238,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...v0.6.0

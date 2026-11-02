@@ -16,7 +16,6 @@ export function ProviderList() {
   const { providers, handleCreateSession } = useApp();
   // Um relógio só para a lista: o selo "fria" das conversas muda na escala de minutos.
   const now = useNow(true, 60_000);
-  const [showArchived, setShowArchived] = useState<Record<string, boolean>>({});
   // Detalhes da cota (leitura, reinício, tokens, grupos): recolhidos por padrão para sobrar espaço
   // à lista de conversas; os percentuais de 5h e semana continuam no cabeçalho do provedor.
   const [showDetails, setShowDetails] = useState<Record<string, boolean>>({});
@@ -49,8 +48,8 @@ export function ProviderList() {
         {providers.map((provider) => {
           const quota = providerQuota(provider);
           const isExpanded = expandedProviders[provider.id] ?? true;
+          // Fechadas ficam só no histórico (Ctrl+H).
           const active = provider.sessions.filter((s) => !s.archived);
-          const archived = provider.sessions.filter((s) => s.archived);
 
           return (
             <div
@@ -202,7 +201,7 @@ export function ProviderList() {
               )}
               {isExpanded && (
                 <div className="py-1 px-1.5 space-y-0.5 border-t border-[#dfdacd]/40">
-                  {active.length === 0 && archived.length === 0 ? (
+                  {active.length === 0 ? (
                     <div className="px-3 py-2 text-[11px] text-[#938b7a] italic">
                       Nenhum chat ativo. Clique em + para iniciar.
                     </div>
@@ -210,28 +209,6 @@ export function ProviderList() {
                     active.map((session) => (
                       <SessionRow key={session.id} session={session} now={now} />
                     ))
-                  )}
-                  {archived.length > 0 && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setShowArchived((prev) => ({
-                            ...prev,
-                            [provider.id]: !prev[provider.id],
-                          }))
-                        }
-                        className="w-full text-left px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#8c8270] hover:text-[#443e33]"
-                        aria-expanded={!!showArchived[provider.id]}
-                      >
-                        {showArchived[provider.id] ? "▾" : "▸"} Arquivadas (
-                        {archived.length})
-                      </button>
-                      {showArchived[provider.id] &&
-                        archived.map((session) => (
-                          <SessionRow key={session.id} session={session} now={now} />
-                        ))}
-                    </>
                   )}
                 </div>
               )}

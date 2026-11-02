@@ -250,6 +250,7 @@ test("all three histories preserve original cwd, native id, and reject traversal
     ".codex/sessions/rollout-codex-id-123.jsonl",
     lines([
       { type: "session_meta", payload: { id: "codex-id-123", cwd } },
+      { type: "event_msg", payload: { type: "user_message", message: "hello codex" } },
       {
         payload: {
           type: "message",

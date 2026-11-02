@@ -86,7 +86,8 @@ export function useSessions({
 
   const allSessions = providers.flatMap((p) => p.sessions);
   const currentSession =
-    allSessions.find((s) => s.id === activeSessionId) || allSessions[0];
+    allSessions.find((s) => s.id === activeSessionId) ||
+    allSessions.find((s) => !s.archived);
   const currentProvider = providers.find(
     (p) => p.id === currentSession?.providerId,
   );
@@ -126,9 +127,7 @@ export function useSessions({
         sessions: sessions.filter((s) => s.providerId === p.id),
       })),
     );
-    setActiveSessionId(
-      (sessions.find((s) => !s.archived) || sessions[0])?.id || "",
-    );
+    setActiveSessionId(sessions.find((s) => !s.archived)?.id || "");
     setMessages(saved.messagesBySession || {});
     setContextBySession(
       Object.fromEntries(
@@ -602,35 +601,6 @@ export function useSessions({
     if (session) void sendPrompt(session, prompt);
   };
 
-  const handleDeleteSession = async (
-    sessionId: string,
-    e: React.MouseEvent,
-  ) => {
-    e.stopPropagation();
-    try {
-      const result = await beagleApi.deleteSession(sessionId);
-      if (!result?.success)
-        throw new Error(result?.error || "Falha ao excluir conversa.");
-      setProviders((prev) =>
-        prev.map((p) => ({
-          ...p,
-          sessions: p.sessions.filter((s) => s.id !== sessionId),
-        })),
-      );
-      setMessages((prev) => {
-        const next = { ...prev };
-        delete next[sessionId];
-        return next;
-      });
-      if (activeSessionId === sessionId)
-        setActiveSessionId(
-          allSessions.find((s) => s.id !== sessionId)?.id || "",
-        );
-    } catch (error) {
-      setAppError((error as Error).message);
-    }
-  };
-
   // Renomear grava o título escolhido: o título automático só troca títulos genéricos, então um
   // nome dado pela pessoa nunca é sobrescrito.
   const renameSession = async (sessionId: string, title: string) => {
@@ -660,17 +630,18 @@ export function useSessions({
     }
   };
 
-  // Arquivar tira da lista principal sem apagar nada; a busca e o histórico continuam enxergando.
+  // Fechar tira a conversa da barra lateral e encerra o processo da CLI; ela continua no
+  // histórico (campo `archived` no banco) e as mensagens saem da memória até ser reaberta.
   const setSessionArchived = async (sessionId: string, archived: boolean) => {
     if (archived && (pendingTurns.current.get(sessionId) || 0) > 0) {
-      setAppError("Pare a execução desta conversa antes de arquivá-la.");
+      setAppError("Pare a execução desta conversa antes de fechá-la.");
       return;
     }
     try {
       const result = await beagleApi.setSessionArchived(sessionId, archived);
       if (!result?.success)
         throw new Error(
-          result?.error || "Não foi possível arquivar a conversa.",
+          result?.error || "Não foi possível fechar a conversa.",
         );
       setProviders((prev) =>
         prev.map((p) => ({
@@ -680,13 +651,66 @@ export function useSessions({
           ),
         })),
       );
-      if (archived && activeSessionId === sessionId)
-        setActiveSessionId(
-          allSessions.find((s) => s.id !== sessionId && !s.archived)?.id || "",
-        );
+      if (archived) {
+        setMessages((prev) => {
+          const next = { ...prev };
+          delete next[sessionId];
+          return next;
+        });
+        if (activeSessionId === sessionId)
+          setActiveSessionId(
+            allSessions.find((s) => s.id !== sessionId && !s.archived)?.id ||
+              "",
+          );
+      }
     } catch (error) {
       setAppError((error as Error).message);
     }
+  };
+
+  // Reabre pelo histórico uma conversa do BeagleDock: volta à barra lateral com as mensagens salvas.
+  const reopenSession = async (sessionId: string) => {
+    const session = allSessions.find((s) => s.id === sessionId);
+    if (!session) throw new Error("Conversa inexistente ou removida.");
+    if (session.archived) {
+      const result = await beagleApi.setSessionArchived(sessionId, false);
+      if (!result?.success)
+        throw new Error(result?.error || "Não foi possível reabrir a conversa.");
+    }
+    if (!messages[sessionId]) {
+      const saved = await beagleApi.getChatMessages(sessionId);
+      setMessages((prev) =>
+        prev[sessionId] ? prev : { ...prev, [sessionId]: saved || [] },
+      );
+    }
+    setProviders((prev) =>
+      prev.map((p) => ({
+        ...p,
+        sessions: p.sessions.map((s) =>
+          s.id === sessionId ? { ...s, archived: false } : s,
+        ),
+      })),
+    );
+    setActiveSessionId(sessionId);
+  };
+
+  // Depois de apagar pelo histórico: some da tela sem outra ida ao backend.
+  const forgetSession = (sessionId: string) => {
+    setProviders((prev) =>
+      prev.map((p) => ({
+        ...p,
+        sessions: p.sessions.filter((s) => s.id !== sessionId),
+      })),
+    );
+    setMessages((prev) => {
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+    if (activeSessionId === sessionId)
+      setActiveSessionId(
+        allSessions.find((s) => s.id !== sessionId && !s.archived)?.id || "",
+      );
   };
 
   // Claude Code: a compactação é a mensagem /compact (testado com a CLI real); Codex tem comando
@@ -1052,9 +1076,10 @@ export function useSessions({
     handleContinueInCli,
     handleCreateSession,
     createSession,
-    handleDeleteSession,
     renameSession,
     setSessionArchived,
+    reopenSession,
+    forgetSession,
     contextBySession,
     compactContext,
     unreadSessionIds,

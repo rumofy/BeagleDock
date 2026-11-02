@@ -40,6 +40,7 @@ if (!w.beagleAPI && import.meta.env.DEV && token) {
     "getAIMemoryMaintenanceCwd",
     "getInstalledSkills",
     "getCliHistory",
+    "deleteConversation",
     "loadFullConversation",
     "getUserProfile",
     "getAppVersion",

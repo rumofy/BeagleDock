@@ -288,13 +288,20 @@ export interface SkillItem {
 
 export interface HistorySessionItem {
   id: string;
+  /** `beagledock`: conversa salva no BeagleDock; `native`: só existe nos arquivos da CLI. */
+  source: "beagledock" | "native";
   provider: AIProviderId;
   providerName: string;
   title: string;
   prompt: string;
   project: string;
   date: string;
+  timestampMs: number;
+  /** ID nativo da CLI, quando conhecido. */
   sessionId?: string;
+  beagleSessionId?: string;
+  closed?: boolean;
+  messageCount?: number;
 }
 
 export interface UserProfile {

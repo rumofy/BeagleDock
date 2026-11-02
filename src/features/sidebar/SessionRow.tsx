@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Pencil, Trash2 } from "lucide-react";
+import { Pencil, X } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { staleContext } from "../../lib/staleContext";
 import { formatTokens } from "../../lib/tokens";
 import type { ChatSession } from "../../types";
 
-/** Uma conversa na lista: selecionar, renomear (duplo clique), arquivar e excluir com confirmação. */
+/** Uma conversa aberta: selecionar, renomear (duplo clique) e fechar (ela continua no histórico). */
 export function SessionRow({ session, now }: { session: ChatSession; now: number }) {
   const {
     activeTab,
@@ -15,14 +15,12 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     draftIds,
     unreadSessionIds,
     cliApprovals,
-    handleDeleteSession,
     renameSession,
     setSessionArchived,
     contextBySession,
   } = useApp();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
-  const [confirming, setConfirming] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   // Escape cancela: o blur que vem junto não pode salvar o nome.
   const cancelled = useRef(false);
@@ -33,12 +31,6 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     input.current?.focus();
     input.current?.select();
   }, [editing]);
-  // A confirmação de exclusão expira sozinha: um clique perdido não deixa o botão armado.
-  useEffect(() => {
-    if (!confirming) return;
-    const id = setTimeout(() => setConfirming(false), 3500);
-    return () => clearTimeout(id);
-  }, [confirming]);
 
   const commit = () => {
     setEditing(false);
@@ -87,7 +79,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
         isSelected
           ? "bg-[#ffffff] font-semibold text-[#181715] shadow-xs"
           : "text-[#4e483d] hover:bg-[#eae4d5]"
-      } ${session.archived ? "opacity-70" : ""}`}
+      }`}
     >
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center gap-2 truncate min-w-0">
@@ -128,7 +120,8 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
           ) : (
             <span
               className="truncate text-xs"
-              title="Duplo clique para renomear"
+              data-session-title
+              title={`${session.title}${session.currentModel ? `\nModelo: ${session.currentModel}` : ""}\nDuplo clique para renomear`}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 startEditing();
@@ -172,17 +165,14 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
           )}
         </div>
 
-        <div className="flex items-center gap-1 shrink-0 ml-2">
-          <span className="text-[10px] font-mono text-[#8c8270] opacity-80">
-            {session.currentModel.replace("Claude ", "").replace("Gemini ", "")}
-          </span>
+        <div className="flex items-center gap-1 shrink-0 ml-1">
           {session.reasoningEffort === "plan" && (
             <span className="text-[9px] font-bold text-emerald-800 bg-emerald-100 px-1 py-0.2 rounded">
               PLAN
             </span>
           )}
           {!editing && (
-            <span className="flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition">
+            <span className="hidden group-hover:flex group-focus-within:flex items-center">
               <button
                 type="button"
                 onClick={(e) => {
@@ -199,52 +189,14 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  void setSessionArchived(session.id, !session.archived);
+                  void setSessionArchived(session.id, true);
                 }}
-                className="p-0.5 hover:text-[#181715] rounded"
-                title={
-                  session.archived
-                    ? "Desarquivar"
-                    : "Arquivar (mantém o histórico)"
-                }
-                aria-label={
-                  session.archived
-                    ? "Desarquivar conversa"
-                    : "Arquivar conversa"
-                }
+                className="p-0.5 hover:text-[#181715] rounded ml-0.5"
+                title="Fechar (encerra a CLI; a conversa fica no histórico, Ctrl+H)"
+                aria-label="Fechar conversa"
               >
-                {session.archived ? (
-                  <ArchiveRestore size={11} />
-                ) : (
-                  <Archive size={11} />
-                )}
+                <X size={12} />
               </button>
-              {confirming ? (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setConfirming(false);
-                    handleDeleteSession(session.id, e);
-                  }}
-                  className="ml-1 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[10px] font-bold"
-                  title="Remove a conversa e o histórico salvo; não dá para desfazer"
-                >
-                  Excluir?
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setConfirming(true);
-                  }}
-                  className="p-0.5 hover:text-rose-600 rounded ml-1"
-                  title="Encerrar e remover sessão"
-                  aria-label="Excluir conversa"
-                >
-                  <Trash2 size={11} />
-                </button>
-              )}
             </span>
           )}
         </div>

@@ -288,7 +288,12 @@ export interface BeagleAPI {
   getAIMemoryMaintenanceCwd(): Promise<string>;
   runAIMemoryCommand(subcmdArgs: string[], cwd?: string): Promise<AIMemoryCommandResult>;
   getInstalledSkills(): Promise<SkillItem[]>;
-  getCliHistory(): Promise<HistorySessionItem[]>;
+  getCliHistory(query?: string): Promise<HistorySessionItem[]>;
+  deleteConversation(request: {
+    provider: AIProviderId;
+    beagleSessionId?: string;
+    nativeId?: string;
+  }): Promise<OkResult & { success?: boolean; removedFiles?: number }>;
   loadFullConversation(provider: AIProviderId, sessionId?: string): Promise<FullConversation>;
   getUserProfile(): Promise<UserProfile>;
   getAppVersion(): Promise<string>;

@@ -258,7 +258,7 @@ async function send(win, text, expected) {
       assert.match(claude.text, /Arquivos anexados:\n- .*erro\.log/);
     }
     if (agy) {
-      assert.match(agy.text, /print\.png.*\(imagem\)/s);
+      assert.match(agy.text, /\.png \(imagem: print\.png\)/);
       await waitFor(win, `document.body.innerText.includes('Antigravity não tem campo nativo de imagem')`);
     }
     if (codex) assert.deepEqual(codex.slice(0, 3), ["text", "localImage", "mention:erro.log"]);
@@ -418,12 +418,11 @@ async function send(win, text, expected) {
       );
       await waitFor(win, `window.__liveOutput.includes('LIVE_MIDDLE')`);
       if (index === 1) {
-        // Codex: dois comandos em paralelo chegam etiquetados e cada um ganha a própria aba.
+        // Codex: dois comandos em paralelo chegam etiquetados, cada saída com a origem certa.
         await waitFor(win, `window.__shellOutput['live-cmd']?.includes('LIVE_FIRST') && window.__shellOutput['live-cmd-2']?.includes('PARALLEL_BUILD')`);
         assert.equal(await win.webContents.executeJavaScript(`!window.__shellOutput['live-cmd'].includes('PARALLEL_BUILD') && !window.__shellOutput['live-cmd-2'].includes('LIVE_FIRST')`), true, "a saída de cada comando fica na origem dele");
-        await waitFor(win, `[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].map(t=>t.innerText).join('|').includes('fixture tests') && [...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].map(t=>t.innerText).join('|').includes('fixture build')`);
-        await win.webContents.executeJavaScript(`[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].find(t=>t.innerText.includes('fixture build')).click()`);
-        await waitFor(win, `[...document.querySelectorAll('[data-testid="shell-tabs"] [role="tab"]')].find(t=>t.innerText.includes('fixture build')).getAttribute('aria-selected')==='true'`);
+        // Sem abas (0.6.1): as saídas dos dois comandos aparecem no mesmo fluxo do shell.
+        await waitFor(win, `(()=>{const t=document.querySelector('[data-testid="live-shell"]')?.innerText||'';return t.includes('LIVE_FIRST')&&t.includes('PARALLEL_BUILD');})()`);
       }
       if (index === 1) await waitFor(win, `document.body.innerText.includes('Analisando um comando com argumentos extensos')`);
       assert.equal(
@@ -656,7 +655,10 @@ async function send(win, text, expected) {
         ),
         "utf8",
       );
-      assert.equal(received.includes("queued-cancel-" + index), false);
+      // No Claude Code as mensagens enviadas durante a resposta são entregues no meio dela (não ficam
+      // na fila); nas outras CLIs elas esperam na fila e o Parar as cancela sem chegar à CLI.
+      if (provider !== "claude")
+        assert.equal(received.includes("queued-cancel-" + index), false);
       await send(
         win,
         "resume after stop " + index,
@@ -711,10 +713,10 @@ async function send(win, text, expected) {
     `!!document.querySelector('select[aria-label="Antigravity: Política de ferramentas global"]')`,
   );
   if (stage === "first") {
-    // Renomear (duplo clique), arquivar, desarquivar e excluir com confirmação; o estado é restaurado.
+    // Renomear (duplo clique), fechar, reabrir pelo histórico e apagar com confirmação; o estado é restaurado.
     const rowSelector = `[data-session-id]`;
     const original = await win.webContents.executeJavaScript(
-      `document.querySelector('${rowSelector} span[title="Duplo clique para renomear"]').textContent`,
+      `document.querySelector('${rowSelector} span[data-session-title]').textContent`,
     );
     const rowId = await win.webContents.executeJavaScript(
       `document.querySelector('${rowSelector}').getAttribute('data-session-id')`,
@@ -722,7 +724,7 @@ async function send(win, text, expected) {
     const row = `[data-session-id="${rowId}"]`;
     const typeName = async (name) => {
       await win.webContents.executeJavaScript(
-        `document.querySelector('${row} span[title="Duplo clique para renomear"]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));void 0`,
+        `document.querySelector('${row} span[data-session-title]').dispatchEvent(new MouseEvent('dblclick',{bubbles:true}));void 0`,
       );
       await waitFor(win, `!!document.querySelector('input[aria-label="Novo nome da conversa"]')`);
       await win.webContents.executeJavaScript(
@@ -730,34 +732,45 @@ async function send(win, text, expected) {
       );
       await waitFor(
         win,
-        `document.querySelector('${row} span[title="Duplo clique para renomear"]')?.textContent===${JSON.stringify(name)}`,
+        `document.querySelector('${row} span[data-session-title]')?.textContent===${JSON.stringify(name)}`,
       );
     };
     await typeName("Renomeada no smoke");
-    // Arquivar: sai da lista principal e aparece em "Arquivadas".
+    // Fechar: sai da barra lateral e fica no histórico; reabrir pelo histórico traz de volta.
+    const history = `[data-history-id="beagledock:${rowId}"]`;
+    const openHistory = async () => {
+      await win.webContents.executeJavaScript(
+        `[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Histórico de Conversas')).click()`,
+      );
+      await waitFor(win, `!!document.querySelector('${history}')`);
+    };
     await win.webContents.executeJavaScript(
-      `document.querySelector('${row} button[aria-label="Arquivar conversa"]').click()`,
+      `document.querySelector('${row} button[aria-label="Fechar conversa"]').click()`,
     );
-    await waitFor(win, `!document.querySelector('${row}') && document.body.innerText.toLowerCase().includes('arquivadas (1)')`);
+    await waitFor(win, `!document.querySelector('${row}') && !document.body.innerText.toLowerCase().includes('arquivadas')`);
+    await openHistory();
+    await waitFor(win, `document.querySelector('${history}').innerText.toLowerCase().includes('fechada')`);
+    await win.webContents.executeJavaScript(`document.querySelector('${history}').click()`);
+    await waitFor(win, `!!document.querySelector('${row}') && !document.querySelector('${history}')`);
+    // Apagar fica só no histórico e exige confirmar: o primeiro clique só arma o botão.
+    await openHistory();
     await win.webContents.executeJavaScript(
-      `[...document.querySelectorAll('button[aria-expanded]')].find(b=>b.textContent.includes('Arquivadas')).click()`,
+      `document.querySelector('${history} button[aria-label="Apagar conversa definitivamente"]').click()`,
     );
-    await waitFor(win, `!!document.querySelector('${row} button[aria-label="Desarquivar conversa"]')`);
-    await win.webContents.executeJavaScript(
-      `document.querySelector('${row} button[aria-label="Desarquivar conversa"]').click()`,
-    );
-    await waitFor(win, `!!document.querySelector('${row} button[aria-label="Arquivar conversa"]') && !document.body.innerText.toLowerCase().includes('arquivadas (')`);
-    // Excluir exige confirmar: o primeiro clique só arma o botão.
-    await win.webContents.executeJavaScript(
-      `document.querySelector('${row} button[aria-label="Excluir conversa"]').click()`,
-    );
-    await waitFor(win, `!![...document.querySelectorAll('${row} button')].find(b=>b.textContent==='Excluir?')`);
+    await waitFor(win, `!![...document.querySelectorAll('${history} button')].find(b=>b.textContent==='Apagar de vez?')`);
     assert.equal(
       await win.webContents.executeJavaScript(`!!document.querySelector('${row}')`),
       true,
-      "o primeiro clique não exclui",
+      "o primeiro clique não apaga",
     );
-    await waitFor(win, `![...document.querySelectorAll('${row} button')].find(b=>b.textContent==='Excluir?')`, 6000);
+    await waitFor(win, `![...document.querySelectorAll('${history} button')].find(b=>b.textContent==='Apagar de vez?')`, 6000);
+    await win.webContents.executeJavaScript(`document.querySelector('button[aria-label="Fechar histórico"]').click()`);
+    await waitFor(win, `!document.querySelector('${history}')`);
+    // Reabrir leva ao chat: volta às configurações para os passos seguintes.
+    await win.webContents.executeJavaScript(
+      `document.querySelector('button[title="Configurações, Banco SQLite & MCPs"]').click()`,
+    );
+    await waitFor(win, `!!document.querySelector('select[aria-label="Antigravity: Política de ferramentas global"]')`);
     await typeName(original);
   }
   if (stage === "first") {
@@ -798,16 +811,6 @@ async function send(win, text, expected) {
       ),
       ["update"],
     );
-    // Auto-close das abas do shell: ligado por padrão; desligar é gravado e sobrevive à reinicialização.
-    const box = `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Fechar sozinha a aba'))`;
-    assert.equal(await win.webContents.executeJavaScript(`${box}.checked`), true);
-    await win.webContents.executeJavaScript(`${box}.click()`);
-    await waitFor(win, `${box}.checked===false && ${box}.closest('div').querySelector('select[aria-label="Tempo para fechar a aba concluída"]').disabled`);
-    assert.equal(
-      (await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`)).settings?.shellAutoClose,
-      false,
-      "a preferência foi gravada",
-    );
     // Segundo plano: desligar “manter na bandeja” e ligar “iniciar com o sistema” (arquivo no HOME do teste).
     const bg = (text) => `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes(${JSON.stringify(text)}))`;
     assert.equal(await win.webContents.executeJavaScript(`${bg("Manter o BeagleDock na bandeja")}.checked`), true);
@@ -825,10 +828,6 @@ async function send(win, text, expected) {
     await win.webContents.executeJavaScript(`${bg("Manter o BeagleDock na bandeja")}.click()`);
     await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.runInBackground===true)`);
   } else {
-    const closed = await win.webContents.executeJavaScript(
-      `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Fechar sozinha a aba'))?.checked`,
-    );
-    assert.equal(closed, false, "a preferência de auto-close sobrevive à reinicialização");
     const persisted = await win.webContents.executeJavaScript(`({
       tray: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Manter o BeagleDock na bandeja')).checked,
       login: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Iniciar junto com o sistema')).checked,

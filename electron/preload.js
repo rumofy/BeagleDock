@@ -39,7 +39,9 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   runAIMemoryCommand: (subcmdArgs, cwd) =>
     ipcRenderer.invoke("ai-memory-command", subcmdArgs, cwd),
   getInstalledSkills: () => ipcRenderer.invoke("get-skills"),
-  getCliHistory: () => ipcRenderer.invoke("get-history"),
+  getCliHistory: (query) => ipcRenderer.invoke("get-history", query),
+  deleteConversation: (request) =>
+    ipcRenderer.invoke("delete-conversation", request),
   loadFullConversation: (provider, sessionId) =>
     ipcRenderer.invoke("load-full-conversation", provider, sessionId),
   getUserProfile: () => ipcRenderer.invoke("get-user-profile"),

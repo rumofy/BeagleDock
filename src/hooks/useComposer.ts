@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { loadDrafts, saveDrafts, updateDraft, type DraftMap } from "../lib/drafts";
 import { attachmentProblem, sizeText } from "../lib/attachments";
+import { optimizeImage, webpName } from "../lib/imageOptimize";
 import { modelSwitch, staleContext } from "../lib/staleContext";
 import type { ChatAttachment, ChatSession, ContextInfo } from "../types";
 
@@ -122,25 +123,33 @@ export function useComposer({
         break;
       }
       planned += 1;
-      const reader = new FileReader();
-      reader.onerror = () => setAppError(`Não foi possível ler “${file.name}”.`);
-      reader.onload = (loadEvent) => {
-        const isImage = file.type.startsWith("image/");
-        setAttachments((prev) => [
-          ...prev,
-          {
-            id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            name:
-              file.name ||
-              `print-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.png`,
-            type: isImage ? "image" : "file",
-            url: loadEvent.target?.result as string,
-            sizeText: sizeText(file.size),
-          },
-        ]);
-      };
-      reader.readAsDataURL(file);
+      void readAttachment(file);
     }
+  };
+
+  // Imagens passam pela otimização (WebP, no máximo 2576 px no maior lado) antes de virar anexo.
+  const readAttachment = async (file: File) => {
+    const isImage = file.type.startsWith("image/");
+    const baseName =
+      file.name ||
+      `print-${new Date().toISOString().slice(11, 19).replace(/:/g, "")}.png`;
+    const optimized = isImage ? await optimizeImage(file) : null;
+    const content: Blob = optimized || file;
+    const reader = new FileReader();
+    reader.onerror = () => setAppError(`Não foi possível ler “${baseName}”.`);
+    reader.onload = (loadEvent) => {
+      setAttachments((prev) => [
+        ...prev,
+        {
+          id: `att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          name: optimized ? webpName(baseName) : baseName,
+          type: isImage ? "image" : "file",
+          url: loadEvent.target?.result as string,
+          sizeText: sizeText(content.size),
+        },
+      ]);
+    };
+    reader.readAsDataURL(content);
   };
 
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {

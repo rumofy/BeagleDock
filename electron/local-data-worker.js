@@ -8,7 +8,7 @@ try {
     action === "metrics"
       ? readLocalMetrics()
       : action === "history"
-        ? reader.history()
+        ? reader.history(...args)
         : reader.conversation(...args);
   parentPort.postMessage({ result });
 } catch (error) {

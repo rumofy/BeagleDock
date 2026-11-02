@@ -53,6 +53,7 @@ const codexMcpAuth = createMcpAuthWatcher({
 const { createCliRunner } = require("./cli-runner");
 const { resolveModelSelection } = require("./model-options");
 const { createSessionService } = require("./session-service");
+const { createHistory } = require("./history");
 const { Worker } = require("worker_threads");
 const {
   initDatabase,
@@ -63,6 +64,8 @@ const {
   setSessionContext,
   mergeMessageEvents,
   deleteSessionFromDb,
+  listConversationHistory,
+  linkedNativeIds,
   getSavedSessions,
   saveChatMessage,
   setMessageTime,
@@ -384,8 +387,30 @@ function getInstalledSkills() {
   return skills;
 }
 
-function getCliHistory() {
-  return runLocalJob("history");
+// Histórico: conversas do BeagleDock (banco) primeiro, depois as conversas só do terminal de cada
+// CLI, sem repetir as que já estão ligadas a uma conversa do BeagleDock.
+async function getCliHistory(query = "") {
+  const term = typeof query === "string" ? query.slice(0, 200) : "";
+  const [own, linked] = await Promise.all([
+    listConversationHistory(term),
+    linkedNativeIds(),
+  ]);
+  const native = await runLocalJob("history", [
+    { query: term, exclude: linked },
+  ]).catch(() => []);
+  const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
+  return [
+    ...own.map((item) => ({ ...item, providerName: names[item.provider] })),
+    ...native,
+  ];
+}
+function killPty(sessionId) {
+  const ptyEntry = activePtySessions.get(sessionId);
+  if (!ptyEntry) return;
+  try {
+    ptyEntry.proc?.kill();
+  } catch {}
+  activePtySessions.delete(sessionId);
 }
 function loadFullConversation(provider, sessionId) {
   return runLocalJob("conversation", [provider, sessionId]);
@@ -1018,8 +1043,33 @@ module.exports.ready = app.whenReady().then(async () => {
     return getInstalledSkills();
   });
 
-  handle("get-history", async () => {
-    return getCliHistory();
+  handle("get-history", async (_event, query) => {
+    return getCliHistory(query);
+  });
+
+  // Apagar definitivamente: conversa do BeagleDock (mensagens e anexos) e a conversa nativa da CLI.
+  handle("delete-conversation", async (_event, request) => {
+    try {
+      const { provider, beagleSessionId, nativeId } = request || {};
+      if (!["claude", "codex", "antigravity"].includes(provider))
+        throw new Error("Provedor inválido.");
+      if (beagleSessionId !== undefined && typeof beagleSessionId !== "string")
+        throw new Error("Conversa inválida.");
+      let native = typeof nativeId === "string" ? nativeId : undefined;
+      if (beagleSessionId) {
+        const saved = (await getSavedSessions()).find((s) => s.id === beagleSessionId);
+        if (!saved) throw new Error("Conversa inexistente ou removida.");
+        if (saved.providerId !== provider) throw new Error("Provedor incompatível com a conversa salva.");
+        // O ID nativo vem do vínculo salvo, nunca do pedido.
+        native = saved.nativeSessionId;
+        killPty(beagleSessionId);
+        await sessionService.remove(beagleSessionId);
+      }
+      const removedFiles = native ? createHistory().remove(provider, native) : [];
+      return { success: true, removedFiles: removedFiles.length };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   });
 
   handle("load-full-conversation", async (_event, provider, sessionId) => {
@@ -1055,13 +1105,7 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("delete-session", async (_event, sessionId) => {
     try {
-      const ptyEntry = activePtySessions.get(sessionId);
-      if (ptyEntry && ptyEntry.proc) {
-        try {
-          ptyEntry.proc.kill();
-        } catch (e) {}
-        activePtySessions.delete(sessionId);
-      }
+      killPty(sessionId);
       return await sessionService.remove(sessionId);
     } catch (e) {
       return { success: false, error: e.message };
@@ -1278,6 +1322,8 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("set-session-archived", async (_event, id, archived) => {
     try {
       if (typeof id !== "string") throw new Error("Conversa inválida.");
+      // Fechar encerra o processo da CLI; a conversa fica no histórico.
+      if (archived === true) killPty(id);
       return await sessionService.setSessionArchived(id, archived === true);
     } catch (e) {
       return { success: false, error: e.message };
