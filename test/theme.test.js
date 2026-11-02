@@ -40,24 +40,26 @@ test("atalhos de zoom: Ctrl +, Ctrl -, Ctrl 0; outras teclas passam", () => {
   assert.equal(zoom.zoomForKey(key("=", { alt: true }), 1), null);
 });
 
-test("conversão para o escuro inverte a luminosidade e mantém o matiz e a transparência", async () => {
+test("conversão para o escuro segue o padrão VS Code, inverte luminosidade e mantém transparência", async () => {
   const { darkHex } = await import("../scripts/gen-dark-theme.mjs");
   const lum = (hex) => {
     const n = (i) => parseInt(hex.slice(1 + i, 3 + i), 16);
     return (Math.max(n(0), n(2), n(4)) + Math.min(n(0), n(2), n(4))) / 510;
   };
-  assert.ok(lum(darkHex("#fcfbfa")) < 0.15, "fundo creme vira quase preto");
+  assert.ok(lum(darkHex("#fcfbfa")) < 0.15, "fundo creme vira quase preto (editor VS Code)");
   assert.ok(lum(darkHex("#1c1b18", "text")) > 0.85, "texto escuro vira claro");
   assert.equal(darkHex("#ffffff80").length, 9, "mantém o canal alfa");
   assert.match(darkHex("#fff"), /^#[0-9a-f]{6}$/);
 });
 
-test("o CSS do tema escuro está em dia com as cores usadas no app", async () => {
+test("o CSS do tema escuro está em dia com as cores usadas no app e segue o padrão VS Code", async () => {
   const { generateDarkCss } = await import("../scripts/gen-dark-theme.mjs");
   const { css, unsupported } = generateDarkCss();
   const current = fs.readFileSync(path.resolve("src/dark-theme.generated.css"), "utf8");
   assert.equal(current, css, "rode `npm run theme:gen`");
   assert.deepEqual(unsupported, [], "há variantes de cor sem tema escuro");
+  assert.match(css, /:root\[data-theme="dark"\] body \{ background: #1e1e1e; color: #d4d4d4; \}/);
+  assert.match(css, /--color-white: #252526;/);
   assert.match(css, /:root\[data-theme="dark"\] \.hover\\:bg-\\\[\\#/);
 });
 

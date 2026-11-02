@@ -1,6 +1,6 @@
 {
   "name": "beagledock",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Multi-CLI for Developers — Claude Code, Codex CLI and Antigravity",
   "main": "electron/main.js",
   "type": "commonjs",
