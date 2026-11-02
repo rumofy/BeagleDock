@@ -1,6 +1,8 @@
 // Gera src/dark-theme.generated.css a partir das cores realmente usadas nas classes do app.
-// Cores em hexadecimal são invertidas em luminosidade; a paleta nomeada do Tailwind troca as faixas
-// (50↔950, 100↔900…). Rode `npm run theme:gen` depois de mexer em cores; o teste acusa arquivo velho.
+// Cores hexadecimais neutras/creme são mapeadas para o padrão de cinzas escuros do VS Code (Dark+ / Dark Modern);
+// cores semânticas (verde, azul, etc.) têm luminosidade ajustada para contraste;
+// e a paleta nomeada do Tailwind troca as faixas (50↔950, 100↔900…).
+// Rode `npm run theme:gen` depois de mexer em cores; o teste acusa arquivo velho.
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,17 +84,49 @@ function hslToHex({ h, s, l }, a) {
 // médios sobre o fundo escuro. Por isso o texto nunca fica abaixo de uma luminosidade mínima.
 const TEXT_PROPS = new Set(["text", "placeholder", "decoration", "caret"]);
 const TEXT_MIN_LIGHTNESS = 0.66;
-const SURFACE_BASE = "#24211c"; // o fundo mais claro sobre o qual um texto pode aparecer no escuro
+const SURFACE_BASE = "#28292a"; // o fundo mais claro sobre o qual um texto pode aparecer no escuro
 
 export function darkHex(hex, role = "surface") {
   const rgba = hexToRgba(hex);
   const hsl = rgbToHsl(rgba);
+  const isWarmNeutral = hsl.h >= 20 && hsl.h <= 55 && hsl.s <= 0.45;
+  const isCoolNeutral = hsl.s <= 0.15;
+  const isNeutral = isWarmNeutral || isCoolNeutral;
+
   const inverted = 1 - hsl.l;
-  const l =
-    role === "text"
-      ? Math.min(0.97, Math.max(TEXT_MIN_LIGHTNESS, inverted))
-      : Math.min(0.96, Math.max(0.07, inverted));
-  return hslToHex({ h: hsl.h, s: hsl.s * (role === "text" ? 0.7 : 0.85), l }, rgba.a);
+  let targetH = hsl.h;
+  let targetS = hsl.s;
+  let targetL;
+
+  if (isNeutral) {
+    // Padrão de cinzas neutros do VS Code (Dark+ / Dark Modern)
+    targetH = 220;
+    targetS = 0.02;
+    if (role === "text") {
+      targetL = hsl.l < 0.25 ? 0.86 : Math.max(TEXT_MIN_LIGHTNESS, 0.88 - hsl.l * 0.35);
+    } else {
+      if (hsl.l >= 0.70) {
+        // Mapeia superfícies claras para a escala do VS Code:
+        // #fcfbfa (l=0.98) -> ~#1e1e1e (editor VS Code, l≈0.12)
+        // #f7f5ef (l=0.95) -> ~#202122
+        // #ede9de (l=0.90) -> ~#28292a (sidebar/cards)
+        // #f4f1e8 (l=0.93) -> ~#242526 (chips/inputs)
+        // #dfdacd (l=0.84) -> ~#313234 (bordas)
+        targetL = 0.11 + (1 - hsl.l) * 0.5;
+      } else {
+        targetL = Math.min(0.95, Math.max(0.12, inverted));
+      }
+    }
+  } else {
+    // Cores com saturação/matiz próprio (status, acentos)
+    targetS = role === "text" ? Math.min(hsl.s, 0.75) : Math.min(hsl.s, 0.85);
+    targetL =
+      role === "text"
+        ? Math.min(0.97, Math.max(TEXT_MIN_LIGHTNESS, inverted))
+        : Math.min(0.96, Math.max(0.08, inverted));
+  }
+
+  return hslToHex({ h: targetH, s: targetS, l: targetL }, rgba.a);
 }
 
 function luminance(hex) {
@@ -169,12 +203,12 @@ export function generateDarkCss() {
     "/* GERADO por scripts/gen-dark-theme.mjs — não edite; rode `npm run theme:gen`. */",
     ':root[data-theme="dark"] {',
     "  color-scheme: dark;",
-    "  --color-white: #24211c;",
+    "  --color-white: #252526;",
     ...vars,
     "}",
-    ':root[data-theme="dark"] body { background: #14130f; color: #ece7da; }',
-    ':root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); }',
-    ':root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }',
+    ':root[data-theme="dark"] body { background: #1e1e1e; color: #d4d4d4; }',
+    ':root[data-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(121, 121, 121, 0.4); }',
+    ':root[data-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(100, 100, 100, 0.7); }',
     ...[...rules.keys()].sort().map((k) => rules.get(k)),
     "",
   ];
