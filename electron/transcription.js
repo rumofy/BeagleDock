@@ -28,6 +28,7 @@ const BASE_VOCABULARY = [
   "Codex CLI",
   "Codex",
   "Antigravity",
+  "AGY",
   "BeagleDock",
   "ai-memory",
   "Claude",
@@ -105,13 +106,24 @@ const SOUND_SAFE_NAMES = ["Codex", "Anthropic", "Supabase", "Kubernetes", "ChatG
 // então só a expressão completa vira o nome da ferramenta.
 const BASE_REPLACEMENTS = [
   { from: "cloud code", to: "Claude Code" },
+  { from: "cloud coding", to: "Claude Code" },
   { from: "clode code", to: "Claude Code" },
+  { from: "clode coding", to: "Claude Code" },
+  // "Cláudio" sozinho é nome de gente; só junto de "code/coding" é a ferramenta.
+  { from: "claudio code", to: "Claude Code" },
+  { from: "claudio coding", to: "Claude Code" },
+  { from: "cláudio code", to: "Claude Code" },
+  { from: "cláudio coding", to: "Claude Code" },
+  { from: "claude coding", to: "Claude Code" },
   { from: "cloud desktop", to: "Claude Desktop" },
   { from: "cloud sonnet", to: "Claude Sonnet" },
   { from: "cloud opus", to: "Claude Opus" },
   { from: "cloud haiku", to: "Claude Haiku" },
   { from: "codex cli", to: "Codex CLI" },
   { from: "anti gravity", to: "Antigravity" },
+  // A CLI do Antigravity é "agy", dita como sigla: "ag" não é palavra do português.
+  { from: "agy", to: "AGY" },
+  { from: "ag", to: "AGY" },
   { from: "ai memory", to: "ai-memory" },
   { from: "pul request", to: "pull request" },
   { from: "git hub", to: "GitHub" },

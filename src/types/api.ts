@@ -261,6 +261,8 @@ export interface StreamEvents {
   "open-session": { sessionId: string };
   /** Aviso do backend sobre o envio (ex.: a CLI não tem campo nativo para o anexo). */
   "cli-notice": { sessionId: string; responseMessageId?: string; message: string };
+  /** A própria CLI mudou o nível da conversa (ex.: o plano foi aprovado e ela saiu do modo plano). */
+  "cli-permission-changed": { sessionId: string; permission: PermissionLevel; reason?: string };
   "cli-stream-chunk": {
     sessionId: string;
     responseMessageId?: string;

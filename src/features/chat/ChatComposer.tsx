@@ -24,6 +24,7 @@ import { applyMention, mentionAt } from "../../lib/attachments";
 import { appendDictation } from "../../lib/wav";
 import { dictationAvailable, useVoiceDictation } from "./useVoiceDictation";
 import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
+import { canApprovePlan } from "../../lib/permissionModes";
 
 const clock = (total: number) =>
   `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
@@ -37,6 +38,8 @@ export function ChatComposer() {
     currentSession,
     currentProvider,
     handlePermissionChange,
+    handleApprovePlan,
+    currentMessages,
     handleTriggerHandoff,
     handleStopSession,
     inputMessage,
@@ -459,6 +462,23 @@ export function ChatComposer() {
                       placeholder={`Mensagem para ${currentSession?.currentModel || currentProvider?.name}... (Ctrl+K skills, Ctrl+H histórico)`}
                       className="flex-1 px-2 py-2 text-sm bg-transparent outline-none text-[#1c1b18] placeholder-[#9c9381]"
                     />
+
+                    {canApprovePlan(
+                      currentSession?.permission,
+                      isExecutingPrompt,
+                      currentMessages[currentMessages.length - 1],
+                    ) && (
+                      <button
+                        type="button"
+                        data-testid="approve-plan"
+                        onClick={() => void handleApprovePlan()}
+                        className="px-2 py-1 rounded-lg text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition flex items-center gap-1 whitespace-nowrap"
+                        title="Sai do modo plano (Aceitar edições) e pede para a IA implementar o plano"
+                      >
+                        <Check size={13} />
+                        <span>Aprovar plano e executar</span>
+                      </button>
+                    )}
 
                     {currentSession?.permission !== "plan" ? (
                       <button

@@ -21,6 +21,29 @@ export function nextPermission(current: PermissionLevel | undefined): Permission
 export const togglePlan = (current: PermissionLevel | undefined): PermissionLevel =>
   current === "plan" ? "edits" : "plan";
 
+/** Mensagem enviada pelo botão "Aprovar plano e executar", já com a conversa fora do modo plano. */
+export const PLAN_APPROVED_PROMPT = "Plano aprovado. Pode implementar.";
+
+/**
+ * O botão de aprovar o plano aparece quando a conversa está no modo plano, parada, e a última
+ * mensagem é uma resposta concluída da IA (o plano a aprovar). Vale para as três CLIs: no Codex e no
+ * AGY o plano termina só em texto, e no Claude Code ele às vezes também pergunta por texto.
+ */
+export function canApprovePlan(
+  permission: PermissionLevel | undefined,
+  executing: boolean,
+  lastMessage: { sender: string; text?: string; isStreaming?: boolean } | undefined,
+): boolean {
+  return (
+    permission === "plan" &&
+    !executing &&
+    !!lastMessage &&
+    lastMessage.sender !== "user" &&
+    !lastMessage.isStreaming &&
+    !!lastMessage.text?.trim()
+  );
+}
+
 export interface ShortcutKey {
   key: string;
   altKey: boolean;

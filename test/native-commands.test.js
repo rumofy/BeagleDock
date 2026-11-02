@@ -256,3 +256,23 @@ test("aviso da troca de permissão durante a resposta: ao vivo, na próxima mens
   assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 1 }, false), "1 aprovação pendente foi liberada.");
   assert.equal(livePermissionNotice({ ok: false }, true), null);
 });
+
+test("botão de aprovar o plano: só no modo plano, parado, depois de uma resposta concluída da IA", () => {
+  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/permissionModes.ts"), "utf8").replace(/^import .*$/gm, ""), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const ctx = { exports: {} };
+  vm.runInNewContext(compiled, ctx);
+  const { canApprovePlan, PLAN_APPROVED_PROMPT } = ctx.exports;
+  const plan = { sender: "codex", text: "## Plano\n1. Criar hello.txt\n\nPosso começar?" };
+  for (const provider of ["claude", "codex", "antigravity"])
+    assert.equal(canApprovePlan("plan", false, { ...plan, sender: provider }), true, provider);
+  assert.equal(canApprovePlan("edits", false, plan), false, "fora do modo plano");
+  assert.equal(canApprovePlan("ask", false, plan), false, "Restrito não é o modo plano");
+  assert.equal(canApprovePlan("plan", true, plan), false, "com resposta em andamento");
+  assert.equal(canApprovePlan("plan", false, { ...plan, isStreaming: true }), false);
+  assert.equal(canApprovePlan("plan", false, { sender: "user", text: "faz um plano" }), false);
+  assert.equal(canApprovePlan("plan", false, { sender: "claude", text: "  " }), false, "resposta vazia");
+  assert.equal(canApprovePlan("plan", false, undefined), false, "conversa vazia");
+  assert.match(PLAN_APPROVED_PROMPT, /Plano aprovado/);
+});

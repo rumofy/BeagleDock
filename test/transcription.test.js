@@ -316,3 +316,16 @@ test("documentação em português não sofre correções indevidas", () => {
   const changed = lines.filter((l) => t.applyVocabulary(l, { context: ["BeagleDock"] }) !== l);
   assert.deepEqual(changed, []);
 });
+
+test("ditado: variações faladas de Claude Code e a sigla AGY viram os nomes certos", () => {
+  const fix = (text) => t.applyVocabulary(text, {});
+  assert.equal(
+    fix("Ver se isso não é só problema do cloud coding. Acho que o ag também pode ter e o Codex também."),
+    "Ver se isso não é só problema do Claude Code. Acho que o AGY também pode ter e o Codex também.",
+  );
+  assert.equal(fix("Olha como escreveu o Claudio Coding aí."), "Olha como escreveu o Claude Code aí.");
+  assert.equal(fix("o Cláudio Code e o claude coding"), "o Claude Code e o Claude Code");
+  assert.equal(fix("roda no agy"), "roda no AGY");
+  // Sem "code/coding" ao lado, Cláudio é nome de gente e "cloud" é nuvem; palavras com "ag" ficam.
+  assert.equal(fix("O Cláudio subiu na cloud a agenda e a tag."), "O Cláudio subiu na cloud a agenda e a tag.");
+});

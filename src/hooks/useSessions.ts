@@ -5,7 +5,11 @@ import { backendAvailable, beagleApi } from "../api/beagleApi";
 import { conversationTitle } from "../lib/conversationTitle";
 import { modelSelection } from "../lib/modelSelection";
 import { rememberedChoice, type SessionChoice, type SessionChoices } from "../lib/sessionDefaults";
-import { livePermissionNotice } from "../lib/permissionModes";
+import {
+  livePermissionNotice,
+  PERMISSION_LABELS,
+  PLAN_APPROVED_PROMPT,
+} from "../lib/permissionModes";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
 import { appendShellOutput } from "../lib/shellTabs";
@@ -281,6 +285,25 @@ export function useSessions({
     const unsubscribeNotice = beagleApi.on("cli-notice", ({ message }) =>
       setAppError(message),
     );
+    // A CLI saiu do modo plano sozinha (plano aprovado no pedido do Claude Code): a conversa grava o
+    // novo nível, para a próxima mensagem não reiniciar a CLI no modo plano.
+    const unsubscribePermission = beagleApi.on(
+      "cli-permission-changed",
+      ({ sessionId, permission, reason }) => {
+        const session = providersRef.current
+          .flatMap((p) => p.sessions)
+          .find((s) => s.id === sessionId);
+        if (!session || (session.permission || "inherit") === permission) return;
+        void persistSession({ ...session, permission });
+        setPermissionNotice({
+          sessionId,
+          text:
+            reason === "plan-approved"
+              ? `Plano aprovado: a conversa saiu do modo plano e agora está em “${PERMISSION_LABELS[permission]}”.`
+              : `A CLI mudou o nível da conversa para “${PERMISSION_LABELS[permission]}”.`,
+        });
+      },
+    );
     // Menu da bandeja ou notificação: leva o chat até a conversa.
     const unsubscribeOpen = beagleApi.on("open-session", ({ sessionId }) => {
       setActiveSessionId(sessionId);
@@ -371,6 +394,7 @@ export function useSessions({
       unsubscribeTurnStarted();
       unsubscribeOpen();
       unsubscribeNotice();
+      unsubscribePermission();
       unsubscribeTurnFinished();
     };
   }, []);
@@ -487,6 +511,18 @@ export function useSessions({
       effort: session.reasoningEffort || "",
       permission: session.permission || "inherit",
     });
+
+  // "Aprovar plano e executar": tira a conversa do modo plano (Aceitar edições, ao vivo quando a CLI
+  // aceita) e pede a implementação. Mesmo caminho nas três CLIs; Codex e AGY reiniciam e retomam a
+  // conversa já podendo escrever.
+  const handleApprovePlan = async () => {
+    if (!currentSession || isExecutingPrompt || currentSession.permission !== "plan") return;
+    const session: ChatSession = { ...currentSession, permission: "edits" };
+    if (!(await persistSession(session))) return;
+    if (backendAvailable())
+      await beagleApi.setLivePermission(session.id, "edits").catch(() => undefined);
+    await sendPrompt(session, PLAN_APPROVED_PROMPT);
+  };
 
   // O atalho pede à própria CLI da conversa que rode a skill de handoff do ai-memory
   // (antes só listava os handoffs pendentes e nunca criava um).
@@ -1110,6 +1146,7 @@ export function useSessions({
     handleWorkspaceChange,
     handleModelChange,
     handlePermissionChange,
+    handleApprovePlan,
     permissionNotice,
     handleReasoningChange,
     handleTriggerHandoff,

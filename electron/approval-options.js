@@ -48,8 +48,15 @@ function describeClaudeSuggestion(s) {
   return null; // tipo desconhecido: não oferece o que não sabemos aplicar
 }
 
+// Aprovação do plano (ExitPlanMode do Claude Code): aprovar sai do modo plano e já executa. O modo
+// de destino (aceitar edições ou acesso total) é decidido pelo runner no momento da resposta.
+const APPROVE_PLAN = { id: "approve-plan", label: "Aprovar o plano e executar", kind: "allow" };
+const KEEP_PLANNING = { id: "deny", label: "Continuar planejando", kind: "deny", allowsMessage: true };
+
 // request: o `request` do control_request can_use_tool do Claude Code.
 function claudeApprovalOptions(request) {
+  if (request?.tool_name === "ExitPlanMode")
+    return { options: [APPROVE_PLAN, KEEP_PLANNING], native: { [APPROVE_PLAN.id]: { exitPlan: true } } };
   const options = [ALLOW_ONCE];
   const native = {};
   (Array.isArray(request?.permission_suggestions) ? request.permission_suggestions : []).forEach((s, i) => {
@@ -117,6 +124,7 @@ async function askApproval(approvals, request) {
 module.exports = {
   askApproval,
   ALLOW_ONCE,
+  APPROVE_PLAN,
   DENY,
   DENY_WITH_NOTE,
   claudeApprovalOptions,
