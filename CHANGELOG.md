@@ -4,6 +4,16 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-02
+
+### Adicionado
+
+- Compactação preventiva no Claude Code: uma conversa parada com mais de 200 mil tokens de contexto é compactada sozinha nos últimos 5 minutos de validade do cache, quando reler o contexto ainda é barato, em vez de reprocessar tudo a preço cheio ao voltar.
+
+### Alterado
+
+- O limite da compactação automática agora tem a opção “Automático”, que passa a ser o padrão: acompanha a janela do modelo (40% dela, por exemplo 400 mil numa janela de 1 milhão). Janelas de 200 mil ou ainda desconhecidas continuam em 200 mil, e um valor escolhido por você sempre vale como está.
+
 ## [0.6.1] - 2026-11-02
 
 ### Alterado
@@ -210,7 +220,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/rumofy/BeagleDock/compare/v0.6.1...v0.7.0
 [0.6.1]: https://github.com/rumofy/BeagleDock/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/rumofy/BeagleDock/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/rumofy/BeagleDock/compare/v0.5.1...v0.5.2

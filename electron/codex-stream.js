@@ -38,6 +38,7 @@ function createCodexStream({
   onMcpAuthError = () => {},
   onLateEvents = () => {},
   onAutoTurn = () => {},
+  onWindow = () => {},
 }) {
   const entries = new Map();
   let sequence = 0;
@@ -77,7 +78,7 @@ function createCodexStream({
       effort,
       permission,
       p.fingerprint,
-      p.autoCompactTokens || 0,
+      p.autoCompactKey ?? (p.autoCompactTokens || 0),
     ]);
     let e = entries.get(sessionId);
     if (e && (e.key !== key || e.child.killed || e.child.exitCode !== null)) {
@@ -438,7 +439,10 @@ function createCodexStream({
           output(params.delta || "", params.itemId);
         } else if (ev.method === "thread/tokenUsage/updated") {
           const usage = codexContext(params.tokenUsage);
-          if (usage) current.context.update(usage);
+          if (usage) {
+            current.context.update(usage);
+            if (usage.window) onWindow(current.model, usage.window);
+          }
         } else if (ev.method === "thread/compacted") {
           markCompacted(current);
         } else if (ev.method === "item/started") {

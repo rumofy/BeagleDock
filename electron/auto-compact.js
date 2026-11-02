@@ -17,7 +17,20 @@ function resolveAutoCompactTokens(value) {
   return Math.min(MAX_AUTO_COMPACT_TOKENS, Math.max(MIN_AUTO_COMPACT_TOKENS, Math.round(n)));
 }
 
+// Sem valor escolhido pelo usuário (undefined/null) o limite acompanha a janela do modelo: 40% dela,
+// de 100 mil a 1 milhão. Janela de até 200 mil ou ainda desconhecida mantém o padrão de 200 mil.
+// Um valor escolhido (ou 0, que desliga) sempre vale como está.
+const AUTO_COMPACT_FRACTION = 0.4;
+function resolveAutoCompactForWindow(value, window) {
+  const chosen = value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));
+  if (chosen || !Number.isFinite(window) || window <= DEFAULT_AUTO_COMPACT_TOKENS)
+    return resolveAutoCompactTokens(value);
+  const derived = Math.round((window * AUTO_COMPACT_FRACTION) / 10_000) * 10_000;
+  return Math.min(MAX_AUTO_COMPACT_TOKENS, Math.max(MIN_AUTO_COMPACT_TOKENS, derived));
+}
+
 module.exports = {
+  resolveAutoCompactForWindow,
   DEFAULT_AUTO_COMPACT_TOKENS,
   MIN_AUTO_COMPACT_TOKENS,
   MAX_AUTO_COMPACT_TOKENS,

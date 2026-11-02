@@ -88,3 +88,15 @@ test("crescimento por resposta: compara com o fim da anterior e ignora compacta�
   assert.equal(turnMark({ used: null }), null);
   assert.equal(turnMark(undefined), null);
 });
+
+test("compactação preventiva: só com contexto grande, cache informado e perto de vencer", () => {
+  const { precompactDue } = ctx.exports;
+  const base = { used: 300_000, lastCallAt: NOW - 56 * 60_000, cacheTtlMs: 60 * 60_000 };
+  assert.equal(precompactDue(base, NOW), base.lastCallAt, "faltam 4 min: vence a janela de 5 min");
+  assert.equal(precompactDue({ ...base, lastCallAt: NOW - 30 * 60_000 }, NOW), null, "cache longe de vencer");
+  assert.equal(precompactDue({ ...base, lastCallAt: NOW - 61 * 60_000 }, NOW), null, "já expirou: compactar agora sai a preço cheio");
+  assert.equal(precompactDue({ ...base, used: 150_000 }, NOW), null, "contexto pequeno não compensa");
+  assert.equal(precompactDue({ ...base, cacheTtlMs: undefined }, NOW), null, "sem validade informada não há o que antecipar");
+  assert.equal(precompactDue({ ...base, compacting: true }, NOW), null);
+  assert.equal(precompactDue(undefined, NOW), null);
+});

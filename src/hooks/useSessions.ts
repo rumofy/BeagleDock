@@ -14,7 +14,7 @@ import { PROVIDER_NAMES } from "../lib/approvalLabels";
 import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
-import { turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
+import { precompactDue, turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
 import type {
   AIProviderId,
   AIProviderStatus,
@@ -39,7 +39,7 @@ interface Params {
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
   /** Contexto (tokens) a partir do qual a conversa é compactada sozinha; 0 desliga. */
-  autoCompactTokens?: number;
+  autoCompactTokens?: number | null;
 }
 
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
@@ -766,6 +766,27 @@ export function useSessions({
     }
   };
 
+  // Compactação preventiva: conversa parada, contexto grande e cache quase vencendo. Uma vez por
+  // última chamada; sessão ocupada ou com a compactação desligada fica de fora.
+  const precompacted = useRef<Record<string, number>>({});
+  const precompactRef = useRef<() => void>(() => {});
+  precompactRef.current = () => {
+    if (resolveAutoCompact(autoCompactRef.current) === 0) return;
+    const now = Date.now();
+    for (const session of providersRef.current.flatMap((p) => p.sessions)) {
+      if (session.providerId !== "claude" || session.archived) continue;
+      if ((pendingTurns.current.get(session.id) || 0) > 0) continue;
+      const due = precompactDue(contextRef.current[session.id], now);
+      if (due === null || precompacted.current[session.id] === due) continue;
+      precompacted.current[session.id] = due;
+      void compactContext({ ...session, status: "idle" });
+    }
+  };
+  useEffect(() => {
+    const timer = setInterval(() => precompactRef.current(), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
   // Envia um prompt para uma sessão (chat principal ou Manutenção Assistida).
   const sendPrompt = async (
     session: ChatSession,
@@ -980,7 +1001,10 @@ export function useSessions({
       );
       // O AGY não tem limite próprio configurável: ao fim da resposta (cache ainda quente), se o
       // contexto passou do limite e não há mais nada na fila, o app envia o /compact.
-      const limit = resolveAutoCompact(autoCompactRef.current);
+      const limit = resolveAutoCompact(
+        autoCompactRef.current,
+        contextRef.current[id]?.window,
+      );
       autoCompact =
         !!res?.ok &&
         sendingSession.providerId === "antigravity" &&
