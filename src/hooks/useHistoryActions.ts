@@ -98,9 +98,13 @@ export function useHistoryActions({
             id: newSessionId,
             providerId: item.provider,
             title: item.title,
-            currentModel: conversation.model || "",
+            // Reimportar uma conversa que já existe mantém o modelo, o nível e a permissão dela.
+            currentModel: existingSession?.currentModel || conversation.model || "",
             nativeSessionId: conversation.nativeSessionId,
-            reasoningEffort: "",
+            reasoningEffort: existingSession?.reasoningEffort || "",
+            ...(existingSession?.permission
+              ? { permission: existingSession.permission }
+              : {}),
             status: "idle",
             createdAt: item.date,
             lastActive: "Histórico",

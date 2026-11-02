@@ -4,6 +4,7 @@ import { flushSync } from "react-dom";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
 import { conversationTitle } from "../lib/conversationTitle";
 import { modelSelection } from "../lib/modelSelection";
+import { rememberedChoice, type SessionChoice, type SessionChoices } from "../lib/sessionDefaults";
 import { livePermissionNotice } from "../lib/permissionModes";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
@@ -40,6 +41,11 @@ interface Params {
   setShowWorkspaceModal: (show: boolean) => void;
   /** Contexto (tokens) a partir do qual a conversa é compactada sozinha; 0 desliga. */
   autoCompactTokens?: number | null;
+  /** Chats novos pelo botão + repetem a última escolha da CLI. */
+  rememberSessionChoices?: boolean;
+  lastSessionChoices?: SessionChoices;
+  /** Avisado quando a pessoa troca modelo, nível ou permissão numa conversa. */
+  onSessionChoice?: (providerId: AIProviderId, choice: SessionChoice) => void;
 }
 
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
@@ -52,6 +58,9 @@ export function useSessions({
   setActiveTab,
   setShowWorkspaceModal,
   autoCompactTokens,
+  rememberSessionChoices,
+  lastSessionChoices,
+  onSessionChoice,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
   // Referências para os ouvintes de eventos, que não são recriados a cada renderização.
@@ -415,7 +424,7 @@ export function useSessions({
       model,
       currentModelSelection.effort,
     );
-    void persistSession({
+    const next = {
       ...currentSession,
       currentModel: selected.model,
       reasoningEffort: selected.effort,
@@ -423,7 +432,9 @@ export function useSessions({
         currentSession.reasoningEffort === "plan"
           ? "plan"
           : currentSession.permission,
-    });
+    };
+    void persistSession(next);
+    noteChoice(next);
   };
   // Aviso discreto junto ao seletor quando a troca acontece com a resposta em andamento.
   const [permissionNotice, setPermissionNotice] = useState<{
@@ -441,6 +452,7 @@ export function useSessions({
     if (!currentSession || permission === (currentSession.permission || "inherit")) return;
     const session = currentSession;
     const executing = isExecutingPrompt;
+    noteChoice({ ...session, permission });
     void persistSession({ ...session, permission }).then(async (saved) => {
       if (!saved || !backendAvailable()) return;
       try {
@@ -454,17 +466,27 @@ export function useSessions({
   };
 
   const handleReasoningChange = (reasoningEffort: string) => {
-    if (currentSession && !isExecutingPrompt)
-      void persistSession({
-        ...currentSession,
-        currentModel: currentModelSelection.model,
-        reasoningEffort,
-        permission:
-          currentSession.reasoningEffort === "plan"
-            ? "plan"
-            : currentSession.permission,
-      });
+    if (!currentSession || isExecutingPrompt) return;
+    const next = {
+      ...currentSession,
+      currentModel: currentModelSelection.model,
+      reasoningEffort,
+      permission:
+        currentSession.reasoningEffort === "plan"
+          ? "plan"
+          : currentSession.permission,
+    };
+    void persistSession(next);
+    noteChoice(next);
   };
+
+  // Guarda a escolha da CLI sempre, para que ligar a opção depois já traga a última usada.
+  const noteChoice = (session: ChatSession) =>
+    onSessionChoice?.(session.providerId, {
+      model: session.currentModel || "",
+      effort: session.reasoningEffort || "",
+      permission: session.permission || "inherit",
+    });
 
   // O atalho pede à própria CLI da conversa que rode a skill de handoff do ai-memory
   // (antes só listava os handoffs pendentes e nunca criava um).
@@ -478,7 +500,25 @@ export function useSessions({
     e: React.MouseEvent,
   ) => {
     e.stopPropagation();
-    await createSession(providerId);
+    const provider = providers.find((p) => p.id === providerId);
+    const remembered = rememberedChoice(
+      rememberSessionChoices,
+      lastSessionChoices,
+      providerId,
+      provider?.modelOptions || [],
+    );
+    await createSession(
+      providerId,
+      remembered
+        ? {
+            // Modelo que saiu do catálogo: volta ao padrão da CLI, mas mantém a permissão.
+            ...(remembered.model
+              ? { model: remembered.model, effort: remembered.effort }
+              : {}),
+            permission: remembered.permission,
+          }
+        : {},
+    );
   };
 
   // Cria (e persiste) uma sessão de chat; usada pelo botão + e pela Manutenção Assistida.

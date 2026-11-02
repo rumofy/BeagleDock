@@ -279,6 +279,10 @@ export interface AppSettings {
   autoCompactTokens?: number | null;
   /** Apaga projetos temporários do ai-memory parados há mais destes dias; 0 desliga (padrão: 7). */
   aiMemoryTempCleanupDays?: number;
+  /** Chats novos começam com o modelo, o nível e a permissão escolhidos por último na mesma CLI. */
+  rememberSessionChoices?: boolean;
+  /** Última escolha de modelo, nível e permissão de cada CLI. */
+  lastSessionChoices?: Partial<Record<AIProviderId, { model: string; effort: string; permission: PermissionLevel }>>;
   workspaces: WorkspaceItem[];
 }
 
