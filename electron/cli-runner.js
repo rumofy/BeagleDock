@@ -912,6 +912,20 @@ function createCliRunner({
                 `Agente ${ev.subagent_type || ""}`.trim(),
                 oneLine(ev.description),
               );
+            } else if (
+              ev.subtype === "task_updated" &&
+              ev.patch?.is_backgrounded === true
+            ) {
+              // Comando mandado para o segundo plano no meio da execução ("Responder agora" ou a
+              // própria CLI): o tool_result volta na hora, mas o comando segue rodando até o
+              // task_notification (Claude Code 2.1.317, verificado com a CLI real).
+              const command = current.events.find(
+                (e) => e.meta?.taskId === ev.task_id,
+              );
+              if (command)
+                current.events.upsert(command.id, {
+                  meta: { ...command.meta, background: true },
+                });
             } else if (ev.subtype === "task_progress" && ev.tool_use_id) {
               current.events.upsert(ev.tool_use_id, {
                 detail: oneLine(ev.description),
@@ -1137,6 +1151,19 @@ function createCliRunner({
               turn.error =
                 ev.error?.message || ev.message || "A CLI informou uma falha.";
           } else if (ev.type === "result" && turn) {
+            // "Interromper e responder": o Claude Code encerra a parte interrompida com um resultado
+            // de erro (error_during_execution, aborted_tools) e responde a mensagem entregue logo em
+            // seguida, num resultado próprio (verificado com a CLI real, 2.1.317). O turno continua
+            // aberto até esse segundo resultado.
+            if (
+              providerId === "claude" &&
+              turn.answering &&
+              ev.is_error &&
+              ev.subtype === "error_during_execution"
+            ) {
+              turn.answering = false;
+              return;
+            }
             if (providerId === "claude") {
               const window = pickModelWindow(ev.modelUsage, current.model);
               if (window) {
@@ -1387,10 +1414,56 @@ function createCliRunner({
         responseMessageId: payload.responseMessageId,
         text: entry.turn.text,
       });
-      entry.activity?.("Mensagem nova recebida; a IA a lê na próxima etapa");
+      entry.activity?.("Entregue · a IA lê quando a etapa atual terminar");
       return { from, at: rotation.at };
     } catch {
       return false;
+    }
+  }
+  // "Responder agora" para uma mensagem já entregue à CLI que ela ainda não leu (a CLI lê na
+  // próxima etapa, então espera o comando em execução terminar).
+  // - `background` (Claude Code): manda os comandos em execução para o segundo plano; eles
+  //   continuam rodando e a IA responde já. Sem comando rodando, cai no `interrupt`.
+  // - `interrupt`: interrompe a etapa atual (o comando é cancelado) e a IA responde em seguida.
+  // Codex: interrompe o turno e reenvia a mensagem entregue num turno novo.
+  async function answerNow({ sessionId, providerId, mode = "background" } = {}) {
+    if (typeof sessionId !== "string") return { ok: false, error: "Conversa inválida." };
+    if (providerId === "codex") return codex.answerNow(sessionId);
+    if (providerId !== "claude")
+      return { ok: false, error: "Esta CLI só recebe a mensagem ao fim da resposta." };
+    const entry = processes.get(sessionId);
+    if (!entry?.turn || entry.turn.auto || entry.providerId !== "claude" || !entry.child.stdin?.writable)
+      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+    if (!entry.turn.rotations?.length)
+      return { ok: false, error: "Nenhuma mensagem entregue esperando a IA ler." };
+    try {
+      if (mode === "background") {
+        // Só comandos que o Claude Code acompanha como tarefa (task_started) podem ir para o
+        // segundo plano; os que já estão lá ficam como estão.
+        const running = entry.events.filter(
+          (e) =>
+            e.kind === "command" &&
+            e.status === "running" &&
+            e.meta?.taskId &&
+            e.meta?.background !== true,
+        );
+        let moved = 0;
+        for (const command of running) {
+          const response = await control(entry, { subtype: "background_tasks", tool_use_id: command.id });
+          if (response?.backgrounded) moved++;
+        }
+        if (moved) {
+          entry.activity?.("Comando no segundo plano; a IA responde a sua mensagem agora");
+          return { ok: true, mode: "background", moved };
+        }
+      }
+      entry.turn.answering = true;
+      await control(entry, { subtype: "interrupt" });
+      entry.activity?.("Etapa interrompida; a IA responde a sua mensagem agora");
+      return { ok: true, mode: "interrupt" };
+    } catch (error) {
+      if (entry.turn) entry.turn.answering = false;
+      return { ok: false, error: error.message };
     }
   }
   // Comando de controle do Claude Code pelo stdin (stream-json), com resposta casada pelo request_id.
@@ -1451,6 +1524,7 @@ function createCliRunner({
   return {
     execute,
     inject,
+    answerNow,
     kill,
     setPermission,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),

@@ -1373,3 +1373,118 @@ test("Claude: conversa em Global da CLI também troca ao vivo; voltar ao global 
   await first;
   runner.shutdown();
 });
+
+// "Responder agora" (Claude Code 2.1.317, sequência verificada com a CLI real): o comando em
+// execução vira tarefa (task_started local_bash); background_tasks o manda para o segundo plano.
+const claudeCommand = (child, id = "toolu_cmd1", taskId = "task1") => {
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", id, name: "Bash", input: { command: "sleep 90" } }] } });
+  child.event({ type: "system", subtype: "task_started", task_id: taskId, tool_use_id: id, task_type: "local_bash", is_backgrounded: false });
+};
+const controlRequests = (child) =>
+  child.inputs.map((l) => JSON.parse(l)).filter((m) => m.type === "control_request");
+
+test("claude: comando mandado para o segundo plano segue rodando até o aviso final da CLI", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "native-bg-1" });
+  claudeCommand(child);
+  child.event({ type: "system", subtype: "task_updated", task_id: "task1", patch: { is_backgrounded: true } });
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "Command was manually backgrounded by user with ID: task1." }] } });
+  child.event({ type: "result", is_error: false, result: "ok" });
+  const result = await run;
+  const command = result.events.find((e) => e.id === "toolu_cmd1");
+  assert.equal(command.status, "running", "o tool_result do segundo plano não encerra o comando");
+  assert.equal(command.meta.background, true);
+  child.event({ type: "system", subtype: "task_notification", task_id: "task1", tool_use_id: "toolu_cmd1", status: "completed", summary: "terminou" });
+  await tick();
+  const last = h.emitted.filter((e) => e.ch === "cli-activity-event" && e.data.event.id === "toolu_cmd1").at(-1);
+  assert.equal(last.data.event.status, "done");
+  runner.shutdown();
+});
+
+test("claude: Responder agora manda o comando em execução para o segundo plano", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "native-bg-2" });
+  claudeCommand(child);
+  await tick();
+  const none = await runner.answerNow({ sessionId: "app-session", providerId: "claude" });
+  assert.equal(none.ok, false, "sem mensagem entregue não há o que responder");
+  assert.ok(await runner.inject({ ...payload("claude"), prompt: "quanto é 17+25?", responseMessageId: "ai-segunda" }));
+  const answering = runner.answerNow({ sessionId: "app-session", providerId: "claude", mode: "background" });
+  await tick();
+  const [request] = controlRequests(child);
+  assert.deepEqual(request.request, { subtype: "background_tasks", tool_use_id: "toolu_cmd1" });
+  child.event({ type: "control_response", response: { subtype: "success", request_id: request.request_id, response: { backgrounded: true } } });
+  assert.deepEqual(await answering, { ok: true, mode: "background", moved: 1 });
+  child.event({ type: "system", subtype: "task_updated", task_id: "task1", patch: { is_backgrounded: true } });
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "backgrounded" }] } });
+  textBlock(child, "RESPOSTA=42");
+  child.event({ type: "result", is_error: false, result: "RESPOSTA=42" });
+  const result = await run;
+  assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "RESPOSTA=42"]]);
+  runner.shutdown();
+});
+
+test("claude: Interromper e responder mantém o turno aberto até a resposta à mensagem entregue", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "native-int-1" });
+  claudeCommand(child);
+  await tick();
+  assert.ok(await runner.inject({ ...payload("claude"), prompt: "quanto é 17+25?", responseMessageId: "ai-segunda" }));
+  const answering = runner.answerNow({ sessionId: "app-session", providerId: "claude", mode: "interrupt" });
+  await tick();
+  const [request] = controlRequests(child);
+  assert.deepEqual(request.request, { subtype: "interrupt" });
+  child.event({ type: "control_response", response: { subtype: "success", request_id: request.request_id, response: { still_queued: [] } } });
+  assert.deepEqual(await answering, { ok: true, mode: "interrupt" });
+  // Sequência real: o comando é parado, a parte interrompida termina com erro e a mensagem
+  // entregue é respondida num resultado próprio.
+  child.event({ type: "system", subtype: "task_notification", task_id: "task1", tool_use_id: "toolu_cmd1", status: "stopped" });
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "The user doesn't want to proceed", is_error: true }] } });
+  child.event({ type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] } });
+  child.event({ type: "result", is_error: true, subtype: "error_during_execution", terminal_reason: "aborted_tools" });
+  let settled = false;
+  run.then(() => (settled = true));
+  await tick();
+  assert.equal(settled, false, "o resultado da parte interrompida não encerra a resposta");
+  textBlock(child, "RESPOSTA=42");
+  child.event({ type: "result", is_error: false, subtype: "success", result: "RESPOSTA=42" });
+  const result = await run;
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "RESPOSTA=42"]]);
+  runner.shutdown();
+});
+
+test("claude: Responder agora sem comando em segundo plano possível cai em interromper; AGY não aceita", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "native-int-2" });
+  await tick();
+  assert.ok(await runner.inject({ ...payload("claude"), prompt: "e isto?", responseMessageId: "ai-segunda" }));
+  const answering = runner.answerNow({ sessionId: "app-session", providerId: "claude", mode: "background" });
+  await tick();
+  const [request] = controlRequests(child);
+  assert.equal(request.request.subtype, "interrupt");
+  child.event({ type: "control_response", response: { subtype: "success", request_id: request.request_id, response: {} } });
+  assert.equal((await answering).mode, "interrupt");
+  const agy = await runner.answerNow({ sessionId: "app-session", providerId: "antigravity" });
+  assert.equal(agy.ok, false);
+  child.event({ type: "result", is_error: true, subtype: "error_during_execution" });
+  child.event({ type: "result", is_error: false, result: "ok" });
+  await run;
+  runner.shutdown();
+});

@@ -3,6 +3,7 @@ import { Pencil, X } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { staleContext } from "../../lib/staleContext";
 import { formatTokens } from "../../lib/tokens";
+import { backgroundLabel, backgroundWork } from "../../lib/backgroundWork";
 import type { ChatSession } from "../../types";
 
 /** Uma conversa aberta: selecionar, renomear (duplo clique) e fechar (ela continua no histórico). */
@@ -18,7 +19,9 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     renameSession,
     setSessionArchived,
     contextBySession,
+    messages,
   } = useApp();
+  const background = backgroundWork(messages[session.id]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const input = useRef<HTMLInputElement>(null);
@@ -87,6 +90,12 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
             <span
               className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
               title="Processo ativo"
+            />
+          ) : background.total > 0 ? (
+            <span
+              data-testid="session-background"
+              className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"
+              title={`${backgroundLabel(background)}: a IA avisa quando terminar`}
             />
           ) : session.status === "waiting_input" ? (
             <span

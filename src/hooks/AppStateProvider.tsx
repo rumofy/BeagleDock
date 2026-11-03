@@ -12,6 +12,7 @@ import { useSessions } from "./useSessions";
 import { useSettings } from "./useSettings";
 import { useInstalledSkills } from "./useInstalledSkills";
 import { useUi } from "./useUi";
+import { useCliTerminals } from "./useCliTerminals";
 import { useUserProfile } from "./useUserProfile";
 import { useWorkspaces } from "./useWorkspaces";
 
@@ -29,6 +30,7 @@ function useAppStateValue() {
   const { userProfile } = useUserProfile();
   const { workspaces, setWorkspaces } = useWorkspaces();
   const settings = useSettings(setAppError);
+  const cliTerminals = useCliTerminals(setAppError, settings.settings.conversationMode === "terminal");
   const approvals = useApprovals(setAppError);
   const library = useInstalledSkills();
   const memory = useMemoryStatus();
@@ -99,6 +101,15 @@ function useAppStateValue() {
       .catch((error: Error) => setAppError(error.message));
   }, []);
 
+  // Conversa apagada com o terminal aberto: encerra a CLI dela.
+  const { terminals, closeTerminal } = cliTerminals;
+  const sessionIds = sessions.allSessions.map((s) => s.id).join("|");
+  useEffect(() => {
+    if (!sessions.allSessions.length) return;
+    const known = new Set(sessions.allSessions.map((s) => s.id));
+    for (const id of Object.keys(terminals)) if (!known.has(id)) void closeTerminal(id);
+  }, [sessionIds, terminals, closeTerminal]);
+
   // Auto-scroll nos terminais quando novos logs entram
   const ptyScrollRef = useRef<HTMLDivElement>(null);
   const fullPtyScrollRef = useRef<HTMLDivElement>(null);
@@ -128,6 +139,7 @@ function useAppStateValue() {
     ...composer,
     ...historyActions,
     ...maintenance,
+    cliTerminals,
     ptyScrollRef,
     fullPtyScrollRef,
   };

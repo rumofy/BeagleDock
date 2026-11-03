@@ -243,6 +243,18 @@ function createEventTracker({
     },
     // Eventos da resposta atual (o que o turno devolve ao terminar).
     snapshot: () => [...group(currentId).values()],
+    // Procura em todas as respostas (uma mensagem entregue no meio do turno abre outra resposta).
+    find(predicate) {
+      for (const events of groups.values())
+        for (const event of events.values()) if (predicate(event)) return event;
+      return undefined;
+    },
+    filter(predicate) {
+      const found = [];
+      for (const events of groups.values())
+        for (const event of events.values()) if (predicate(event)) found.push(event);
+      return found;
+    },
     // Entrega já as atualizações tardias pendentes (encerramento do app, testes).
     flushLate() {
       for (const responseId of [...lateTimers.keys()]) flushLateFor(responseId);

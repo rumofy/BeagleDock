@@ -42,6 +42,7 @@ const ALLOWED_METHODS = new Set([
   "interruptCliSession",
   "cancelQueuedPrompt",
   "forceQueuedPrompt",
+  "answerNowPrompt",
 ]);
 function matches(a, b) {
   return (

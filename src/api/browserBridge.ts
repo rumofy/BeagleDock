@@ -59,6 +59,7 @@ if (!w.beagleAPI && import.meta.env.DEV && token) {
     "interruptCliSession",
     "cancelQueuedPrompt",
     "forceQueuedPrompt",
+    "answerNowPrompt",
   ];
   const api: Record<string, unknown> = {};
   methods.forEach((m) => {

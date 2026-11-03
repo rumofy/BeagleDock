@@ -12,6 +12,22 @@ if (args[0] === "update") {
   console.log("Updated fixture.");
   process.exit(0);
 }
+// Modo terminal: sem os argumentos do protocolo estruturado, a CLI abre a própria interface.
+// A fixture imita só o essencial: anuncia os argumentos e registra o que chegou pelo teclado.
+const structured = ["-p", "--print", "exec", "app-server", "--input-format", "--output-format", "models", "mcp"];
+if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsWith("/"))) {
+  const root = process.env.BEAGLEDOCK_SMOKE_ROOT;
+  fs.writeFileSync(path.join(root, "tui-" + name + ".json"), JSON.stringify({ args, cwd: process.cwd() }));
+  // Como as CLIs reais, liga a colagem delimitada (o terminal marca o início e o fim do bloco).
+  process.stdout.write(`\x1b[?2004hFIXTURE TUI ${name} ${args.join(" ")}\r\n> `);
+  process.stdin.setRawMode(true);
+  process.stdin.on("data", (chunk) => {
+    const text = chunk.toString();
+    fs.appendFileSync(path.join(root, "tui-input-" + name + ".txt"), text);
+    process.stdout.write(text.includes("\r") ? "\r\nENVIADO\r\n> " : text.replace(/\x1b\[20[01]~/g, ""));
+  });
+  return;
+}
 if (args.includes("--version")) {
   console.log("fixture 1.4.0");
   process.exit(0);
@@ -466,6 +482,7 @@ let approvalPending = false;
 // Execução travada (smoke-hang): como a CLI real no meio de uma etapa longa, recebe as mensagens
 // entregues durante a resposta, mas não responde; só o Parar a encerra.
 let hanging = false;
+let answerHold = false;
 let buffer = "";
 process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
@@ -485,6 +502,38 @@ process.stdin.on("data", (chunk) => {
             response: { subtype: "success", request_id: input.request_id, response: { mode: input.request.mode } },
           }) + "\n",
         );
+        continue;
+      }
+      // "Responder agora" (protocolo do Claude Code 2.1.317): o comando longo vai para o segundo plano
+      // ou a etapa é interrompida, e a mensagem entregue durante ele é respondida em seguida.
+      if (
+        name === "claude" &&
+        answerHold &&
+        input.type === "control_request" &&
+        ["background_tasks", "interrupt"].includes(input.request?.subtype)
+      ) {
+        const sub = input.request.subtype;
+        const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+        fs.appendFileSync(path.join(root, "answer-now-claude.jsonl"), JSON.stringify(input.request) + "\n");
+        out({
+          type: "control_response",
+          response: { subtype: "success", request_id: input.request_id, response: sub === "interrupt" ? { still_queued: [] } : { backgrounded: true } },
+        });
+        if (sub === "background_tasks") {
+          out({ type: "system", subtype: "task_updated", task_id: "fixture-task", patch: { is_backgrounded: true } });
+          out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "fixture-long", content: "backgrounded" }] } });
+        } else {
+          out({ type: "system", subtype: "task_notification", task_id: "fixture-task", tool_use_id: "fixture-long", status: "stopped" });
+          out({ type: "result", is_error: true, subtype: "error_during_execution" });
+        }
+        out({ type: "assistant", message: { model: "fixture", content: [{ type: "text", text: "RESPOSTA_AGORA" }] } });
+        out({ type: "result", is_error: false, result: "RESPOSTA_AGORA" });
+        answerHold = false;
+        if (sub === "background_tasks")
+          setTimeout(
+            () => out({ type: "system", subtype: "task_notification", task_id: "fixture-task", tool_use_id: "fixture-long", status: "completed", summary: "fim" }),
+            1500,
+          );
         continue;
       }
       if (input.type === "control_response" && approvalPending) {
@@ -516,7 +565,15 @@ process.stdin.on("data", (chunk) => {
             : {}),
         }) + "\n",
       );
-      if (hanging) continue;
+      if (hanging || answerHold) continue;
+      if (name === "claude" && responsePrompt.startsWith("smoke-answer-now")) {
+        answerHold = true;
+        const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+        out({ type: "system", session_id: id });
+        out({ type: "assistant", message: { model: "fixture", content: [{ type: "tool_use", id: "fixture-long", name: "Bash", input: { command: "sleep 600" } }] } });
+        out({ type: "system", subtype: "task_started", task_id: "fixture-task", tool_use_id: "fixture-long", task_type: "local_bash", is_backgrounded: false });
+        continue;
+      }
       if (responsePrompt.startsWith("smoke-hang")) {
         hanging = true;
         if (name === "agy") {

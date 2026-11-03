@@ -55,6 +55,8 @@ function harness() {
             if (steerFails || m.params.expectedTurnId !== child.turnId)
               child.event({ id: m.id, error: { code: -32600, message: "turno não está ativo" } });
             else child.event({ id: m.id, result: { turnId: child.turnId } });
+          } else if (m.method === "turn/interrupt") {
+            child.event({ id: m.id, result: {} });
           } else if (m.method === "turn/start") {
             child.turnId = `turn-${child.messages.filter((m) => m.method === "turn/start").length}`;
             child.event({ id: m.id, result: { turn: { id: child.turnId } } });
@@ -768,5 +770,33 @@ test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto es
     result.followUps.map(({ responseMessageId, text }) => ({ responseMessageId, text })),
     [{ responseMessageId: "ai-segunda", text: "O build passou." }],
   );
+  runner.shutdown();
+});
+
+// "Responder agora" no Codex (sequência a validar com a CLI real): turn/interrupt e a mensagem
+// entregue por turn/steer segue num turno novo, na mesma resposta.
+test("Codex: Responder agora interrompe o turno e reenvia a mensagem entregue num turno novo", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute(payload);
+  await tick(); await tick();
+  const child = h.calls[0].child;
+  const none = await runner.answerNow({ sessionId: payload.sessionId, providerId: "codex" });
+  assert.equal(none.ok, false, "sem mensagem entregue não há o que responder");
+  assert.ok(await runner.inject({ ...payload, prompt: "quanto é 17+25?", responseMessageId: "ai-segunda" }));
+  const firstTurn = child.turnId;
+  const answered = await runner.answerNow({ sessionId: payload.sessionId, providerId: "codex" });
+  assert.deepEqual(answered, { ok: true, mode: "interrupt" });
+  const interrupt = child.messages.find((m) => m.method === "turn/interrupt");
+  assert.deepEqual(interrupt.params, { threadId: "native-codex-123", turnId: firstTurn });
+  h.notify("turn/completed", { turn: { id: firstTurn, status: "interrupted" } });
+  await tick(); await tick();
+  const starts = child.messages.filter((m) => m.method === "turn/start");
+  assert.equal(starts.length, 2, "a mensagem entregue vai num turno novo");
+  assert.match(JSON.stringify(starts[1].params.input), /17\+25/);
+  h.notify("item/agentMessage/delta", { itemId: "m2", delta: "42" });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  const result = await pending;
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "42"]]);
   runner.shutdown();
 });

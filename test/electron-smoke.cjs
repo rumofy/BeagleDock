@@ -150,6 +150,101 @@ async function send(win, text, expected) {
       await send(win, "smoke three", `${name} fixture resposta 3`);
     }
   }
+  if (stage === "first") {
+    // Modo terminal: a conversa do AGY abre a interface própria da CLI, retomando o id nativo.
+    const js = (code) => win.webContents.executeJavaScript(code);
+    const fs = require("fs");
+    const file = (f) => path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, f);
+    // O xterm só desenha as linhas com a janela visível.
+    win.showInactive();
+    // A escolha fica nas configurações e vale para todas as conversas.
+    const setMode = async (mode) => {
+      await js(`document.querySelector('button[title="Configurações, Banco SQLite & MCPs"]').click()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="${mode}"]')`);
+      await js(`document.querySelector('[data-testid="conversation-mode"] input[value="${mode}"]').click()`);
+      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>(s.settings.conversationMode||'chat')==='${mode}')`);
+      await js(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Voltar')).click()`);
+    };
+    await setMode("terminal");
+    await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI agy --conversation')`);
+    const tui = JSON.parse(fs.readFileSync(file("tui-agy.json"), "utf8"));
+    assert.equal(tui.args[0], "--conversation");
+    assert.match(tui.args[1], /^[a-zA-Z0-9_-]{8,}$/);
+    // Sem nada do chat: nem composer, nem lista de mensagens, nem seletores da CLI.
+    assert.equal(await js(`!!document.querySelector('input[placeholder^="Mensagem"]')`), false);
+    assert.equal(await js(`!!document.querySelector('[data-testid="chat-messages"]')`), false);
+    assert.equal(await js(`!!document.querySelector('select[data-control="model"]')`), false);
+    // Teclas vão direto para a CLI.
+    await js(`(()=>{const t=document.querySelector('[data-testid="cli-terminal"] textarea');t.focus();t.dispatchEvent(new KeyboardEvent('keydown',{key:'k',code:'KeyK',keyCode:75,bubbles:true,cancelable:true}));})()`);
+    await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.length===1)`);
+    // Handoff do topo: cola o pedido na CLI e envia.
+    await js(`[...document.querySelectorAll('button')].find(b=>b.innerText.trim()==='Handoff').click()`);
+    const start = Date.now();
+    let typed = "";
+    while (Date.now() - start < 10000) {
+      typed = fs.existsSync(file("tui-input-agy.txt")) ? fs.readFileSync(file("tui-input-agy.txt"), "utf8") : "";
+      if (typed.includes("ai-memory-handoff") && typed.endsWith("\r")) break;
+      await pause();
+    }
+    assert.ok(typed.startsWith("k"), JSON.stringify(typed.slice(0, 20)));
+    assert.match(typed, /\x1b\[200~Use a skill de handoff do ai-memory/);
+    assert.ok(typed.endsWith("\x1b[201~\r"), JSON.stringify(typed.slice(-40)));
+    await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
+    const shot = async (name) => {
+      if (!process.env.BEAGLEDOCK_SHOT_DIR) return;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const image = await win.webContents.capturePage();
+      fs.writeFileSync(path.join(process.env.BEAGLEDOCK_SHOT_DIR, name), image.toPNG());
+    };
+    await shot("terminal-conversa.png");
+    // Painel com as CLIs abertas no modo terminal.
+    await js(`[...document.querySelectorAll('button')].find(b=>b.innerText.includes('Shells')).click()`);
+    await waitFor(win, `document.querySelectorAll('[data-testid="terminal-grid"] [data-testid="cli-terminal"]').length===1`);
+    await waitFor(win, `document.querySelector('[data-testid="terminal-grid"]').innerText.includes('FIXTURE TUI agy')`);
+    await shot("terminal-grade.png");
+    await js(`document.querySelector('[data-testid="terminal-grid"] button[title="Abrir esta conversa"]').click()`);
+    await waitFor(win, `!!document.querySelector('[data-testid="cli-terminal"]') && !document.querySelector('[data-testid="terminal-grid"]')`);
+    // Sem botão de troca no topo da conversa: só nas configurações.
+    assert.equal(await js(`[...document.querySelectorAll('header button')].some(b=>/^(Terminal|Chat)$/.test(b.innerText.trim()))`), false);
+    // Enviar pelo chat com o terminal aberto é recusado no processo principal.
+    const refused = await js(
+      `window.beagleAPI.getSavedState().then(s=>window.beagleAPI.executeCliPrompt({sessionId:s.sessions.find(x=>x.providerId==='antigravity').id,providerId:'antigravity',prompt:'x'}))`,
+    );
+    assert.equal(refused.ok, false);
+    assert.match(refused.error, /aberta no terminal/);
+    // De volta ao chat: a CLI do terminal é encerrada e o chat continua a conversa.
+    await setMode("chat");
+    await waitFor(win, `!!document.querySelector('input[placeholder^="Mensagem"]')`);
+    await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.length===0)`);
+    await waitFor(win, `document.body.innerText.includes('agy fixture resposta 2')`);
+    win.hide();
+
+    // Responder agora (Claude Code): a mensagem entregue durante um comando longo espera a IA ler;
+    // o botão manda o comando para o segundo plano e a IA responde já.
+    await js(`(()=>{const cards=[...document.querySelectorAll('div.rounded-xl.border')].filter(el=>el.querySelector('button[title="Abrir nova conversa"]'));[...cards[0].querySelectorAll('span')].find(el=>el.textContent==='smoke one')?.click();})()`);
+    await waitFor(win, `document.body.innerText.includes('claude fixture resposta 2') && !!document.querySelector('input[placeholder^="Mensagem"]')`);
+    const submitNow = async (text) => {
+      await js(`(()=>{const input=document.querySelector('input[placeholder^="Mensagem"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+      await waitFor(win, `!document.querySelector('button[type="submit"]').disabled`);
+      await js(`document.querySelector('button[type="submit"]').form.requestSubmit()`);
+    };
+    await submitNow("smoke-answer-now comando longo");
+    await waitFor(win, `document.querySelector('header').innerText.includes('EXECUTANDO CLI')`);
+    await waitFor(win, `document.body.innerText.includes('sleep 600')`);
+    await submitNow("pergunta urgente");
+    await waitFor(win, `!!document.querySelector('[data-testid="delivered-actions"]')`);
+    assert.ok(await js(`document.body.innerText.includes('Entregue · a IA lê quando a etapa atual terminar')`));
+    assert.ok(!(await js(`document.body.innerText.includes('Na fila · envio automático')`)), "a mensagem entregue não aparece como fila");
+    await js(`[...document.querySelectorAll('[data-testid="delivered-actions"] button')].find(b=>b.innerText.includes('Responder agora')).click()`);
+    await waitFor(win, `document.body.innerText.includes('RESPOSTA_AGORA') && !document.querySelector('[data-testid="delivered-actions"]')`);
+    const asked = fs.readFileSync(file("answer-now-claude.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    assert.deepEqual(asked, [{ subtype: "background_tasks", tool_use_id: "fixture-long" }]);
+    // A resposta terminou, mas o comando segue: topo e lista mostram o segundo plano até o aviso final.
+    await waitFor(win, `!document.querySelector('header').innerText.includes('EXECUTANDO CLI')`);
+    await waitFor(win, `document.querySelector('[data-testid="header-background"]')?.innerText.includes('1 COMANDO EM SEGUNDO PLANO')`);
+    await waitFor(win, `!!document.querySelector('[data-testid="session-background"]')`);
+    await waitFor(win, `!document.querySelector('[data-testid="header-background"]') && !document.querySelector('[data-testid="session-background"]')`);
+  }
   if (stage === "restart") {
     const longQuestion =
       "smoke-scroll " +

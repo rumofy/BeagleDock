@@ -2,7 +2,7 @@
 //
 // O Parakeet local não aceita dica de vocabulário: quando a pessoa fala "BeagleDock" ele
 // escreve o que ouviu ("Bigodok", "Bigaloc"). Aqui o texto é comparado pelo som com os nomes
-// conhecidos (ferramentas, projeto, termos cadastrados) e o trecho é trocado pela grafia certa.
+// conhecidos (projeto aberto e termos cadastrados no vocabulário) e o trecho é trocado pela grafia certa.
 // As regras são conservadoras: só nomes com grafia própria, sem acento (português fica
 // intacto), sem começar ou terminar em artigo/preposição e com o primeiro som igual.
 

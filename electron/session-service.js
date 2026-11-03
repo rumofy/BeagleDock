@@ -197,6 +197,17 @@ function createSessionService({ store, runner }) {
     runner.kill(request.sessionId);
     return { ok: true };
   }
+  // "Responder agora" para uma mensagem já entregue à CLI (Claude Code e Codex leem na próxima
+  // etapa). No Antigravity a mensagem fica na fila: lá vale o "Enviar agora" (forceQueued).
+  async function answerNow(request) {
+    if (!validIds(request)) return { ok: false, error: "Mensagem inválida." };
+    if (!["claude", "codex"].includes(request.providerId))
+      return { ok: false, error: "Esta CLI só recebe a mensagem ao fim da resposta." };
+    const mode = request.mode === "interrupt" ? "interrupt" : "background";
+    if (!turns.has(request.sessionId) || typeof runner.answerNow !== "function")
+      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+    return runner.answerNow({ sessionId: request.sessionId, providerId: request.providerId, mode });
+  }
   async function execute(payload) {
     const id = payload?.sessionId;
     if (removing.has(id)) return cancelled();
@@ -376,6 +387,7 @@ function createSessionService({ store, runner }) {
     interrupt,
     cancelQueued,
     forceQueued,
+    answerNow,
     isBusy: () => turns.size > 0,
     // Sessões com turno rodando ou na fila (a fila aguarda dentro de `turns`).
     activeCount: () => turns.size,

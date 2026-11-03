@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 contextBridge.exposeInMainWorld("beagleAPI", {
   getGlobalPermissions: () => ipcRenderer.invoke("get-global-permissions"),
@@ -86,9 +86,25 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   ptySpawn: (payload) => ipcRenderer.invoke("pty-spawn", payload),
   ptyWrite: (payload) => ipcRenderer.invoke("pty-write", payload),
   ptyResize: (payload) => ipcRenderer.invoke("pty-resize", payload),
+  cliTerminalOpen: (request) => ipcRenderer.invoke("cli-terminal-open", request),
+  cliTerminalWrite: (request) => ipcRenderer.invoke("cli-terminal-write", request),
+  cliTerminalResize: (request) => ipcRenderer.invoke("cli-terminal-resize", request),
+  cliTerminalClose: (sessionId) => ipcRenderer.invoke("cli-terminal-close", sessionId),
+  cliTerminalList: () => ipcRenderer.invoke("cli-terminal-list"),
+  // Caminho real de um arquivo arrastado para o terminal (o renderer não vê caminhos).
+  pathForFile: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || "";
+    } catch {
+      return "";
+    }
+  },
+  // Ctrl+V no terminal: com imagem, a própria CLI lê a área de transferência; com texto, cola.
+  cliTerminalClipboard: () => ipcRenderer.invoke("cli-terminal-clipboard"),
   interruptCliSession: (id) => ipcRenderer.invoke("interrupt-cli-session", id),
   cancelQueuedPrompt: (request) => ipcRenderer.invoke("cancel-queued-prompt", request),
   forceQueuedPrompt: (request) => ipcRenderer.invoke("force-queued-prompt", request),
+  answerNowPrompt: (request) => ipcRenderer.invoke("answer-now-prompt", request),
   executeCliPrompt: (payload) =>
     ipcRenderer.invoke("execute-cli-prompt", payload),
   on: (channel, callback) => {
@@ -97,6 +113,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "tools-update",
         "pty-data",
         "pty-exit",
+        "cli-terminal-data",
+        "cli-terminal-exit",
         "cli-stream-chunk",
         "cli-activity-event",
         "cli-context",

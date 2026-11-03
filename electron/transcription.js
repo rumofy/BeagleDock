@@ -21,118 +21,6 @@ const MIN_AUDIO_BYTES = 44 + 3200; // cabeçalho + ~0,1 s
 const TIMEOUT_MS = 180_000;
 const MAX_PROMPT_CHARS = 1500;
 
-// Termos do dia a dia de quem programa que um modelo genérico costuma errar em português.
-// Os que têm grafia própria (BeagleDock, TypeScript…) também são corrigidos pelo som.
-const BASE_VOCABULARY = [
-  "Claude Code",
-  "Codex CLI",
-  "Codex",
-  "Antigravity",
-  "AGY",
-  "BeagleDock",
-  "ai-memory",
-  "Claude",
-  "Anthropic",
-  "OpenAI",
-  "Gemini",
-  "ChatGPT",
-  "Sonnet",
-  "Opus",
-  "Haiku",
-  "GitHub",
-  "GitLab",
-  "TypeScript",
-  "JavaScript",
-  "Node.js",
-  "Next.js",
-  "React",
-  "Electron",
-  "Vite",
-  "Tailwind",
-  "Python",
-  "Docker",
-  "Kubernetes",
-  "PostgreSQL",
-  "SQLite",
-  "MongoDB",
-  "Redis",
-  "Supabase",
-  "Vercel",
-  "Postman",
-  "Sentry",
-  "Figma",
-  "VS Code",
-  "Linux",
-  "Ubuntu",
-  "Debian",
-  "MCP",
-  "API",
-  "JSON",
-  "YAML",
-  "SQL",
-  "CI/CD",
-  "npm",
-  "handoff",
-  "commit",
-  "merge",
-  "rebase",
-  "pull request",
-  "branch",
-  "worktree",
-  "deploy",
-  "refactor",
-  "endpoint",
-  "frontend",
-  "backend",
-  "webhook",
-  "token",
-  "hook",
-  "prompt",
-  "build",
-  "bug",
-  "debug",
-  "log",
-  "release",
-  "changelog",
-  "plan mode",
-  "skill",
-];
-
-// Nomes de uma palavra só que podem ser corrigidos pelo som: não soam como nenhuma palavra
-// do português ("Sentry" ficaria perto de "sentir", "Postman" de "postam"; esses ficam fora).
-const SOUND_SAFE_NAMES = ["Codex", "Anthropic", "Supabase", "Kubernetes", "ChatGPT"];
-
-// Confusões frequentes que o som sozinho não resolve: "cloud" (nuvem) existe de verdade,
-// então só a expressão completa vira o nome da ferramenta.
-const BASE_REPLACEMENTS = [
-  { from: "cloud code", to: "Claude Code" },
-  { from: "cloud coding", to: "Claude Code" },
-  { from: "clode code", to: "Claude Code" },
-  { from: "clode coding", to: "Claude Code" },
-  // "Cláudio" sozinho é nome de gente; só junto de "code/coding" é a ferramenta.
-  { from: "claudio code", to: "Claude Code" },
-  { from: "claudio coding", to: "Claude Code" },
-  { from: "cláudio code", to: "Claude Code" },
-  { from: "cláudio coding", to: "Claude Code" },
-  { from: "claude coding", to: "Claude Code" },
-  { from: "cloud desktop", to: "Claude Desktop" },
-  { from: "cloud sonnet", to: "Claude Sonnet" },
-  { from: "cloud opus", to: "Claude Opus" },
-  { from: "cloud haiku", to: "Claude Haiku" },
-  { from: "codex cli", to: "Codex CLI" },
-  { from: "anti gravity", to: "Antigravity" },
-  // A CLI do Antigravity é "agy", dita como sigla: "ag" não é palavra do português.
-  { from: "agy", to: "AGY" },
-  { from: "ag", to: "AGY" },
-  { from: "ai memory", to: "ai-memory" },
-  { from: "pul request", to: "pull request" },
-  { from: "git hub", to: "GitHub" },
-  { from: "type script", to: "TypeScript" },
-  { from: "java script", to: "JavaScript" },
-  { from: "node js", to: "Node.js" },
-  { from: "next js", to: "Next.js" },
-];
-
 class SpeechModelMissingError extends Error {
   constructor(model) {
     super(`Baixe o modelo de voz (${model.label}) para usar o ditado local.`);
@@ -175,7 +63,7 @@ function vocabularyTerms({ vocabulary = "", context = [] } = {}) {
   const { terms: own, replacements } = parseVocabulary(vocabulary);
   const seen = new Set();
   const terms = [];
-  for (const term of [...own, ...replacements.map((r) => r.to), ...context, ...BASE_VOCABULARY]) {
+  for (const term of [...own, ...replacements.map((r) => r.to), ...context]) {
     const clean = String(term || "").trim().replace(/\s+/g, " ");
     if (!clean || clean.length > 60 || seen.has(clean.toLowerCase())) continue;
     seen.add(clean.toLowerCase());
@@ -210,18 +98,13 @@ const URL_PATTERN = /((?:https?:\/\/|www\.)[^\s<>()[\]`]+)/i;
 function applyVocabularyToText(text, { vocabulary = "", context = [] } = {}) {
   let result = text;
   const { terms: own, replacements } = parseVocabulary(vocabulary);
-  // As trocas da pessoa vêm antes das do app, para poder sobrepor qualquer uma delas.
-  for (const { from, to } of [...replacements, ...BASE_REPLACEMENTS])
+  for (const { from, to } of replacements)
     result = result.replace(wordPattern(from), to);
   // Nomes da sessão (pasta, workspace) podem ser palavras comuns ("Testes"): só entram os
   // que têm grafia claramente própria, como "RumofyNext".
   const distinctive = context.filter((term) => /\p{Lu}/u.test(String(term).slice(1)));
   // O que soa como um nome conhecido ("Bigodok") vira o nome ("BeagleDock").
-  result = fixNamesBySound(
-    result,
-    [...distinctive, ...BASE_VOCABULARY],
-    [...own, ...replacements.map((r) => r.to), ...SOUND_SAFE_NAMES],
-  );
+  result = fixNamesBySound(result, distinctive, [...own, ...replacements.map((r) => r.to)]);
   for (const term of vocabularyTerms({ vocabulary, context: distinctive })) {
     if (term.length < 3 || term === term.toLowerCase()) continue; // só termos com grafia própria
     result = result.replace(wordPattern(term), term);

@@ -20,9 +20,11 @@ import { SidebarNav } from "./features/sidebar/SidebarNav";
 import { FloatingTerminal } from "./features/terminal/FloatingTerminal";
 import { TerminalHeader } from "./features/terminal/TerminalHeader";
 import { TerminalTab } from "./features/terminal/TerminalTab";
+import { CliTerminalView } from "./features/terminal/CliTerminalView";
 
 function AppShell() {
-  const { activeTab, appError, setAppError, settings } = useApp();
+  const { activeTab, appError, setAppError, settings, currentSession, cliTerminals } = useApp();
+  const terminalMode = cliTerminals.isTerminal(currentSession?.id);
   useTheme(settings.theme);
   const chatAreaRef = useRef<HTMLDivElement>(null);
 
@@ -62,8 +64,13 @@ function AppShell() {
           ref={chatAreaRef}
           className="flex-1 overflow-hidden relative flex flex-col bg-[#fcfbfa]"
         >
-          {activeTab === "chat" && <ChatView />}
-          <FloatingTerminal containerRef={chatAreaRef} />
+          {activeTab === "chat" &&
+            (terminalMode && currentSession ? (
+              <CliTerminalView key={currentSession.id} session={currentSession} />
+            ) : (
+              <ChatView />
+            ))}
+          {!terminalMode && <FloatingTerminal containerRef={chatAreaRef} />}
           {activeTab === "memory" && <MemoryTab />}
           {activeTab === "terminal" && <TerminalTab />}
           {activeTab === "settings" && <SettingsTab />}

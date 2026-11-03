@@ -253,10 +253,29 @@ export interface MaintenancePromptOptions {
 
 export type PtyPayload = Record<string, unknown>;
 
+export interface CliTerminalInfo {
+  sessionId: string;
+  providerId: AIProviderId;
+  cwd: string;
+  pid: number;
+  /** Abriu retomando a conversa nativa (e não uma conversa nova da CLI). */
+  resumed: boolean;
+  exited: boolean;
+  exitCode: number | null;
+  /** Total de caracteres já emitidos pelo terminal. */
+  end: number;
+}
+export type CliTerminalOpenResult =
+  | ({ ok: true; replay: string } & CliTerminalInfo)
+  | { ok: false; error: string };
+
 export interface StreamEvents {
   "tools-update": ToolsUpdate;
   "pty-data": { sessionId: string; data: string; pid?: number; shellId?: string };
   "pty-exit": { sessionId: string; [key: string]: unknown };
+  /** Tela da CLI aberta no modo terminal (saída crua do pty). */
+  "cli-terminal-data": { sessionId: string; data: string; end: number };
+  "cli-terminal-exit": { sessionId: string; exitCode: number | null };
   /** Pedido do backend (bandeja, notificação) para abrir uma conversa. */
   "open-session": { sessionId: string };
   /** Aviso do backend sobre o envio (ex.: a CLI não tem campo nativo para o anexo). */
@@ -377,11 +396,34 @@ export interface BeagleAPI {
   ptySpawn(payload: PtyPayload): Promise<unknown>;
   ptyWrite(payload: PtyPayload): Promise<unknown>;
   ptyResize(payload: PtyPayload): Promise<unknown>;
+  /** Abre (ou reconecta) a interface própria da CLI desta conversa num terminal. */
+  cliTerminalOpen(request: {
+    sessionId: string;
+    providerId: AIProviderId;
+    cwd: string;
+    cols?: number;
+    rows?: number;
+  }): Promise<CliTerminalOpenResult>;
+  cliTerminalWrite(request: { sessionId: string; data: string }): Promise<{ ok: boolean }>;
+  cliTerminalResize(request: { sessionId: string; cols: number; rows: number }): Promise<{ ok: boolean }>;
+  cliTerminalClose(sessionId: string): Promise<{ ok: boolean }>;
+  cliTerminalList(): Promise<CliTerminalInfo[]>;
+  /** Conteúdo da área de transferência para o Ctrl+V do terminal. */
+  cliTerminalClipboard(): Promise<{ image: boolean; text: string }>;
+  /** Caminho no disco de um arquivo arrastado (só no Electron). */
+  pathForFile?(file: File): string;
   interruptCliSession(id: string): Promise<OkResult>;
   /** Tira da fila uma mensagem que a CLI ainda não recebeu (apaga também a mensagem salva). */
   cancelQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
   /** Interrompe a execução atual para a mensagem da fila ser enviada em seguida. */
   forceQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
+  /**
+   * Mensagem já entregue que a CLI ainda não leu: `background` manda o comando em execução para o
+   * segundo plano (Claude Code); `interrupt` interrompe a etapa atual. Codex: interrompe e reenvia.
+   */
+  answerNowPrompt(
+    request: QueuedPromptRequest & { providerId: AIProviderId; mode: "background" | "interrupt" },
+  ): Promise<OkResult & { mode?: "background" | "interrupt" }>;
   executeCliPrompt(payload: ExecutePromptPayload): Promise<ExecutePromptResult>;
   on<K extends keyof StreamEvents>(channel: K, callback: (payload: StreamEvents[K]) => void): () => void;
 }
