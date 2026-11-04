@@ -31,9 +31,9 @@ app.whenReady().then(() => {
 });
 const backend = require("../electron/main");
 const pause = () => new Promise((resolve) => setTimeout(resolve, 40));
-async function waitFor(win, expression) {
+async function waitFor(win, expression, timeout = 10000) {
   const start = Date.now();
-  while (Date.now() - start < 10000) {
+  while (Date.now() - start < timeout) {
     const result = await win.webContents.executeJavaScript(expression);
     if (result) return result;
     await pause();
@@ -190,6 +190,13 @@ async function send(win, text, expected) {
     assert.match(typed, /\x1b\[200~Use a skill de handoff do ai-memory/);
     assert.ok(typed.endsWith("\x1b[201~\r"), JSON.stringify(typed.slice(-40)));
     await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
+    // O fim da resposta no terminal (a tela parou de animar) grava a conversa no histórico.
+    const terminalSession = await js(`window.beagleAPI.cliTerminalList().then(l=>l[0].sessionId)`);
+    await waitFor(
+      win,
+      `window.beagleAPI.getChatMessages(${JSON.stringify(terminalSession)}).then(list=>list.some(m=>m.sender==='antigravity'&&m.text==='FIXTURE TUI RESPOSTA')&&list.some(m=>m.sender==='user'&&m.text.includes('Use a skill de handoff do ai-memory')))`,
+      20000,
+    );
     const shot = async (name) => {
       if (!process.env.BEAGLEDOCK_SHOT_DIR) return;
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -235,6 +242,8 @@ async function send(win, text, expected) {
     await waitFor(win, `!!document.querySelector('[data-testid="delivered-actions"]')`);
     assert.ok(await js(`document.body.innerText.includes('Entregue · a IA lê quando a etapa atual terminar')`));
     assert.ok(!(await js(`document.body.innerText.includes('Na fila · envio automático')`)), "a mensagem entregue não aparece como fila");
+    // A resposta anterior para na entrega: não fica "em andamento" até o turno inteiro acabar.
+    await waitFor(win, `!document.body.innerText.includes('Executando na CLI local') && !document.body.innerText.includes('Aguardando a CLI')`);
     await js(`[...document.querySelectorAll('[data-testid="delivered-actions"] button')].find(b=>b.innerText.includes('Responder agora')).click()`);
     await waitFor(win, `document.body.innerText.includes('RESPOSTA_AGORA') && !document.querySelector('[data-testid="delivered-actions"]')`);
     const asked = fs.readFileSync(file("answer-now-claude.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));

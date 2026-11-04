@@ -65,7 +65,7 @@ function fakePty() {
   };
 }
 
-function setup({ link = null, beforeOpen } = {}) {
+function setup({ link = null, beforeOpen, hooks } = {}) {
   const pty = fakePty();
   const events = [];
   const opened = [];
@@ -80,6 +80,8 @@ function setup({ link = null, beforeOpen } = {}) {
     store: { getNativeSession: async () => link },
     beforeOpen: beforeOpen || (async (id) => opened.push(id)),
     emit: (channel, payload) => events.push([channel, payload]),
+    hooks,
+    newId: () => "11111111-2222-3333-4444-555555555555",
   });
   return { pty, events, opened, terminals };
 }
@@ -218,4 +220,32 @@ test("Ctrl+V: lê a área de transferência assíncrona do Electron (imagem e te
   // Falha ao ler não derruba o Ctrl+V.
   const broken = { has: async () => { throw new Error("x"); }, readText: () => { throw new Error("y"); } };
   assert.deepEqual(await readTerminalClipboard(broken), { image: false, text: "" });
+});
+
+test("conversa nova do Claude Code abre com um ID conhecido, para o histórico achá-la depois", async () => {
+  assert.deepEqual(terminalArgs("claude", undefined, "abc12345-uuid"), ["--session-id", "abc12345-uuid"]);
+  assert.deepEqual(terminalArgs("codex", undefined, "abc12345-uuid"), [], "só o Claude Code aceita escolher o ID");
+  assert.throws(() => terminalArgs("claude", undefined, "--x"), /ID nativo inválido/);
+  const calls = [];
+  const hooks = Object.fromEntries(
+    ["opened", "input", "output", "exited", "closed"].map((name) => [name, (...args) => calls.push([name, ...args])]),
+  );
+  const { pty, terminals } = setup({ hooks });
+  await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
+  const proc = pty.spawned[0];
+  assert.deepEqual(proc.args, ["--session-id", "11111111-2222-3333-4444-555555555555"]);
+  assert.deepEqual(calls[0], [
+    "opened",
+    { sessionId: "s1", providerId: "claude", cwd: "/proj", nativeId: undefined, newNativeId: "11111111-2222-3333-4444-555555555555" },
+  ]);
+  terminals.write({ sessionId: "s1", data: "oi\r" });
+  proc.emitData("tela");
+  proc.emitExit({ exitCode: 0 });
+  terminals.close("s1");
+  assert.deepEqual(calls.slice(1).map((c) => c.slice(0, 3)), [
+    ["input", "s1", "oi\r"],
+    ["output", "s1", "tela"],
+    ["exited", "s1"],
+    ["closed", "s1"],
+  ]);
 });

@@ -32,6 +32,15 @@ function promptText(content) {
     return "";
   return clean;
 }
+// AGY: a mensagem digitada vem embrulhada com metadados (<USER_REQUEST>…</USER_REQUEST>, hora local,
+// troca de modelo). Fica só o que a pessoa escreveu (AGY 1.4.12).
+function agyUserText(content) {
+  const text = typeof content === "string" ? content : "";
+  const request = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/.exec(text);
+  return request ? request[1].trim() : text;
+}
+// Folga entre a hora do history.jsonl do AGY e a da primeira etapa da conversa.
+const AGY_MATCH_MS = 2 * 60 * 1000;
 // Reescreve um índice .jsonl sem as linhas da conversa apagada (troca atômica do arquivo).
 function dropLines(file, matches) {
   let text;
@@ -105,6 +114,30 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
     } finally {
       if (fd !== undefined) fs.closeSync(fd);
     }
+  }
+  // Primeira mensagem de cada conversa do AGY em brain/<id> criada a partir de `since` (ms).
+  function agyBrainIndex(since) {
+    const root = path.join(dirs.agy, "brain");
+    let names = [];
+    try {
+      names = fs.readdirSync(root);
+    } catch {
+      return [];
+    }
+    const out = [];
+    for (const id of names) {
+      if (!/^[a-zA-Z0-9_-]{8,160}$/.test(id)) continue;
+      const file = path.join(root, id, ".system_generated", "logs", "transcript.jsonl");
+      try {
+        if (fs.statSync(file).mtimeMs < since - AGY_MATCH_MS) continue;
+      } catch {
+        continue;
+      }
+      const first = headEvents(file, 64 * 1024).find((e) => e.type === "USER_INPUT");
+      const at = Date.parse(first?.created_at);
+      if (first && Number.isFinite(at)) out.push({ id, text: agyUserText(first.content), at });
+    }
+    return out;
   }
   function history({ query = "", exclude = [] } = {}) {
     const skip = new Set(exclude);
@@ -185,16 +218,28 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         meta.model || "",
       );
     }
-    for (const ev of jsonLines(path.join(dirs.agy, "history.jsonl")).slice(
-      -1000,
-    ))
-      add(
-        "antigravity",
-        ev.conversationId,
-        ev.display,
-        ev.workspace,
-        new Date(ev.timestamp).getTime(),
-      );
+    const agyLines = jsonLines(path.join(dirs.agy, "history.jsonl")).slice(-1000);
+    // Conversa nova aberta na interface do AGY: a linha do history.jsonl vem sem o ID da conversa
+    // (só texto, hora e pasta; AGY 1.4.12). O ID sai da pasta brain/<id>, pela primeira mensagem e
+    // pela hora.
+    const loose = agyLines.filter((ev) => !ev.conversationId && ev.display && ev.workspace);
+    const brain = loose.length ? agyBrainIndex(Math.min(...loose.map((ev) => Number(ev.timestamp) || 0))) : [];
+    const used = new Set();
+    for (const ev of agyLines) {
+      let id = ev.conversationId;
+      const at = new Date(ev.timestamp).getTime();
+      if (!id && ev.display && ev.workspace) {
+        const text = String(ev.display).trim();
+        const match = brain
+          .filter((b) => !used.has(b.id) && b.text === text && Math.abs(b.at - at) <= AGY_MATCH_MS)
+          .sort((a, b) => Math.abs(a.at - at) - Math.abs(b.at - at))[0];
+        if (match) {
+          used.add(match.id);
+          id = match.id;
+        }
+      }
+      add("antigravity", id, ev.display, ev.workspace, at);
+    }
     const term = String(query || "").trim().toLowerCase();
     return [...items.values()]
       .filter(
@@ -243,7 +288,9 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
     }
     throw new Error("Provedor inválido.");
   }
-  function conversation(provider, id) {
+  // `fallbackCwd`: a pasta já conhecida (modo terminal), para conversas que a CLI não registra no
+  // índice dela (ex.: AGY sem linha no history.jsonl).
+  function conversation(provider, id, { cwd: fallbackCwd } = {}) {
     const file = nativeFile(provider, id);
     if (!file || !fs.existsSync(file))
       throw new Error("Conversa não encontrada no disco.");
@@ -255,7 +302,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
       provider === "codex"
         ? events.find((e) => e.type === "session_meta")?.payload?.cwd
         : events.find((e) => e.cwd)?.cwd;
-    cwd ||= item?.project;
+    cwd ||= item?.project || fallbackCwd;
     if (!cwd)
       throw new Error(
         "O diretório original desta conversa não pôde ser identificado.",
@@ -282,7 +329,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         ["USER_INPUT", "PLANNER_RESPONSE"].includes(ev.type)
       ) {
         role = ev.type === "USER_INPUT" ? "user" : "assistant";
-        content = ev.content;
+        content = role === "user" ? agyUserText(ev.content) : ev.content;
       }
       const text =
         typeof content === "string"

@@ -101,3 +101,31 @@ test("resposta solta sem nada em andamento é esquecida", () => {
   t.flushLate();
   assert.equal(t.get("ag"), undefined);
 });
+
+test("mensagem entregue no meio do turno: etapas novas vão para a resposta nova, as antigas terminam na de antes", () => {
+  const sent = [], late = [];
+  const t = createEventTracker({ emit: (_c, d) => sent.push(d), sessionId: "s", onLate: (p) => late.push(p), setTimer: (fn) => fn });
+  t.start("r1");
+  t.upsert("cmd", { kind: "command", title: "Bash" });
+  t.upsert("bg", { kind: "command", title: "Bash", meta: { background: true } });
+  t.rotate("r2");
+  t.upsert("think", { kind: "reasoning", title: "Raciocínio" });
+  t.finish("cmd", "error");
+  assert.equal(sent.find((d) => d.event.id === "think").responseMessageId, "r2");
+  assert.equal(sent.filter((d) => d.event.id === "cmd").at(-1).responseMessageId, "r1", "a etapa antiga termina na resposta dela");
+  assert.equal(late.length, 0, "durante o turno, a resposta anterior não é atualização tardia");
+  t.rotate("r3");
+  t.upsert("tool", { kind: "tool", title: "Read" });
+  t.finishRunning();
+  assert.equal(t.get("think").status, "done", "o que ficou rodando em respostas anteriores também fecha");
+  assert.equal(t.get("bg").status, "running", "o comando em segundo plano não");
+  assert.deepEqual(t.snapshotFor("r1").map((e) => e.id), ["cmd", "bg"]);
+  assert.deepEqual(t.snapshotFor("r2").map((e) => e.id), ["think"]);
+  assert.deepEqual(t.snapshotFor("r3").map((e) => e.id), ["tool"]);
+  t.endTurn();
+  t.finish("bg", "done");
+  t.flushLate();
+  assert.equal(late.at(-1).responseMessageId, "r1", "depois do turno, o comando em segundo plano atualiza a resposta de origem");
+  t.start("r4");
+  assert.deepEqual(t.snapshotFor("r2"), [], "o próximo turno esquece as respostas sem nada rodando");
+});

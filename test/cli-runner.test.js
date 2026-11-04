@@ -1463,6 +1463,38 @@ test("claude: Interromper e responder mantém o turno aberto até a resposta à 
   const result = await run;
   assert.equal(result.ok, true);
   assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "RESPOSTA=42"]]);
+  const cmd = result.events.find((e) => e.id === "toolu_cmd1");
+  assert.ok(cmd && cmd.status !== "running", "o comando interrompido não fica em andamento na resposta original");
+  runner.shutdown();
+});
+
+test("claude: cada mensagem entregue fecha a resposta anterior e recebe as próprias etapas", async () => {
+  const h = harness();
+  const runner = h.make();
+  const run = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  child.event({ type: "system", subtype: "init", session_id: "native-rot-1" });
+  claudeCommand(child);
+  await tick();
+  const first = await runner.inject({ ...payload("claude"), prompt: "outra coisa", responseMessageId: "ai-segunda" });
+  assert.equal(first.from, payload("claude").responseMessageId);
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "ok" }] } });
+  child.event({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "/x" } }] } });
+  const second = await runner.inject({ ...payload("claude"), prompt: "e mais", responseMessageId: "ai-terceira" });
+  assert.equal(second.from, "ai-segunda", "a segunda entrega fecha a resposta da primeira, não a original");
+  child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_read", content: "x" }] } });
+  textBlock(child, "Pronto.");
+  child.event({ type: "result", result: "Pronto." });
+  const result = await run;
+  const ids = (events) => (events || []).map((e) => e.id);
+  assert.ok(ids(result.events).includes("toolu_cmd1"), "o comando fica na resposta original");
+  assert.ok(!ids(result.events).includes("toolu_read"));
+  const byId = Object.fromEntries(result.followUps.map((f) => [f.responseMessageId, f]));
+  assert.ok(ids(byId["ai-segunda"].events).includes("toolu_read"), "a leitura feita depois da entrega vai para a resposta dela");
+  assert.equal(byId["ai-terceira"].text, "Pronto.");
+  const readEvents = h.emitted.filter((e) => e.ch === "cli-activity-event" && e.data.event.id === "toolu_read");
+  assert.ok(readEvents.length && readEvents.every((e) => e.data.responseMessageId === "ai-segunda"));
   runner.shutdown();
 });
 

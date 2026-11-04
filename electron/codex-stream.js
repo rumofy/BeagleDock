@@ -748,9 +748,18 @@ function createCodexStream({
         clearTimeout(timer);
         current.finish = null;
         current.events.finishRunning(result.ok ? "done" : "error");
-        const turnEvents = current.events.snapshot();
-        current.events.endTurn();
+        // Com mensagens entregues no meio, cada resposta leva as próprias etapas.
+        const rotated = current?.rotations?.length;
+        const turnEvents = rotated
+          ? current.events.snapshotFor(current.responseMessageId)
+          : current.events.snapshot();
         result = applyRotations(result, current);
+        if (result.followUps)
+          result.followUps = result.followUps.map((f) => ({
+            ...f,
+            events: current.events.snapshotFor(f.responseMessageId),
+          }));
+        current.events.endTurn();
         resolve({
           ...result,
           events: turnEvents,
@@ -813,8 +822,10 @@ function createCodexStream({
         expectedTurnId: e.turnId,
         input: p.input,
       });
-      const from = e.responseMessageId;
+      // A resposta que estava recebendo o texto (a original ou a de uma entrega anterior) fecha aqui.
+      const from = liveReply(e, e.text).responseMessageId;
       const rotation = addRotation(e, { responseMessageId: p.responseMessageId, text: e.text });
+      e.events?.rotate(p.responseMessageId);
       (e.steered ||= []).push(p.input);
       return { from, at: rotation.at };
     } catch {

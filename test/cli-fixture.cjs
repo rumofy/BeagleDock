@@ -21,10 +21,36 @@ if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsW
   // Como as CLIs reais, liga a colagem delimitada (o terminal marca o início e o fim do bloco).
   process.stdout.write(`\x1b[?2004hFIXTURE TUI ${name} ${args.join(" ")}\r\n> `);
   process.stdin.setRawMode(true);
+  let pending = "";
   process.stdin.on("data", (chunk) => {
     const text = chunk.toString();
     fs.appendFileSync(path.join(root, "tui-input-" + name + ".txt"), text);
     process.stdout.write(text.includes("\r") ? "\r\nENVIADO\r\n> " : text.replace(/\x1b\[20[01]~/g, ""));
+    pending += text.split("\r")[0];
+    if (!text.includes("\r")) return;
+    const prompt = pending.replace(/\x1b\[20[01]~/g, "").trim();
+    pending = "";
+    // AGY: como a CLI real, anima a tela enquanto trabalha, grava a conversa em brain/<id> e fica
+    // em silêncio ao terminar (é assim que o BeagleDock percebe o fim e lê o histórico).
+    const conversation = args[0] === "--conversation" ? args[1] : null;
+    if (name !== "agy" || !prompt || !conversation) return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      process.stdout.write("\r⠋ trabalhando " + (Date.now() - started));
+      if (Date.now() - started < 3200) return;
+      clearInterval(timer);
+      const dir = path.join(process.env.HOME, ".gemini/antigravity-cli/brain", conversation, ".system_generated/logs");
+      fs.mkdirSync(dir, { recursive: true });
+      const at = new Date().toISOString();
+      fs.appendFileSync(
+        path.join(dir, "transcript.jsonl"),
+        [
+          { type: "USER_INPUT", created_at: at, content: `<USER_REQUEST>\n${prompt}\n</USER_REQUEST>` },
+          { type: "PLANNER_RESPONSE", created_at: at, content: "FIXTURE TUI RESPOSTA" },
+        ].map((e) => JSON.stringify(e) + "\n").join(""),
+      );
+      process.stdout.write("\r\nFIXTURE TUI RESPOSTA\r\n> ");
+    }, 200);
   });
   return;
 }

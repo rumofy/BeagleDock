@@ -434,3 +434,42 @@ test("model capabilities refresh from changed CLI cache contents without retaini
     ["replacement"],
   );
 });
+test("AGY: conversa aberta na interface da CLI (history.jsonl sem ID) é achada pela pasta brain", (t) => {
+  const home = fixture(t);
+  const cwd = path.join(home, "project");
+  const at = Date.parse("2026-11-04T00:15:11Z");
+  write(
+    home,
+    ".gemini/antigravity-cli/history.jsonl",
+    lines([
+      // Formato real do AGY 1.4.12 na interface: só texto, hora e pasta.
+      { display: "diga só GIRASSOL", timestamp: at + 400, workspace: cwd },
+      { display: "outra pergunta sem conversa", timestamp: at + 900, workspace: cwd },
+    ]),
+  );
+  const wrapped = (text) =>
+    `<USER_REQUEST>\n${text}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nThe current local time is: 2026-11-03T21:15:11-03:00.\n</ADDITIONAL_METADATA>`;
+  write(
+    home,
+    ".gemini/antigravity-cli/brain/agy-tui-0001/.system_generated/logs/transcript.jsonl",
+    lines([
+      { type: "USER_INPUT", created_at: "2026-11-04T00:15:11Z", content: wrapped("diga só GIRASSOL") },
+      { type: "SYSTEM_MESSAGE", created_at: "2026-11-04T00:15:11Z", content: "hook" },
+      { type: "PLANNER_RESPONSE", created_at: "2026-11-04T00:15:14Z", content: "GIRASSOL" },
+    ]),
+  );
+  write(
+    home,
+    ".gemini/antigravity-cli/brain/agy-tui-velha/.system_generated/logs/transcript.jsonl",
+    lines([{ type: "USER_INPUT", created_at: "2026-10-01T00:00:00Z", content: wrapped("diga só GIRASSOL") }]),
+  );
+  const reader = createHistory({ home, env: {} });
+  const items = reader.history().filter((h) => h.provider === "antigravity");
+  assert.deepEqual(items.map((h) => [h.sessionId, h.project]), [["agy-tui-0001", cwd]], "a de outra data não casa");
+  const result = reader.conversation("antigravity", "agy-tui-0001");
+  assert.equal(result.cwd, cwd);
+  assert.deepEqual(result.messages.map((m) => [m.sender, m.text]), [
+    ["user", "diga só GIRASSOL"],
+    ["antigravity", "GIRASSOL"],
+  ]);
+});

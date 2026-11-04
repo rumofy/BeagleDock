@@ -6,12 +6,22 @@ const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 // ou painel com vários terminais). O TUI redesenha tudo ao redimensionar, então o fim basta.
 const REPLAY_LIMIT = 512 * 1024;
 
-/** Argumentos que abrem a interface da CLI, retomando a conversa nativa quando ela já existe. */
-function terminalArgs(providerId, nativeId) {
+/**
+ * Argumentos que abrem a interface da CLI, retomando a conversa nativa quando ela já existe. Numa
+ * conversa nova, o Claude Code recebe o ID que vai usar (`newId`), para o histórico achá-la depois.
+ */
+function terminalArgs(providerId, nativeId, newId) {
   if (!PROVIDERS.has(providerId)) throw new Error("CLI desconhecida.");
-  if (!nativeId) return [];
   // Nunca começa com "-": viraria uma opção da CLI em vez do id da conversa.
-  if (!/^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,159}$/.test(nativeId)) throw new Error("ID nativo inválido.");
+  const valid = (id) => /^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,159}$/.test(id);
+  if (!nativeId) {
+    if (providerId === "claude" && newId) {
+      if (!valid(newId)) throw new Error("ID nativo inválido.");
+      return ["--session-id", newId];
+    }
+    return [];
+  }
+  if (!valid(nativeId)) throw new Error("ID nativo inválido.");
   if (providerId === "codex") return ["resume", nativeId];
   if (providerId === "claude") return ["--resume", nativeId];
   return ["--conversation", nativeId];
@@ -51,7 +61,15 @@ function createCliTerminals({
   // ocioso dele, para as duas formas nunca escreverem na mesma conversa ao mesmo tempo.
   beforeOpen = async () => {},
   emit = () => {},
+  // Acompanhamento de cada terminal (fim de resposta, histórico): opened, input, output, exited, closed.
+  hooks = {},
+  newId = () => require("crypto").randomUUID(),
 }) {
+  const hook = (name, ...args) => {
+    try {
+      hooks[name]?.(...args);
+    } catch {}
+  };
   const terminals = new Map();
 
   function binary(providerId) {
@@ -102,7 +120,8 @@ function createCliTerminals({
       if (link && link.cwd !== target)
         return { ok: false, error: "Esta conversa pertence a outro diretório." };
       await beforeOpen(sessionId);
-      const args = terminalArgs(providerId, link?.nativeId);
+      const newNativeId = providerId === "claude" && !link?.nativeId ? newId() : undefined;
+      const args = terminalArgs(providerId, link?.nativeId, newNativeId);
       const proc = pty.spawn(bin, args, {
         name: "xterm-256color",
         cols: cols > 0 ? Math.min(cols, 1000) : 100,
@@ -127,13 +146,17 @@ function createCliTerminals({
         entry.replay = (entry.replay + data).slice(-REPLAY_LIMIT);
         entry.total += data.length;
         emit("cli-terminal-data", { sessionId, data, end: entry.total });
+        hook("output", sessionId, data);
       });
       proc.onExit(({ exitCode }) => {
         entry.exited = true;
         entry.exitCode = exitCode;
-        if (terminals.get(sessionId) === entry) emit("cli-terminal-exit", { sessionId, exitCode });
+        if (terminals.get(sessionId) !== entry) return;
+        emit("cli-terminal-exit", { sessionId, exitCode });
+        hook("exited", sessionId);
       });
       terminals.set(sessionId, entry);
+      hook("opened", { sessionId, providerId, cwd: target, nativeId: link?.nativeId, newNativeId });
       return { ok: true, ...info(sessionId, entry), replay: "" };
     } catch (error) {
       return { ok: false, error: error.message };
@@ -144,6 +167,7 @@ function createCliTerminals({
     const entry = terminals.get(sessionId);
     if (!entry || entry.exited || typeof data !== "string") return { ok: false };
     entry.proc.write(data);
+    hook("input", sessionId, data);
     return { ok: true };
   }
 
@@ -164,6 +188,7 @@ function createCliTerminals({
       try {
         entry.proc.kill();
       } catch {}
+    hook("closed", sessionId);
     return { ok: true };
   }
 

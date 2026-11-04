@@ -12,7 +12,8 @@ export const quotePath = (p: string) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.
 
 /**
  * A interface própria da CLI da conversa. Teclas, colagem e arquivos arrastados vão direto
- * para ela: anexar imagem, plano, aprovações e histórico ficam por conta da CLI.
+ * para ela: anexar imagem, plano e aprovações ficam por conta da CLI (o histórico é lido do arquivo
+ * da conversa nativa, ver electron/terminal-history.js).
  */
 export function CliTerminalView({ session, compact = false }: { session: ChatSession; compact?: boolean }) {
   const { cliTerminals, setAppError } = useApp();

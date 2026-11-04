@@ -758,7 +758,11 @@ test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto es
   const pending = runner.execute(payload);
   await tick(); await tick();
   h.notify("item/agentMessage/delta", { itemId: "m1", delta: "Vou rodar os testes." });
+  h.notify("item/started", { item: { id: "cmd-test", type: "commandExecution", command: "npm test" } });
   assert.ok(await runner.inject({ ...payload, prompt: "e o build?", responseMessageId: "ai-segunda" }));
+  h.notify("item/completed", { item: { id: "cmd-test", type: "commandExecution", status: "completed", aggregatedOutput: "ok" } });
+  h.notify("item/started", { item: { id: "cmd-build", type: "commandExecution", command: "npm run build" } });
+  h.notify("item/completed", { item: { id: "cmd-build", type: "commandExecution", status: "completed", aggregatedOutput: "ok" } });
   h.notify("item/agentMessage/delta", { itemId: "m2", delta: "O build passou." });
   const last = h.events.filter((e) => e.channel === "cli-stream-chunk" && e.data.fullText).at(-1).data;
   assert.equal(last.responseMessageId, "ai-segunda");
@@ -770,6 +774,9 @@ test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto es
     result.followUps.map(({ responseMessageId, text }) => ({ responseMessageId, text })),
     [{ responseMessageId: "ai-segunda", text: "O build passou." }],
   );
+  // Cada resposta leva as próprias etapas: o comando iniciado antes da entrega fica na original.
+  assert.deepEqual(result.events.map((e) => e.id).filter((id) => id.startsWith("cmd")), ["cmd-test"]);
+  assert.deepEqual(result.followUps[0].events.map((e) => e.id).filter((id) => id.startsWith("cmd")), ["cmd-build"]);
   runner.shutdown();
 });
 

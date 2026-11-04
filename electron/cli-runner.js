@@ -1162,6 +1162,9 @@ function createCliRunner({
               ev.subtype === "error_during_execution"
             ) {
               turn.answering = false;
+              // A etapa interrompida não volta a avisar o fim: fecha como cancelada (os comandos
+              // mandados para o segundo plano seguem rodando).
+              current.events.finishRunning("error");
               return;
             }
             if (providerId === "claude") {
@@ -1289,9 +1292,18 @@ function createCliRunner({
             }
             if (!current.nativeId) kill(sessionId);
             current.events.finishRunning(result.ok ? "done" : "error");
-            const turnEvents = current.events.snapshot();
-            current.events.endTurn();
+            // Com mensagens entregues no meio, cada resposta leva as próprias etapas.
+            const rotated = turn?.rotations?.length;
+            const turnEvents = rotated
+              ? current.events.snapshotFor(turn.responseMessageId)
+              : current.events.snapshot();
             result = applyRotations(result, turn);
+            if (result.followUps)
+              result.followUps = result.followUps.map((f) => ({
+                ...f,
+                events: current.events.snapshotFor(f.responseMessageId),
+              }));
+            current.events.endTurn();
             resolve({
               ...result,
               events: turnEvents,
@@ -1409,11 +1421,13 @@ function createCliRunner({
           message: { role: "user", content: built.content },
         }) + "\n",
       );
-      const from = entry.turn.responseMessageId;
+      // A resposta que estava recebendo o texto (a original ou a de uma entrega anterior) fecha aqui.
+      const from = liveReply(entry.turn, entry.turn.text).responseMessageId;
       const rotation = addRotation(entry.turn, {
         responseMessageId: payload.responseMessageId,
         text: entry.turn.text,
       });
+      entry.events?.rotate(payload.responseMessageId);
       entry.activity?.("Entregue · a IA lê quando a etapa atual terminar");
       return { from, at: rotation.at };
     } catch {

@@ -115,6 +115,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "pty-exit",
         "cli-terminal-data",
         "cli-terminal-exit",
+        "cli-terminal-history",
         "cli-stream-chunk",
         "cli-activity-event",
         "cli-context",

@@ -220,7 +220,7 @@ export interface ExecutePromptResult {
   /** Resposta que estava sendo escrita quando a mensagem foi entregue. */
   rotatedFrom?: string;
   /** Respostas às mensagens entregues no meio da execução, na ordem (texto vazio = sem resposta). */
-  followUps?: { responseMessageId: string; text: string }[];
+  followUps?: { responseMessageId: string; text: string; events?: ChatEvent[] }[];
   output?: string;
   error?: string;
   nativeSessionId?: string;
@@ -276,6 +276,7 @@ export interface StreamEvents {
   /** Tela da CLI aberta no modo terminal (saída crua do pty). */
   "cli-terminal-data": { sessionId: string; data: string; end: number };
   "cli-terminal-exit": { sessionId: string; exitCode: number | null };
+  "cli-terminal-history": { sessionId: string; added: number };
   /** Pedido do backend (bandeja, notificação) para abrir uma conversa. */
   "open-session": { sessionId: string };
   /** Aviso do backend sobre o envio (ex.: a CLI não tem campo nativo para o anexo). */

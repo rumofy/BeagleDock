@@ -15,7 +15,7 @@ const OPTIONS: Array<{ id: Mode; label: string; description: string }> = [
     id: "terminal",
     label: "Terminal da CLI",
     description:
-      "Cada conversa abre na interface da própria CLI, continuando a mesma conversa: você digita, anexa e aprova nela, com todos os atalhos. Ficam só o Handoff e o Ditado do BeagleDock; o que é feito no terminal não entra no histórico do chat.",
+      "Cada conversa abre na interface da própria CLI, continuando a mesma conversa: você digita, anexa e aprova nela, com todos os atalhos. Ficam só o Handoff e o Ditado do BeagleDock. As mensagens trocadas no terminal entram no histórico da conversa ao fim de cada resposta, e o BeagleDock avisa por notificação quando a CLI termina ou espera você.",
   },
 ];
 

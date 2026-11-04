@@ -54,8 +54,9 @@ function createSessionService({ store, runner }) {
       const item = list[index];
       const last = index === list.length - 1;
       const text = item.text || (last ? tail : "");
-      out.push({ responseMessageId: item.responseMessageId, text });
-      if (!text || removing.has(id)) continue;
+      const events = Array.isArray(item.events) && item.events.length ? item.events : undefined;
+      out.push({ responseMessageId: item.responseMessageId, text, ...(events ? { events } : {}) });
+      if ((!text && !events) || removing.has(id)) continue;
       const next = list[index + 1];
       await write(id, () =>
         store.saveChatMessage({
@@ -65,6 +66,7 @@ function createSessionService({ store, runner }) {
           sender: payload.providerId,
           senderName: PROVIDER_NAMES[payload.providerId] || payload.providerId,
           text,
+          ...(events ? { events } : {}),
           modelBadge: payload.model,
           reasoningBadge: payload.effort,
           timestamp: new Date().toISOString(),

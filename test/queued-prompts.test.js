@@ -200,6 +200,20 @@ test("resposta à mensagem entregue sem texto não é gravada e vai vazia para a
   assert.deepEqual(t.saved.map((m) => m.id), ["r1"]);
 });
 
+test("resposta à mensagem entregue só com etapas é gravada com elas", async () => {
+  const at = Date.now();
+  const t = setup({ inject: () => ({ from: "r1", at }) });
+  const first = t.service.execute(p(1));
+  await tick();
+  await t.service.execute(p(2));
+  const events = [{ id: "e1", kind: "tool", title: "Read", status: "done" }];
+  t.gates.shift()({ ok: true, output: "tudo", followUps: [{ responseMessageId: "r2", at, text: "", events }] });
+  const result = await first;
+  assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "", events }]);
+  const r2 = t.saved.find((m) => m.id === "r2");
+  assert.deepEqual(r2?.events, events);
+});
+
 test("responder agora vai ao runner só com resposta em andamento e só no Claude e no Codex", async () => {
   const calls = [];
   const t = setup({ inject: async () => ({ at: Date.now() }) });

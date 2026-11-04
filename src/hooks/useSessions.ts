@@ -55,6 +55,7 @@ interface Params {
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
 /** Balão da mensagem que espera a resposta atual terminar (fila do app). */
 const QUEUED_TEXT = "Na fila · envio automático após a resposta atual…";
+const RUNNING_TEXT = "Executando na CLI local…";
 /** Mensagem entregue no meio da resposta, ainda não lida pela IA (ver `deliveredFor`). */
 const DELIVERED_ACTIVITY = "Entregue · a IA lê quando a etapa atual terminar";
 
@@ -314,6 +315,33 @@ export function useSessions({
       setActiveSessionId(sessionId);
       setActiveTab("chat");
     });
+    // Modo terminal: o que foi conversado na interface da CLI entrou no histórico; recarrega a
+    // conversa e dá a ela o título pela primeira mensagem, como no chat.
+    const unsubscribeTerminalHistory = beagleApi.on("cli-terminal-history", ({ sessionId }) => {
+      void beagleApi
+        .getChatMessages(sessionId)
+        .then((saved) => {
+          const list: ChatMessage[] = saved || [];
+          setMessages((prev) => ({ ...prev, [sessionId]: list }));
+          setProviders((prev) =>
+            prev.map((p) => ({
+              ...p,
+              sessions: p.sessions.map((session) => {
+                if (session.id !== sessionId || session.titleLocked) return session;
+                const title = list
+                  .filter((m) => m.sender === "user")
+                  .reduce((current, m) => conversationTitle(current, m.text), session.title);
+                if (title === session.title) return session;
+                void beagleApi
+                  .saveSession({ ...session, title })
+                  .catch((e: Error) => setAppError(e.message));
+                return { ...session, title };
+              }),
+            })),
+          );
+        })
+        .catch((e: Error) => setAppError(e.message));
+    });
     const unsubscribeTurnFinished = beagleApi.on(
       "cli-turn-finished",
       ({ sessionId, responseMessageId, ok, text, error, events, discard, context }) => {
@@ -398,6 +426,7 @@ export function useSessions({
       unsubscribeContext();
       unsubscribeTurnStarted();
       unsubscribeOpen();
+      unsubscribeTerminalHistory();
       unsubscribeNotice();
       unsubscribePermission();
       unsubscribeTurnFinished();
@@ -973,7 +1002,7 @@ export function useSessions({
       senderName: provider?.name || "IA",
       modelBadge: selected.model,
       reasoningBadge: selected.effort,
-      text: wasPending ? QUEUED_TEXT : "Executando na CLI local…",
+      text: wasPending ? QUEUED_TEXT : RUNNING_TEXT,
       isStreaming: true,
       ...(wasPending ? { queuedFor: userMsg.id } : {}),
       activity: wasPending ? "Na fila" : "Aguardando a CLI…",
@@ -1072,7 +1101,16 @@ export function useSessions({
                         };
                       })()
                     : m.id === res.rotatedFrom
-                      ? { ...m, activity: undefined, detail: undefined }
+                      ? // A resposta anterior para aqui: o que ela tinha rodando (um comando no
+                        // segundo plano, por exemplo) ainda termina nela, mas o resto vai para a nova.
+                        {
+                          ...m,
+                          isStreaming: false,
+                          activity: undefined,
+                          detail: undefined,
+                          deliveredFor: undefined,
+                          ...(m.text === RUNNING_TEXT || m.text === QUEUED_TEXT ? { text: "" } : {}),
+                        }
                       : m,
                 ),
               },
@@ -1105,7 +1143,9 @@ export function useSessions({
       // sem texto saem da tela.
       if (followUps.length) {
         const empty = new Set(
-          followUps.filter((f) => !f.text.trim()).map((f) => f.responseMessageId),
+          followUps
+            .filter((f) => !f.text.trim() && !f.events?.length)
+            .map((f) => f.responseMessageId),
         );
         setMessages((prev) =>
           !prev[id]
@@ -1120,6 +1160,7 @@ export function useSessions({
                       ? {
                           ...m,
                           text: stripAnsi(done.text),
+                          ...(done.events?.length ? { events: done.events } : {}),
                           isStreaming: false,
                           queuedFor: undefined,
                           activity: undefined,
