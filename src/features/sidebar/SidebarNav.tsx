@@ -16,6 +16,7 @@ export function SidebarNav() {
     installedSkills,
     memoryStatus,
     refreshAIMemoryExplorer,
+    cliTerminals,
   } = useApp();
   // Shells em execução: comandos rodando agora em qualquer conversa (os mesmos das abas do shell).
   const runningShells = Object.values(messages).reduce(
@@ -64,8 +65,9 @@ export function SidebarNav() {
                 <span>Shells</span>
               </div>
               <span className="font-mono text-[10px] bg-[#dfdacd] px-1.5 py-0.5 rounded text-[#5d5648]">
-                {runningShells}{" "}
-                rodando
+                {Object.keys(cliTerminals.terminals).length
+                  ? `${Object.keys(cliTerminals.terminals).length} CLI · ${runningShells} rodando`
+                  : `${runningShells} rodando`}
               </span>
             </button>
 

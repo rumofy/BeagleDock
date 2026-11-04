@@ -3,6 +3,10 @@ import type { BeagleAPI } from "../types/api";
 /** Indica se o backend (preload do Electron ou bridge de desenvolvimento) está disponível. */
 export const backendAvailable = (): boolean => !!window.beagleAPI;
 
+/** O modo terminal só existe no aplicativo desktop (a bridge do navegador não expõe o pty). */
+export const terminalAvailable = (): boolean =>
+  typeof window.beagleAPI?.cliTerminalOpen === "function";
+
 function backend(): BeagleAPI {
   const api = window.beagleAPI;
   if (!api) throw new Error("Backend indisponível.");
@@ -81,9 +85,17 @@ export const beagleApi: BeagleAPI = {
   ptySpawn: (payload) => backend().ptySpawn(payload),
   ptyWrite: (payload) => backend().ptyWrite(payload),
   ptyResize: (payload) => backend().ptyResize(payload),
+  cliTerminalOpen: (request) => backend().cliTerminalOpen(request),
+  cliTerminalWrite: (request) => backend().cliTerminalWrite(request),
+  cliTerminalResize: (request) => backend().cliTerminalResize(request),
+  cliTerminalClose: (sessionId) => backend().cliTerminalClose(sessionId),
+  cliTerminalList: () => backend().cliTerminalList(),
+  cliTerminalClipboard: () => backend().cliTerminalClipboard(),
+  pathForFile: (file) => backend().pathForFile?.(file) ?? "",
   interruptCliSession: (id) => backend().interruptCliSession(id),
   cancelQueuedPrompt: (request) => backend().cancelQueuedPrompt(request),
   forceQueuedPrompt: (request) => backend().forceQueuedPrompt(request),
+  answerNowPrompt: (request) => backend().answerNowPrompt(request),
   executeCliPrompt: (payload) => backend().executeCliPrompt(payload),
   on: (channel, callback) => backend().on(channel, callback),
 };

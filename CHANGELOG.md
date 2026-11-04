@@ -4,8 +4,26 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-03
+
+### Adicionado
+
+- Opção “Interface das conversas” nas configurações, para o Claude Code, o Codex CLI e o Antigravity: com “Terminal da CLI”, cada conversa abre na interface da própria CLI, continuando a mesma conversa. Você digita direto nela. Anexar imagem (Ctrl+V ou arrastar o arquivo), plano, aprovações, atalhos e fila funcionam como na CLI. Do BeagleDock ficam só o Handoff (cola o pedido e envia na CLI) e o Ditado (cola o texto sem enviar). As mensagens trocadas no terminal (as suas e as respostas da IA) entram no histórico da conversa ao fim de cada resposta, inclusive numa conversa nova aberta direto no terminal, que fica ligada à do BeagleDock para o chat continuar de onde parou. Voltar para “Chat do BeagleDock” encerra as CLIs do terminal.
+- Notificação do sistema quando termina (ou falha) uma resposta que você pediu, no chat e no modo terminal, para o Claude Code, o Codex CLI e o Antigravity, com o começo da resposta. Ela só aparece com a janela do BeagleDock fora de foco (minimizada, na bandeja ou atrás de outra janela), e clicar nela abre a conversa. No modo terminal, a notificação também avisa quando a CLI para esperando você, como num pedido de aprovação.
+- A aba Shells mostra lado a lado todas as conversas abertas no modo terminal, para acompanhar várias CLIs ao mesmo tempo, com opção de ampliar uma delas.
+- Botões para a IA responder na hora uma mensagem enviada durante um comando demorado. No Claude Code, “Responder agora” manda o comando para o segundo plano, onde ele continua rodando, e “Interromper e responder” cancela o comando. No Codex CLI, “Interromper e responder” cancela a etapa em andamento e manda a mensagem em seguida. No Antigravity, que só lê a mensagem no fim da resposta, continua valendo o “Enviar agora” da fila.
+- A lista de conversas e o topo do chat mostram quando a resposta terminou, mas um comando ou agente continua rodando em segundo plano. Antes a conversa parecia parada.
+
+### Removido
+
+- O ditado não traz mais nomes nem trocas embutidos: saíram o glossário de ferramentas (GitHub, TypeScript, Supabase e outros) e as trocas fixas de expressões faladas (“cloud coding”, “anti gravity”, “git hub”, “ag”). Agora vale só o que você cadastra no vocabulário do ditado, mais o nome do projeto aberto e o da CLI da conversa. O que você cadastra com maiúscula continua sendo reconhecido pelo som (“Bigodok” vira “BeagleDock”), e uma troca específica é cadastrada no mesmo lugar, como “ag => AGY”.
+
 ### Corrigido
 
+- Uma mensagem enviada durante a resposta do Claude Code ou do Codex CLI não fica mais com “Na fila · envio automático…” depois de entregue. Agora aparece “Entregue · a IA lê quando a etapa atual terminar”.
+- No Claude Code, um comando mandado para o segundo plano no meio da resposta não aparece mais como concluído enquanto ainda roda.
+- Depois que uma mensagem enviada durante a resposta é entregue, no Claude Code e no Codex CLI, a resposta anterior para de aparecer “em andamento” e as etapas novas (comandos, leituras, raciocínio) aparecem na resposta à mensagem nova, e não mais na anterior. Antes, com duas entregas seguidas, a resposta do meio podia ficar presa em “Raciocinando…”.
+- O histórico (Ctrl+H) passa a mostrar as conversas do Antigravity feitas só na interface da CLI, que antes ficavam de fora, e as mensagens importadas do Antigravity aparecem sem os metadados internos que a CLI junta ao texto.
 - O ditado não altera mais o texto dentro de links: em `https://...?logo=linux`, o “linux” deixava de ficar como foi escrito e virava “Linux”. O texto em volta do link continua sendo corrigido normalmente.
 
 ## [0.12.0] - 2026-11-02
@@ -291,7 +309,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/rumofy/BeagleDock/compare/v0.10.0...v0.11.0

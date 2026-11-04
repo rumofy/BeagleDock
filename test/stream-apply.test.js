@@ -204,3 +204,13 @@ test("resposta concluída ainda recebe atualizações de agentes que ela já tem
   const stray = applyStreamItems(child, [event({ id: "estranho", kind: "tool", title: "X", status: "running" }), chunk({ fullText: "texto atrasado" })], 7);
   assert.equal(stray, child);
 });
+
+test("mensagem entregue e ainda não lida: o aviso de atividade não a dá como lida; texto ou etapa nova sim", () => {
+  const delivered = { s1: [msg({ deliveredFor: "u1", activity: "Entregue" })] };
+  const afterActivity = applyStreamItems(delivered, [chunk({ fullText: "", activity: "Mensagem nova recebida" })]);
+  assert.equal(afterActivity.s1[0].deliveredFor, "u1");
+  const afterText = applyStreamItems(delivered, [chunk({ fullText: "RESPOSTA=42" })]);
+  assert.equal(afterText.s1[0].deliveredFor, undefined);
+  const afterEvent = applyStreamItems(delivered, [event({ id: "e1", kind: "command", title: "ls", status: "running" })]);
+  assert.equal(afterEvent.s1[0].deliveredFor, undefined);
+});

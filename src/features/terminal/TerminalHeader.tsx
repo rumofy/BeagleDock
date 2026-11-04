@@ -7,7 +7,9 @@ export function TerminalHeader() {
   const {
     setActiveTab,
     currentSession,
+    cliTerminals,
   } = useApp();
+  const open = Object.keys(cliTerminals.terminals).length;
   return (
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center gap-3">
@@ -16,10 +18,14 @@ export function TerminalHeader() {
                 </div>
                 <div>
                   <div className="text-sm font-bold text-[#1c1b18]">
-                    Shell PTY Interativo ({currentSession?.cwd})
+                    {open
+                      ? `Terminais das CLIs (${open} ${open === 1 ? "aberto" : "abertos"})`
+                      : `Shell PTY Interativo (${currentSession?.cwd})`}
                   </div>
                   <div className="text-[11px] text-[#7e7565]">
-                    Terminal do sistema operacional
+                    {open
+                      ? "Cada CLI com a própria interface, lado a lado"
+                      : "Terminal do sistema operacional"}
                   </div>
                 </div>
               </div>

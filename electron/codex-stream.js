@@ -580,6 +580,23 @@ function createCodexStream({
             settleCompaction(current);
             return;
           }
+          // "Responder agora": o turno foi interrompido de propósito. A mensagem entregue por
+          // turn/steer ainda não tinha sido lida (o Codex lê na próxima etapa), então ela segue num
+          // turno novo, e a resposta continua aberta para ele.
+          if (current.answering && turn.status === "interrupted" && current.steered?.length) {
+            current.answering = false;
+            const input = current.steered.flat();
+            current.steered = [];
+            current.events.finishRunning("error");
+            current.turnId = null;
+            current
+              .request("turn/start", { threadId: current.nativeId, input, ...current.turnOptions })
+              .then((result) => {
+                if (current.finish) current.turnId = result.turn?.id || current.turnId;
+              })
+              .catch((error) => current.finish?.({ ok: false, error: error.message }));
+            return;
+          }
           current.events.finishRunning(
             turn.status === "completed" ? "done" : "error",
           );
@@ -705,6 +722,9 @@ function createCodexStream({
     current.error = null;
     current.responseMessageId = responseMessageId;
     current.rotations = [];
+    // Mensagens entregues por turn/steer neste turno: reenviadas se a pessoa pedir "Responder agora".
+    current.steered = [];
+    current.answering = false;
     current.reasoningParts = new Map();
     current.subThreads ||= new Map();
     current.events.start(responseMessageId);
@@ -728,9 +748,18 @@ function createCodexStream({
         clearTimeout(timer);
         current.finish = null;
         current.events.finishRunning(result.ok ? "done" : "error");
-        const turnEvents = current.events.snapshot();
-        current.events.endTurn();
+        // Com mensagens entregues no meio, cada resposta leva as próprias etapas.
+        const rotated = current?.rotations?.length;
+        const turnEvents = rotated
+          ? current.events.snapshotFor(current.responseMessageId)
+          : current.events.snapshot();
         result = applyRotations(result, current);
+        if (result.followUps)
+          result.followUps = result.followUps.map((f) => ({
+            ...f,
+            events: current.events.snapshotFor(f.responseMessageId),
+          }));
+        current.events.endTurn();
         resolve({
           ...result,
           events: turnEvents,
@@ -741,13 +770,12 @@ function createCodexStream({
           nativeSessionId: current.nativeId,
         });
       };
+      current.turnOptions = { ...(effort ? { effort } : {}), ...(model ? { model } : {}), cwd };
       current
         .request("turn/start", {
           threadId: current.nativeId,
           input: p.input || [{ type: "text", text: p.prompt }],
-          ...(effort ? { effort } : {}),
-          ...(model ? { model } : {}),
-          cwd,
+          ...current.turnOptions,
         })
         .then((result) => {
           if (!done) current.turnId = result.turn?.id || current.turnId;
@@ -794,11 +822,32 @@ function createCodexStream({
         expectedTurnId: e.turnId,
         input: p.input,
       });
-      const from = e.responseMessageId;
+      // A resposta que estava recebendo o texto (a original ou a de uma entrega anterior) fecha aqui.
+      const from = liveReply(e, e.text).responseMessageId;
       const rotation = addRotation(e, { responseMessageId: p.responseMessageId, text: e.text });
+      e.events?.rotate(p.responseMessageId);
+      (e.steered ||= []).push(p.input);
       return { from, at: rotation.at };
     } catch {
       return false;
+    }
+  }
+  // "Responder agora" no Codex: interrompe o turno (o comando em execução é cancelado) e a mensagem
+  // entregue vai num turno novo (ver turn/completed). O app-server não tem como mandar um comando
+  // para o segundo plano.
+  async function answerNow(sessionId) {
+    const e = entries.get(sessionId);
+    if (!e?.finish || !e.turnId || !e.nativeId)
+      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+    if (!e.steered?.length)
+      return { ok: false, error: "Nenhuma mensagem entregue esperando a IA ler." };
+    e.answering = true;
+    try {
+      await e.request("turn/interrupt", { threadId: e.nativeId, turnId: e.turnId });
+      return { ok: true, mode: "interrupt" };
+    } catch (error) {
+      e.answering = false;
+      return { ok: false, error: error.message };
     }
   }
   // Compactação nativa do Codex (thread/compact/start): só com o app-server da conversa ativo e
@@ -834,6 +883,7 @@ function createCodexStream({
   return {
     execute,
     inject,
+    answerNow,
     canInject,
     compact,
     kill: close,

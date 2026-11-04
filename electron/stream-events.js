@@ -34,6 +34,9 @@ function createEventTracker({
   const groups = new Map();
   let currentId;
   let active = false;
+  // Respostas anteriores do turno em andamento: uma mensagem entregue no meio do turno abre uma
+  // resposta nova (ver `rotate`), e o que já estava rodando continua na resposta de antes.
+  const turnIds = new Set();
   const lastPublished = new Map();
   const lateTimers = new Map();
   // Texto bruto do raciocínio: mascarar só a cópia publicada, senão um segredo cortado entre dois
@@ -55,7 +58,8 @@ function createEventTracker({
     }
     return currentId;
   }
-  const isLate = (responseId) => !active || responseId !== currentId;
+  const isLate = (responseId) =>
+    !active || (responseId !== currentId && !turnIds.has(responseId));
 
   function scheduleLate(responseId) {
     if (lateTimers.has(responseId)) return;
@@ -123,12 +127,37 @@ function createEventTracker({
     return next;
   }
 
+  function finishGroup(responseId, status, all) {
+    const events = groups.get(responseId);
+    if (!events) return;
+    const background = new Set(
+      all ? [] : [...events.values()].filter(isBackgroundAgent).map((e) => e.id),
+    );
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const e of events.values())
+        if (
+          e.parentId &&
+          background.has(e.parentId) &&
+          !background.has(e.id)
+        ) {
+          background.add(e.id);
+          grew = true;
+        }
+    }
+    for (const event of [...events.values()])
+      if (event.status === "running" && !background.has(event.id))
+        api.finish(event.id, status);
+  }
+
   const api = {
     // Começa a resposta `id`. Agentes em segundo plano ainda rodando (e o que é deles) ficam soltos
     // na resposta de origem, em vez de sumir.
     start(id) {
-      if (currentId !== undefined) {
-        const events = groups.get(currentId);
+      for (const previous of [...turnIds, currentId]) {
+        if (previous === undefined) continue;
+        const events = groups.get(previous);
         if (events) {
           const keep = new Set(
             [...events.values()]
@@ -147,15 +176,24 @@ function createEventTracker({
           if (keep.size) {
             for (const eventId of [...events.keys()])
               if (!keep.has(eventId)) events.delete(eventId);
-          } else groups.delete(currentId);
+          } else groups.delete(previous);
         }
       }
+      turnIds.clear();
       currentId = id;
       groups.set(id, new Map());
       active = true;
       lastPublished.clear();
       // O texto bruto de eventos soltos é mantido; o resto é descartado.
       for (const key of [...raw.keys()]) if (!api.get(key)) raw.delete(key);
+    },
+    // Mensagem entregue no meio do turno: as etapas novas vão para a resposta `id`; as que já
+    // existiam (um comando ainda rodando, por exemplo) continuam e terminam na resposta de antes.
+    rotate(id) {
+      if (!id || id === currentId) return;
+      if (currentId !== undefined) turnIds.add(currentId);
+      currentId = id;
+      groups.set(id, new Map());
     },
     // O turno terminou; o que ainda mudar a partir daqui é atualização tardia.
     endTurn() {
@@ -206,26 +244,7 @@ function createEventTracker({
     // seguem trabalhando e terminam sozinhos, pelo evento final da própria CLI.
     // Com `all`, encerra também os em segundo plano (a CLI acabou: nada mais vai avisar o fim deles).
     finishRunning(status = "done", { all = false } = {}) {
-      const events = group(currentId);
-      const background = new Set(
-        all ? [] : [...events.values()].filter(isBackgroundAgent).map((e) => e.id),
-      );
-      let grew = true;
-      while (grew) {
-        grew = false;
-        for (const e of events.values())
-          if (
-            e.parentId &&
-            background.has(e.parentId) &&
-            !background.has(e.id)
-          ) {
-            background.add(e.id);
-            grew = true;
-          }
-      }
-      for (const event of [...events.values()])
-        if (event.status === "running" && !background.has(event.id))
-          api.finish(event.id, status);
+      for (const responseId of [...turnIds, currentId]) finishGroup(responseId, status, all);
     },
     // A CLI encerrou: nada mais vai avisar o fim do que ainda constava como rodando.
     finishAll(status = "error", note = "a CLI encerrou antes de avisar o fim") {
@@ -243,6 +262,20 @@ function createEventTracker({
     },
     // Eventos da resposta atual (o que o turno devolve ao terminar).
     snapshot: () => [...group(currentId).values()],
+    // Eventos de uma resposta do turno (a original ou a de uma mensagem entregue no meio).
+    snapshotFor: (id) => [...(groups.get(id)?.values() || [])],
+    // Procura em todas as respostas (uma mensagem entregue no meio do turno abre outra resposta).
+    find(predicate) {
+      for (const events of groups.values())
+        for (const event of events.values()) if (predicate(event)) return event;
+      return undefined;
+    },
+    filter(predicate) {
+      const found = [];
+      for (const events of groups.values())
+        for (const event of events.values()) if (predicate(event)) found.push(event);
+      return found;
+    },
     // Entrega já as atualizações tardias pendentes (encerramento do app, testes).
     flushLate() {
       for (const responseId of [...lateTimers.keys()]) flushLateFor(responseId);

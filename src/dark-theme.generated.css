@@ -111,9 +111,11 @@
 :root[data-theme="dark"] .bg-\[\#141416\] { background-color: #151515; }
 :root[data-theme="dark"] .bg-\[\#141416\]\/95 { background-color: color-mix(in oklab, #151515 95%, transparent); }
 :root[data-theme="dark"] .bg-\[\#18181b\] { background-color: #19191a; }
+:root[data-theme="dark"] .bg-\[\#18181b\]\/85 { background-color: color-mix(in oklab, #19191a 85%, transparent); }
 :root[data-theme="dark"] .bg-\[\#1c1b18\] { background-color: #e4e5e6; }
 :root[data-theme="dark"] .bg-\[\#1e1e21\] { background-color: #1f1f20; }
 :root[data-theme="dark"] .bg-\[\#1e1e21\]\/90 { background-color: color-mix(in oklab, #1f1f20 90%, transparent); }
+:root[data-theme="dark"] .bg-\[\#232326\] { background-color: #242425; }
 :root[data-theme="dark"] .bg-\[\#262420\] { background-color: #dbdcdd; }
 :root[data-theme="dark"] .bg-\[\#27272a\] { background-color: #282829; }
 :root[data-theme="dark"] .bg-\[\#2c2822\] { background-color: #d7d8d9; }
@@ -232,5 +234,6 @@
 :root[data-theme="dark"] .text-\[\#b4540a\] { color: #e9a067; }
 :root[data-theme="dark"] .text-\[\#c5bea9\] { color: #a7a8aa; }
 :root[data-theme="dark"] .text-\[\#e4e4e7\] { color: #e5e5e6; }
+:root[data-theme="dark"] .text-amber-300 { color: oklch(87.9% 0.169 91.605); }
 :root[data-theme="dark"] .text-zinc-400 { color: oklch(70.5% 0.015 286.067); }
 :root[data-theme="dark"] .via-\[\#fcfbfa\] { --tw-gradient-via: #1d1e1f; }

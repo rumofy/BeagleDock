@@ -22,6 +22,9 @@ import type {
   PermissionLevel,
 } from "../../types";
 import { ContinueInCliButton } from "./ContinueInCli";
+import { HANDOFF_PROMPT } from "../../lib/handoffPrompt";
+import { backgroundLabel, backgroundWork } from "../../lib/backgroundWork";
+import { TerminalDictationButton } from "../terminal/TerminalDictationButton";
 
 const SOURCE_LABEL = {
   git: "remoto git",
@@ -99,7 +102,13 @@ export function ChatHeader() {
     handleReasoningChange,
     handleTriggerHandoff,
     memoryStatus,
+    cliTerminals,
+    currentMessages,
   } = useApp();
+  const background = backgroundWork(currentMessages);
+  // Modo terminal: a CLI cuida de modelo, plano, permissões e aprovações; o topo só guarda o que
+  // é do BeagleDock (projeto, VS Code, handoff, ditado e cota).
+  const terminalMode = cliTerminals.isTerminal(currentSession?.id);
   const waitingApproval = cliApprovals.some(
     (a) => a.sessionId === currentSession?.id,
   );
@@ -122,7 +131,7 @@ export function ChatHeader() {
               {currentSession?.title || "Selecione uma sessão"}
             </span>
 
-            {currentProvider && currentSession && (
+            {currentProvider && currentSession && !terminalMode && (
               <div className="flex items-center gap-1 bg-[#ede9de] rounded-lg px-2 py-0.5 border border-[#dfdacd]">
                 <Bot size={13} className="text-[#7d7565]" />
                 <select
@@ -154,7 +163,7 @@ export function ChatHeader() {
               </div>
             )}
 
-            {currentSession && (
+            {currentSession && !terminalMode && (
               <div className="flex items-center gap-1 bg-[#ede9de] rounded-lg px-2 py-0.5 border border-[#dfdacd]">
                 <Gauge size={13} className="text-[#7d7565]" />
                 <select
@@ -189,7 +198,7 @@ export function ChatHeader() {
               </div>
             )}
 
-            {currentSession && (
+            {currentSession && !terminalMode && (
               <div
                 className={`flex items-center gap-1 rounded-lg px-2 py-0.5 border ${permissionStyle(currentSession.permission || "inherit")}`}
               >
@@ -214,7 +223,7 @@ export function ChatHeader() {
               </div>
             )}
 
-            {permissionNotice?.sessionId === currentSession?.id && (
+            {!terminalMode && permissionNotice?.sessionId === currentSession?.id && (
               <span
                 role="status"
                 data-testid="permission-notice"
@@ -223,7 +232,7 @@ export function ChatHeader() {
                 {permissionNotice?.text}
               </span>
             )}
-            {waitingApproval && (
+            {!terminalMode && waitingApproval && (
               <span
                 role="status"
                 data-testid="waiting-permission"
@@ -233,10 +242,25 @@ export function ChatHeader() {
                 AGUARDANDO PERMISSÃO
               </span>
             )}
-            {isExecutingPrompt ? (
+            {terminalMode ? (
+              <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-zinc-100 bg-[#27272a] px-2 py-0.5 rounded-full">
+                <Terminal size={10} />
+                TERMINAL
+              </span>
+            ) : isExecutingPrompt ? (
               <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                 <RefreshCw size={10} className="animate-spin" />
                 EXECUTANDO CLI
+              </span>
+            ) : background.total > 0 ? (
+              <span
+                role="status"
+                data-testid="header-background"
+                title="A resposta terminou, mas o trabalho continua; a IA avisa quando acabar"
+                className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                {backgroundLabel(background).toUpperCase()}
               </span>
             ) : (
               currentSession?.status === "running" && (
@@ -328,9 +352,15 @@ export function ChatHeader() {
           <Code2 size={14} />
           <span>VS Code</span>
         </button>
-        <ContinueInCliButton />
+        {!terminalMode && <ContinueInCliButton />}
+        {terminalMode && <TerminalDictationButton />}
         <button
-          onClick={handleTriggerHandoff}
+          onClick={() => {
+            if (!currentSession) return;
+            // No terminal, o pedido é colado e enviado na própria CLI (a fila, se houver, é a dela).
+            if (terminalMode) void cliTerminals.pasteToTerminal(currentSession.id, HANDOFF_PROMPT, true);
+            else void handleTriggerHandoff();
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] border border-[#d6cfbe] text-[#332f28] transition shadow-2xs hover:shadow-xs group"
           title="Salvar um handoff desta conversa no ai-memory"
         >
@@ -362,6 +392,8 @@ export function ChatHeader() {
           </div>
         )}
 
+        {!terminalMode && (
+        <>
         <button
           onClick={() => setShowInlineTerminal((prev) => !prev)}
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition ${
@@ -382,6 +414,8 @@ export function ChatHeader() {
         >
           <Maximize2 size={14} />
         </button>
+        </>
+        )}
       </div>
     </>
   );

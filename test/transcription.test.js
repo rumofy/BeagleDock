@@ -19,6 +19,8 @@ function speechWav(seconds = 0.5) {
   return Buffer.from(wav.encodeWav(samples, 16000));
 }
 const audio64 = () => speechWav().toString("base64");
+// O app não traz nomes fixos: os testes usam um vocabulário cadastrado como o de quem usa.
+const VOCAB = "BeagleDock, Claude Code, Codex CLI, Codex, ai-memory, TypeScript, React, JSON, GitHub, GitLab";
 
 test("WAV gerado no renderer tem cabeçalho PCM 16 bits mono e é aceito pelo backend", () => {
   const bytes = speechWav(0.25);
@@ -80,25 +82,28 @@ test("configuração padrão é o ditado local; a API só quando escolhida", () 
 
 test("vocabulário corrige a transcrição: trocas 'errado => certo' e grafia de nomes", () => {
   const vocabulary = "cloud code => Claude Code\nsupabase, Rumofy; =>, a => ";
+  const withNames = `${vocabulary}\n${VOCAB}`;
   assert.deepEqual(t.parseVocabulary(vocabulary), {
     terms: ["supabase", "Rumofy"],
     replacements: [{ from: "cloud code", to: "Claude Code" }],
   });
   const fixed = t.applyVocabulary("Abre o cloud  code e o codex cli no rumofynext, rumofy e typescript. Faça os testes.", {
-    vocabulary,
+    vocabulary: withNames,
     context: ["RumofyNext", "Testes"],
   });
   assert.equal(fixed, "Abre o Claude Code e o Codex CLI no RumofyNext, Rumofy e TypeScript. Faça os testes.");
   // Só palavras inteiras: "reactivo" não vira "Reactivo"; acentos contam como letra.
-  assert.equal(t.applyVocabulary("reactivo react ação", {}), "reactivo React ação");
+  assert.equal(t.applyVocabulary("reactivo react ação", { vocabulary: VOCAB }), "reactivo React ação");
+  // Sem vocabulário cadastrado, nada é trocado: o app não traz nomes fixos.
+  assert.equal(t.applyVocabulary("o Bigodok no git hub em typescript", {}), "o Bigodok no git hub em typescript");
 });
 
 test("prompt leva o vocabulário do usuário e da sessão primeiro, sem repetir e com limite", () => {
-  const prompt = t.buildPrompt({ language: "pt", vocabulary: "Rumofy, supabase\nRumofy", context: ["RumofyNext", "claude code"] });
+  const prompt = t.buildPrompt({ language: "pt", vocabulary: "Rumofy, supabase\nRumofy, Claude Code, Codex CLI", context: ["RumofyNext", "claude code"] });
   assert.match(prompt, /português do Brasil/);
-  assert.match(prompt, /Vocabulário: Rumofy, supabase, RumofyNext, claude code, Codex CLI/);
+  assert.match(prompt, /Vocabulário: Rumofy, supabase, Claude Code, Codex CLI, RumofyNext\.$/);
   assert.equal((prompt.match(/Rumofy,/g) || []).length, 1);
-  assert.doesNotMatch(prompt, /Claude Code/); // já veio do contexto em outra grafia
+  assert.doesNotMatch(prompt, /claude code/); // já veio do vocabulário em outra grafia
   const huge = t.buildPrompt({ language: "pt", vocabulary: Array.from({ length: 500 }, (_, i) => `termo${i}`).join(",") });
   assert.ok(huge.length <= 1501);
   assert.match(t.buildPrompt({ language: "en" }), /^Dictation/);
@@ -193,7 +198,7 @@ test("local: roda o parakeet-cli com modelo e threads, corrige o vocabulário e 
   const result = await t.transcribeAudio(
     { audio: audio64() },
     {
-      getSettings: async () => ({}),
+      getSettings: async () => ({ voiceDictation: { vocabulary: "BeagleDock" } }),
       getSecret: async () => assert.fail("modo local não lê chave"),
       spawnImpl,
       models: fakeModels(),
@@ -269,15 +274,14 @@ test("chave de transcrição fica cifrada no cofre, some das configurações pú
 });
 
 test("nomes ditados com outra grafia são reconhecidos pelo som, sem mexer no português", () => {
-  const fix = (s, opts = {}) => t.applyVocabulary(s, opts);
+  const fix = (s, opts = {}) => t.applyVocabulary(s, { vocabulary: VOCAB, ...opts });
   // Casos reais do Parakeet com fala rápida.
   assert.equal(fix("o Bigodok está ótimo"), "o BeagleDock está ótimo");
   assert.equal(fix("Bigaloc ou é o próprio iMemory?"), "BeagleDock ou é o próprio ai-memory?");
   assert.equal(fix("Clod Code e o Codecs"), "Claude Code e o Codex");
-  assert.equal(fix("o anti gravity travou"), "o Antigravity travou");
-  assert.equal(fix("subi no git hub em type script"), "subi no GitHub em TypeScript");
+  assert.equal(fix("subi em type script"), "subi em TypeScript");
   // Pasta da sessão e termos cadastrados pela pessoa também entram.
-  const rumofy = { vocabulary: "Rumofy", context: ["RumofyNext"] };
+  const rumofy = { vocabulary: `Rumofy, ${VOCAB}`, context: ["RumofyNext"] };
   assert.equal(fix("projeto do Rumopy Next", rumofy), "projeto do RumofyNext");
   assert.equal(fix("alimentando o Bigodoc e não o Remofi", rumofy), "alimentando o BeagleDock e não o Rumofy");
   // "cloud" sozinho é nuvem; só a expressão vira o nome da ferramenta.
@@ -309,13 +313,13 @@ test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
     "https://img.shields.io/badge/Linux-x64?logo=linux&logoColor=white",
     "www.github.com/rumofy/beagledock",
   ])
-    assert.equal(t.applyVocabulary(s, {}), s, s);
+    assert.equal(t.applyVocabulary(s, { vocabulary: VOCAB }), s, s);
   assert.equal(
-    t.applyVocabulary("abre https://github.com/rumofy/beagledock no claude code", {}),
+    t.applyVocabulary("abre https://github.com/rumofy/beagledock no claude code", { vocabulary: VOCAB }),
     "abre https://github.com/rumofy/beagledock no Claude Code",
   );
-  assert.equal(t.applyVocabulary("abre o beagledock.", {}), "abre o BeagleDock.");
-  assert.equal(t.applyVocabulary("usa json e o codex: ok", {}), "usa JSON e o Codex: ok");
+  assert.equal(t.applyVocabulary("abre o beagledock.", { vocabulary: VOCAB }), "abre o BeagleDock.");
+  assert.equal(t.applyVocabulary("usa json e o codex: ok", { vocabulary: VOCAB }), "usa JSON e o Codex: ok");
 });
 
 test("documentação em português não sofre correções indevidas", () => {
@@ -327,19 +331,6 @@ test("documentação em português não sofre correções indevidas", () => {
   const released = changelog.slice(changelog.indexOf("## [0.9.0]")).replace(/cloud code/gi, "");
   const text = [released, ...["README.md", "AGENTS.md"].map((f) => fs.readFileSync(path.join(root, f), "utf8"))].join("\n");
   const lines = text.split("\n").filter((l) => l.trim());
-  const changed = lines.filter((l) => t.applyVocabulary(l, { context: ["BeagleDock"] }) !== l);
+  const changed = lines.filter((l) => t.applyVocabulary(l, { vocabulary: VOCAB, context: ["BeagleDock"] }) !== l);
   assert.deepEqual(changed, []);
-});
-
-test("ditado: variações faladas de Claude Code e a sigla AGY viram os nomes certos", () => {
-  const fix = (text) => t.applyVocabulary(text, {});
-  assert.equal(
-    fix("Ver se isso não é só problema do cloud coding. Acho que o ag também pode ter e o Codex também."),
-    "Ver se isso não é só problema do Claude Code. Acho que o AGY também pode ter e o Codex também.",
-  );
-  assert.equal(fix("Olha como escreveu o Claudio Coding aí."), "Olha como escreveu o Claude Code aí.");
-  assert.equal(fix("o Cláudio Code e o claude coding"), "o Claude Code e o Claude Code");
-  assert.equal(fix("roda no agy"), "roda no AGY");
-  // Sem "code/coding" ao lado, Cláudio é nome de gente e "cloud" é nuvem; palavras com "ag" ficam.
-  assert.equal(fix("O Cláudio subiu na cloud a agenda e a tag."), "O Cláudio subiu na cloud a agenda e a tag.");
 });

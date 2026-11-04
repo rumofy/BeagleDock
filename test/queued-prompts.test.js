@@ -199,3 +199,48 @@ test("resposta à mensagem entregue sem texto não é gravada e vai vazia para a
   assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "" }]);
   assert.deepEqual(t.saved.map((m) => m.id), ["r1"]);
 });
+
+test("resposta à mensagem entregue só com etapas é gravada com elas", async () => {
+  const at = Date.now();
+  const t = setup({ inject: () => ({ from: "r1", at }) });
+  const first = t.service.execute(p(1));
+  await tick();
+  await t.service.execute(p(2));
+  const events = [{ id: "e1", kind: "tool", title: "Read", status: "done" }];
+  t.gates.shift()({ ok: true, output: "tudo", followUps: [{ responseMessageId: "r2", at, text: "", events }] });
+  const result = await first;
+  assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "", events }]);
+  const r2 = t.saved.find((m) => m.id === "r2");
+  assert.deepEqual(r2?.events, events);
+});
+
+test("responder agora vai ao runner só com resposta em andamento e só no Claude e no Codex", async () => {
+  const calls = [];
+  const t = setup({ inject: async () => ({ at: Date.now() }) });
+  // O runner do setup não tem answerNow: sem ele, recusa.
+  const first = t.service.execute(p(1));
+  await tick(); await tick();
+  const req = { sessionId: "s1", responseMessageId: "r2", userMessageId: "u2", providerId: "claude", mode: "background" };
+  assert.equal((await t.service.answerNow(req)).ok, false);
+  t.gates.shift()({ ok: true, output: "x" });
+  await first;
+
+  const runner = {
+    inject: async () => ({ at: Date.now() }),
+    answerNow: async (r) => (calls.push(r), { ok: true, mode: r.mode }),
+    kill() {},
+    execute: () => new Promise(() => {}),
+  };
+  const service = createSessionService({
+    store: { sessionExists: async () => true, saveChatMessage: async () => {}, setMessageTime: async () => {} },
+    runner,
+  });
+  assert.equal((await service.answerNow(req)).ok, false, "sem resposta em andamento");
+  void service.execute(p(1));
+  await tick(); await tick();
+  assert.equal((await service.answerNow({ ...req, providerId: "antigravity" })).ok, false, "AGY usa a fila");
+  assert.equal((await service.answerNow({ ...req, sessionId: "../x" })).ok, false);
+  assert.deepEqual(await service.answerNow({ ...req, mode: "qualquer" }), { ok: true, mode: "background" });
+  assert.deepEqual(await service.answerNow({ ...req, providerId: "codex", mode: "interrupt" }), { ok: true, mode: "interrupt" });
+  assert.deepEqual(calls.map((c) => [c.providerId, c.mode]), [["claude", "background"], ["codex", "interrupt"]]);
+});

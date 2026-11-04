@@ -53,6 +53,12 @@ interface Params {
 }
 
 /** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
+/** Balão da mensagem que espera a resposta atual terminar (fila do app). */
+const QUEUED_TEXT = "Na fila · envio automático após a resposta atual…";
+const RUNNING_TEXT = "Executando na CLI local…";
+/** Mensagem entregue no meio da resposta, ainda não lida pela IA (ver `deliveredFor`). */
+const DELIVERED_ACTIVITY = "Entregue · a IA lê quando a etapa atual terminar";
+
 export function useSessions({
   providers,
   setProviders,
@@ -309,6 +315,33 @@ export function useSessions({
       setActiveSessionId(sessionId);
       setActiveTab("chat");
     });
+    // Modo terminal: o que foi conversado na interface da CLI entrou no histórico; recarrega a
+    // conversa e dá a ela o título pela primeira mensagem, como no chat.
+    const unsubscribeTerminalHistory = beagleApi.on("cli-terminal-history", ({ sessionId }) => {
+      void beagleApi
+        .getChatMessages(sessionId)
+        .then((saved) => {
+          const list: ChatMessage[] = saved || [];
+          setMessages((prev) => ({ ...prev, [sessionId]: list }));
+          setProviders((prev) =>
+            prev.map((p) => ({
+              ...p,
+              sessions: p.sessions.map((session) => {
+                if (session.id !== sessionId || session.titleLocked) return session;
+                const title = list
+                  .filter((m) => m.sender === "user")
+                  .reduce((current, m) => conversationTitle(current, m.text), session.title);
+                if (title === session.title) return session;
+                void beagleApi
+                  .saveSession({ ...session, title })
+                  .catch((e: Error) => setAppError(e.message));
+                return { ...session, title };
+              }),
+            })),
+          );
+        })
+        .catch((e: Error) => setAppError(e.message));
+    });
     const unsubscribeTurnFinished = beagleApi.on(
       "cli-turn-finished",
       ({ sessionId, responseMessageId, ok, text, error, events, discard, context }) => {
@@ -393,6 +426,7 @@ export function useSessions({
       unsubscribeContext();
       unsubscribeTurnStarted();
       unsubscribeOpen();
+      unsubscribeTerminalHistory();
       unsubscribeNotice();
       unsubscribePermission();
       unsubscribeTurnFinished();
@@ -850,6 +884,42 @@ export function useSessions({
     }
   };
 
+  // "Responder agora" para uma mensagem já entregue que a IA ainda não leu (Claude Code e Codex).
+  const answerNowPrompt = async (reply: ChatMessage, mode: "background" | "interrupt") => {
+    if (!reply.deliveredFor || (reply.sender !== "claude" && reply.sender !== "codex")) return;
+    try {
+      const result = await beagleApi.answerNowPrompt({
+        sessionId: reply.sessionId,
+        responseMessageId: reply.id,
+        userMessageId: reply.deliveredFor,
+        providerId: reply.sender,
+        mode,
+      });
+      if (!result?.ok) throw new Error(result?.error || "Não foi possível responder agora.");
+      setMessages((prev) =>
+        !prev[reply.sessionId]
+          ? prev
+          : {
+              ...prev,
+              [reply.sessionId]: prev[reply.sessionId].map((m) =>
+                m.id === reply.id
+                  ? {
+                      ...m,
+                      deliveredFor: undefined,
+                      activity:
+                        result.mode === "background"
+                          ? "Comando no segundo plano; respondendo à sua mensagem…"
+                          : "Etapa interrompida; respondendo à sua mensagem…",
+                    }
+                  : m,
+              ),
+            },
+      );
+    } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+
   // "Enviar agora": interrompe a execução atual para esta mensagem da fila ser a próxima.
   const forceQueuedPrompt = async (reply: ChatMessage) => {
     if (!reply.queuedFor) return;
@@ -932,9 +1002,7 @@ export function useSessions({
       senderName: provider?.name || "IA",
       modelBadge: selected.model,
       reasoningBadge: selected.effort,
-      text: wasPending
-        ? "Na fila · envio automático após a resposta atual…"
-        : "Executando na CLI local…",
+      text: wasPending ? QUEUED_TEXT : RUNNING_TEXT,
       isStreaming: true,
       ...(wasPending ? { queuedFor: userMsg.id } : {}),
       activity: wasPending ? "Na fila" : "Aguardando a CLI…",
@@ -1013,15 +1081,36 @@ export function useSessions({
                 ...prev,
                 [id]: prev[id].map((m) =>
                   m.id === responseId
-                    ? {
-                        ...m,
-                        queuedFor: undefined,
-                        isStreaming: true,
-                        activity: m.activity || "Respondendo…",
-                        startedAt: m.startedAt ?? Date.now(),
-                      }
+                    ? (() => {
+                        // A IA ainda não escreveu nada para esta mensagem: ela foi entregue, mas a CLI
+                        // só a lê quando a etapa atual (ex.: um comando demorado) terminar.
+                        const unread =
+                          (!m.text || m.text === QUEUED_TEXT) && !m.events?.length;
+                        return {
+                          ...m,
+                          queuedFor: undefined,
+                          isStreaming: true,
+                          ...(unread
+                            ? {
+                                text: "",
+                                deliveredFor: userMsg.id,
+                                activity: DELIVERED_ACTIVITY,
+                              }
+                            : { activity: m.activity || "Respondendo…" }),
+                          startedAt: m.startedAt ?? Date.now(),
+                        };
+                      })()
                     : m.id === res.rotatedFrom
-                      ? { ...m, activity: undefined, detail: undefined }
+                      ? // A resposta anterior para aqui: o que ela tinha rodando (um comando no
+                        // segundo plano, por exemplo) ainda termina nela, mas o resto vai para a nova.
+                        {
+                          ...m,
+                          isStreaming: false,
+                          activity: undefined,
+                          detail: undefined,
+                          deliveredFor: undefined,
+                          ...(m.text === RUNNING_TEXT || m.text === QUEUED_TEXT ? { text: "" } : {}),
+                        }
                       : m,
                 ),
               },
@@ -1054,7 +1143,9 @@ export function useSessions({
       // sem texto saem da tela.
       if (followUps.length) {
         const empty = new Set(
-          followUps.filter((f) => !f.text.trim()).map((f) => f.responseMessageId),
+          followUps
+            .filter((f) => !f.text.trim() && !f.events?.length)
+            .map((f) => f.responseMessageId),
         );
         setMessages((prev) =>
           !prev[id]
@@ -1069,6 +1160,7 @@ export function useSessions({
                       ? {
                           ...m,
                           text: stripAnsi(done.text),
+                          ...(done.events?.length ? { events: done.events } : {}),
                           isStreaming: false,
                           queuedFor: undefined,
                           activity: undefined,
@@ -1163,6 +1255,7 @@ export function useSessions({
     handleStopSession,
     cancelQueuedPrompt,
     forceQueuedPrompt,
+    answerNowPrompt,
     sendPrompt,
   };
 }

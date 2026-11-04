@@ -54,8 +54,9 @@ function createSessionService({ store, runner }) {
       const item = list[index];
       const last = index === list.length - 1;
       const text = item.text || (last ? tail : "");
-      out.push({ responseMessageId: item.responseMessageId, text });
-      if (!text || removing.has(id)) continue;
+      const events = Array.isArray(item.events) && item.events.length ? item.events : undefined;
+      out.push({ responseMessageId: item.responseMessageId, text, ...(events ? { events } : {}) });
+      if ((!text && !events) || removing.has(id)) continue;
       const next = list[index + 1];
       await write(id, () =>
         store.saveChatMessage({
@@ -65,6 +66,7 @@ function createSessionService({ store, runner }) {
           sender: payload.providerId,
           senderName: PROVIDER_NAMES[payload.providerId] || payload.providerId,
           text,
+          ...(events ? { events } : {}),
           modelBadge: payload.model,
           reasoningBadge: payload.effort,
           timestamp: new Date().toISOString(),
@@ -196,6 +198,17 @@ function createSessionService({ store, runner }) {
       return { ok: false, error: "Só a próxima mensagem da fila pode ser enviada agora." };
     runner.kill(request.sessionId);
     return { ok: true };
+  }
+  // "Responder agora" para uma mensagem já entregue à CLI (Claude Code e Codex leem na próxima
+  // etapa). No Antigravity a mensagem fica na fila: lá vale o "Enviar agora" (forceQueued).
+  async function answerNow(request) {
+    if (!validIds(request)) return { ok: false, error: "Mensagem inválida." };
+    if (!["claude", "codex"].includes(request.providerId))
+      return { ok: false, error: "Esta CLI só recebe a mensagem ao fim da resposta." };
+    const mode = request.mode === "interrupt" ? "interrupt" : "background";
+    if (!turns.has(request.sessionId) || typeof runner.answerNow !== "function")
+      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+    return runner.answerNow({ sessionId: request.sessionId, providerId: request.providerId, mode });
   }
   async function execute(payload) {
     const id = payload?.sessionId;
@@ -376,6 +389,7 @@ function createSessionService({ store, runner }) {
     interrupt,
     cancelQueued,
     forceQueued,
+    answerNow,
     isBusy: () => turns.size > 0,
     // Sessões com turno rodando ou na fila (a fila aguarda dentro de `turns`).
     activeCount: () => turns.size,

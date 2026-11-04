@@ -48,6 +48,8 @@ function applyOne(
     return {
       ...message,
       queuedFor: undefined,
+      // Uma etapa nova nesta resposta: a IA já leu a mensagem entregue.
+      deliveredFor: undefined,
       events,
       lastEventAt: now,
       lastProgressAt: changed ? now : (message.lastProgressAt ?? since),
@@ -66,6 +68,11 @@ function applyOne(
     ...message,
     // Chegou algo da CLI para esta resposta: ela saiu da fila.
     queuedFor: undefined,
+    // Só texto prova que a IA leu a mensagem entregue (o aviso de atividade chega antes disso).
+    deliveredFor:
+      message.deliveredFor && typeof fullText === "string" && /\S/.test(fullText)
+        ? undefined
+        : message.deliveredFor,
     text,
     activity: activity ?? message.activity,
     detail: activity !== undefined ? detail : message.detail,

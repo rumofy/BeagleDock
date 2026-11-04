@@ -228,6 +228,11 @@ export interface ChatMessage {
   isStreaming?: boolean;
   /** Resposta que ainda espera na fila: id da mensagem da pessoa que a originou. */
   queuedFor?: string;
+  /**
+   * Mensagem já entregue à CLI no meio da resposta, que a IA ainda não leu (Claude Code e Codex leem
+   * na próxima etapa, depois do comando em execução): id da mensagem da pessoa.
+   */
+  deliveredFor?: string;
   activity?: string;
   /** Complemento da atividade atual (comando, trecho do raciocínio…). */
   detail?: string;
@@ -281,6 +286,8 @@ export interface AppSettings {
   aiMemoryTempCleanupDays?: number;
   /** Chats novos começam com o modelo, o nível e a permissão escolhidos por último na mesma CLI. */
   rememberSessionChoices?: boolean;
+  /** Como as conversas abrem: no chat do BeagleDock (padrão) ou na interface própria da CLI. */
+  conversationMode?: "chat" | "terminal";
   /** Última escolha de modelo, nível e permissão de cada CLI. */
   lastSessionChoices?: Partial<Record<AIProviderId, { model: string; effort: string; permission: PermissionLevel }>>;
   workspaces: WorkspaceItem[];

@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Paperclip, Trash2, Zap } from "lucide-react";
+import { OctagonX, Paperclip, Trash2, Zap } from "lucide-react";
 import { ChatActivity } from "./ChatActivity";
 import { CompanyIcon } from "./CompanyIcon";
 import { ChatTimeline } from "./ChatTimeline";
@@ -30,6 +30,7 @@ type RowProps = {
   compact: boolean;
   onForceQueued?: (msg: ChatMessage) => void;
   onCancelQueued?: (msg: ChatMessage) => void;
+  onAnswerNow?: (msg: ChatMessage, mode: "background" | "interrupt") => void;
 };
 
 // Só a mensagem em streaming muda de identidade a cada pedaço; as demais não re-renderizam.
@@ -41,6 +42,7 @@ const MessageRow = memo(
     onOpenFile,
     onForceQueued,
     onCancelQueued,
+    onAnswerNow,
   }: RowProps) {
     const backgroundAgents =
       msg.events?.filter((e) => e.kind === "agent" && e.status === "running")
@@ -151,6 +153,39 @@ const MessageRow = memo(
                 )}
               </div>
             )}
+            {msg.isStreaming && msg.deliveredFor && onAnswerNow && (
+              <div className="flex flex-wrap items-center gap-2" data-testid="delivered-actions">
+                {msg.sender === "claude" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onAnswerNow(msg, "background")}
+                      title="O comando em execução vai para o segundo plano e continua rodando; a IA responde a sua mensagem agora"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
+                    >
+                      <Zap size={12} /> Responder agora
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAnswerNow(msg, "interrupt")}
+                      title="Cancela a etapa em execução (inclusive o comando) e a IA responde a sua mensagem"
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-[11px] font-bold text-[#665e4f]"
+                    >
+                      <OctagonX size={12} /> Interromper e responder
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onAnswerNow(msg, "interrupt")}
+                    title="O Codex não manda comandos para o segundo plano: interrompe a etapa em execução (inclusive o comando) e responde a sua mensagem"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
+                  >
+                    <Zap size={12} /> Interromper e responder
+                  </button>
+                )}
+              </div>
+            )}
             {!msg.isStreaming && backgroundAgents > 0 && (
               <div
                 role="status"
@@ -238,6 +273,7 @@ const MessageRow = memo(
     a.onOpenFile === b.onOpenFile &&
     a.onForceQueued === b.onForceQueued &&
     a.onCancelQueued === b.onCancelQueued &&
+    a.onAnswerNow === b.onAnswerNow &&
     a.userProfile.fullName === b.userProfile.fullName &&
     a.userProfile.initials === b.userProfile.initials,
 );
@@ -249,6 +285,7 @@ export function ChatMessageList({
   onOpenFile,
   onForceQueued,
   onCancelQueued,
+  onAnswerNow,
 }: {
   messages: ChatMessage[];
   userProfile: Pick<UserProfile, "fullName" | "initials">;
@@ -256,6 +293,7 @@ export function ChatMessageList({
   onOpenFile?: (target: FileTarget) => void;
   onForceQueued?: (msg: ChatMessage) => void;
   onCancelQueued?: (msg: ChatMessage) => void;
+  onAnswerNow?: (msg: ChatMessage, mode: "background" | "interrupt") => void;
 }) {
   // "Enviar agora" só vale para a próxima mensagem da fila (a primeira que ainda espera).
   const nextQueuedId = messages.find((m) => m.queuedFor)?.id;
@@ -270,6 +308,7 @@ export function ChatMessageList({
           onOpenFile={onOpenFile}
           onForceQueued={msg.id === nextQueuedId ? onForceQueued : undefined}
           onCancelQueued={onCancelQueued}
+          onAnswerNow={onAnswerNow}
         />
       ))}
     </>

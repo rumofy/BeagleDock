@@ -1,13 +1,84 @@
+import { useState } from "react";
+import { Maximize2, Minimize2, MessageSquare } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
+import { CompanyIcon } from "../../components/CompanyIcon";
 import { SessionShell } from "./SessionShell";
+import { CliTerminalView } from "./CliTerminalView";
+
+/** Grade com as CLIs abertas no modo terminal, para acompanhar várias ao mesmo tempo. */
+function TerminalGrid() {
+  const { cliTerminals, allSessions, setActiveSessionId, setActiveTab } = useApp();
+  const [focused, setFocused] = useState<string | null>(null);
+  const open = allSessions.filter((s) => cliTerminals.terminals[s.id]);
+  const shown = focused && open.some((s) => s.id === focused) ? open.filter((s) => s.id === focused) : open;
+  const columns = shown.length <= 1 ? 1 : shown.length <= 4 ? 2 : 3;
+  return (
+    <div
+      data-testid="terminal-grid"
+      className="flex-1 min-h-0 p-3 grid gap-3"
+      style={{
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gridAutoRows: "minmax(0, 1fr)",
+      }}
+    >
+      {shown.map((session) => (
+        <div
+          key={session.id}
+          className="min-h-0 flex flex-col rounded-xl overflow-hidden border border-[#27272a] bg-[#141416] shadow-lg"
+        >
+          <div className="h-9 shrink-0 bg-[#1e1e21] px-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <CompanyIcon id={session.providerId} size={16} className="shrink-0" />
+              <span className="text-xs font-semibold text-[#e4e4e7] truncate" title={session.title}>
+                {session.title}
+              </span>
+              <span className="text-[10px] font-mono text-[#71717a] truncate" title={session.cwd}>
+                {session.cwd.split(/[\\/]/).filter(Boolean).pop()}
+              </span>
+              {cliTerminals.terminals[session.id]?.exited && (
+                <span className="text-[10px] font-bold text-amber-300">encerrada</span>
+              )}
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveSessionId(session.id);
+                  setActiveTab("chat");
+                }}
+                className="p-1 rounded text-[#a1a1aa] hover:bg-[#2e2e33]"
+                title="Abrir esta conversa"
+              >
+                <MessageSquare size={13} />
+              </button>
+              {open.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setFocused((id) => (id === session.id ? null : session.id))}
+                  className="p-1 rounded text-[#a1a1aa] hover:bg-[#2e2e33]"
+                  title={focused === session.id ? "Voltar à grade" : "Ampliar"}
+                >
+                  {focused === session.id ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                </button>
+              )}
+            </div>
+          </div>
+          <CliTerminalView session={session} compact={shown.length > 1} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function TerminalTab() {
-  const {
-    currentSession,
-    currentProvider,
-  } = useApp();
+  const { currentSession, currentProvider, cliTerminals } = useApp();
+  if (Object.keys(cliTerminals.terminals).length) return <TerminalGrid />;
   return (
             <div className="p-6 flex-1 flex flex-col overflow-hidden">
+              <p className="max-w-5xl w-full mx-auto mb-3 text-xs text-[#7e7565]">
+                Nenhuma CLI aberta no modo terminal. Use o botão Terminal no topo de uma conversa para
+                abrir a interface própria da CLI; as abertas aparecem aqui lado a lado.
+              </p>
               <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col bg-[#141416] rounded-2xl overflow-hidden shadow-xl border border-[#27272a]">
                 <div className="h-10 bg-[#1e1e21] px-4 flex items-center justify-between">
                   <div className="flex items-center gap-2">

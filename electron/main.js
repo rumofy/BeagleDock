@@ -54,9 +54,13 @@ const codexMcpAuth = createMcpAuthWatcher({
   notify: (...args) => ecosystem.notifyOnce(...args),
 });
 const { createCliRunner } = require("./cli-runner");
+const { createCliTerminals, readTerminalClipboard } = require("./cli-terminal");
 const { resolveModelSelection } = require("./model-options");
 const { createSessionService } = require("./session-service");
 const { createHistory } = require("./history");
+const { createTerminalHistory } = require("./terminal-history");
+const { createTurnWatcher } = require("./terminal-turns");
+const { chatReplyNotice, terminalTurnNotice } = require("./reply-notices");
 const { Worker } = require("worker_threads");
 const {
   initDatabase,
@@ -631,9 +635,77 @@ const sessionService = createSessionService({
   },
   runner: cliRunner,
 });
+// Modo terminal: o fim de cada resposta (pela tela da CLI) grava o histórico da conversa nativa e
+// avisa com notificação quando a janela está fora de foco, como no chat.
+const terminalHistory = createTerminalHistory({
+  readConversation: (providerId, nativeId, cwd) =>
+    runLocalJob("conversation", [providerId, nativeId, { cwd }]),
+  listNative: ({ exclude }) => runLocalJob("history", [{ query: "", exclude }]),
+  linkedIds: linkedNativeIds,
+  store: { setNativeSession, saveChatMessage, sessionExists },
+  emit: sendToRenderer,
+});
+const terminalWatchers = new Map();
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function terminalTurnEnded(sessionId, providerId) {
+  void (async () => {
+    // A CLI mostra o fim na tela um pouco antes de gravar a resposta no arquivo da conversa
+    // (Claude Code 2.1.317): espera um pouco e tenta de novo se a resposta ainda não chegou.
+    await wait(800);
+    let result = await terminalHistory.sync(sessionId);
+    for (const delay of [1500, 3000]) {
+      if (result?.lastReply) break;
+      await wait(delay);
+      const again = await terminalHistory.sync(sessionId);
+      result = { ...again, added: (result?.added || 0) + (again?.added || 0) };
+    }
+    return result;
+  })().then((result) =>
+    background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, result?.lastReply) }),
+  );
+}
+function notifyChatReply(payload, result) {
+  const notice = chatReplyNotice(payload?.providerId, result);
+  if (notice) background.notifyTurnFinished({ sessionId: payload.sessionId, ...notice });
+}
+function stopWatchingTerminal(sessionId) {
+  terminalWatchers.get(sessionId)?.dispose();
+  terminalWatchers.delete(sessionId);
+  if (terminalHistory.has(sessionId)) void terminalHistory.end(sessionId);
+}
+const cliTerminals = createCliTerminals({
+  hooks: {
+    opened: ({ sessionId, providerId, cwd, nativeId, newNativeId }) => {
+      terminalWatchers.get(sessionId)?.dispose();
+      terminalWatchers.set(
+        sessionId,
+        createTurnWatcher({ providerId, onTurnEnd: () => terminalTurnEnded(sessionId, providerId) }),
+      );
+      void terminalHistory.begin({ sessionId, providerId, cwd, nativeId, newNativeId });
+    },
+    input: (sessionId, data) => terminalWatchers.get(sessionId)?.input(data),
+    output: (sessionId, data) => terminalWatchers.get(sessionId)?.output(data),
+    exited: stopWatchingTerminal,
+    closed: stopWatchingTerminal,
+  },
+  pty: ptyModule,
+  find: findBinary,
+  env: cliEnv,
+  checkCwd: validCwd,
+  store: { getNativeSession },
+  beforeOpen: async (sessionId) => {
+    if (updatingCli) throw new Error("Aguarde a atualização da CLI terminar.");
+    if (sessionService.activeIds().includes(sessionId))
+      throw new Error("Espere a resposta atual terminar antes de abrir o terminal.");
+    // O processo do chat fica vivo entre os turnos: encerra para só o terminal usar a conversa.
+    cliRunner.kill(sessionId);
+  },
+  emit: sendToRenderer,
+});
 function shutdown() {
   clearInterval(refreshTimer);
   clearInterval(modelTimer);
+  cliTerminals.closeAll();
   cliRunner.shutdown();
   for (const worker of localWorkers) worker.terminate();
   for (const [, entry] of activePtySessions) {
@@ -827,7 +899,7 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("update-cli", async (_event, id) => {
     if (!["claude", "codex", "antigravity"].includes(id))
       throw new Error("CLI inválida.");
-    if (activePtySessions.size || sessionService.isBusy())
+    if (activePtySessions.size || sessionService.isBusy() || cliTerminals.list().some((t) => !t.exited))
       throw new Error(
         "Aguarde as execuções terminarem antes de atualizar uma CLI.",
       );
@@ -1102,6 +1174,7 @@ module.exports.ready = app.whenReady().then(async () => {
         // O ID nativo vem do vínculo salvo, nunca do pedido.
         native = saved.nativeSessionId;
         killPty(beagleSessionId);
+        cliTerminals.close(beagleSessionId);
         await sessionService.remove(beagleSessionId);
       }
       const removedFiles = native ? createHistory().remove(provider, native) : [];
@@ -1145,6 +1218,7 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("delete-session", async (_event, sessionId) => {
     try {
       killPty(sessionId);
+      cliTerminals.close(sessionId);
       return await sessionService.remove(sessionId);
     } catch (e) {
       return { success: false, error: e.message };
@@ -1426,11 +1500,24 @@ module.exports.ready = app.whenReady().then(async () => {
   // Mensagem na fila: tira da fila antes de a CLI recebê-la / interrompe a execução atual para ela passar.
   handle("cancel-queued-prompt", (_event, request) => sessionService.cancelQueued(request));
   handle("force-queued-prompt", (_event, request) => sessionService.forceQueued(request));
+  handle("answer-now-prompt", (_event, request) => sessionService.answerNow(request));
   handle("execute-cli-prompt", async (_event, payload) =>
     updatingCli
       ? { ok: false, error: "Aguarde a atualização da CLI terminar." }
-      : sessionService.execute(payload),
+      : cliTerminals.isOpen(payload?.sessionId)
+        ? { ok: false, error: "Esta conversa está aberta no terminal. Volte para o chat para enviar por aqui." }
+        : sessionService.execute(payload).then((result) => {
+            notifyChatReply(payload, result);
+            return result;
+          }),
   );
+  // Modo terminal: a interface própria de cada CLI, retomando a conversa nativa.
+  handle("cli-terminal-open", (_event, request) => cliTerminals.open(request));
+  handle("cli-terminal-write", (_event, request) => cliTerminals.write(request));
+  handle("cli-terminal-resize", (_event, request) => cliTerminals.resize(request));
+  handle("cli-terminal-close", (_event, sessionId) => cliTerminals.close(sessionId));
+  handle("cli-terminal-list", () => cliTerminals.list());
+  handle("cli-terminal-clipboard", () => readTerminalClipboard(require("electron").clipboard));
 
   createWindow();
   background.start();

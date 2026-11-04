@@ -29,6 +29,7 @@ export function ChatView() {
     isExecutingPrompt,
     forceQueuedPrompt,
     cancelQueuedPrompt,
+    answerNowPrompt,
   } = useApp();
   const pendingApprovals = cliApprovals.filter(
     (a) => a.sessionId === activeSessionId,
@@ -41,6 +42,10 @@ export function ChatView() {
   const onCancelQueued = useCallback(
     (m: ChatMessage) => void cancelQueuedPrompt(m),
     [cancelQueuedPrompt],
+  );
+  const onAnswerNow = useCallback(
+    (m: ChatMessage, mode: "background" | "interrupt") => void answerNowPrompt(m, mode),
+    [answerNowPrompt],
   );
   // Identidade estável: a lista de mensagens é memoizada e só re-renderiza o que mudou.
   const openFile = useCallback(
@@ -135,6 +140,7 @@ export function ChatView() {
                 onOpenFile={openFile}
                 onForceQueued={onForceQueued}
                 onCancelQueued={onCancelQueued}
+                onAnswerNow={onAnswerNow}
               />
             )}
           </div>
