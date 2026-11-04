@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { beagleApi } from "../api/beagleApi";
-import { APP_CONTROL_COMMANDS } from "../lib/sessionControls";
+import { appControlCommands } from "../lib/sessionControls";
 import type { NativeCommand, NativeCommandList } from "../types/api";
 
-/** Pedaço digitado depois da barra, só enquanto a pessoa ainda escreve o nome do comando. */
+/** Text typed after the slash, only while the person is still writing the command name. */
 export function commandQuery(input: string): string | null {
   const match = /^\/([^\s/]*)$/.exec(input);
   return match ? match[1].toLowerCase() : null;
@@ -25,8 +25,8 @@ export function filterCommands(commands: NativeCommand[], query: string): Native
 }
 
 /**
- * Comandos nativos da CLI da conversa para o autocomplete. A lista é lida da própria CLI (o backend
- * guarda um cache curto) e só é consultada quando a pessoa começa a digitar uma barra.
+ * Native commands of the conversation's CLI for autocomplete. The list is read from the CLI itself (the
+ * backend keeps a short cache) and is only queried when the person starts typing a slash.
  */
 export function useNativeCommands(providerId?: string, cwd?: string, input = "") {
   const query = commandQuery(input);
@@ -55,11 +55,11 @@ export function useNativeCommands(providerId?: string, cwd?: string, input = "")
     () =>
       active && result?.providerId === providerId
         ? filterCommands(
-            // Sem lista nativa dos comandos internos (Codex), o app oferece os controles que ele mantém.
+            // With no native list of built-in commands (Codex), the app offers the controls it maintains.
             result.limitation
               ? [
                   ...result.commands,
-                  ...APP_CONTROL_COMMANDS.filter(
+                  ...appControlCommands().filter(
                     (app) => !result.commands.some((c) => c.name === app.name),
                   ),
                 ]

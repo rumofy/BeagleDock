@@ -1,78 +1,78 @@
-# Subagentes: permissões, contagem e saída
+# Subagents: permissions, count and output
 
-Verificação em Linux em 2026-10-31 para as issues #35 e #36.
+Verified on Linux on 2026-10-31 for issues #35 and #36.
 
-## Diagnóstico
+## Diagnosis
 
-Na conversa relatada na #35, o histórico nativo do Codex registra uma chamada a
-`spawn_agent`. A interface contava também `wait` e mensagens como agentes e
-reatribuía as etapas do filho ao último item de comunicação. A suíte solicitada
-ainda estava executando quando a pessoa interrompeu a conversa; o histórico não
-comprova um loop de criação de agentes.
+In the conversation reported in #35, Codex's native history records a call to
+`spawn_agent`. The interface also counted `wait` and messages as agents and
+reassigned the child's steps to the last communication item. The requested
+suite was still running when the person interrupted the conversation; the history
+doesn't prove an agent-creation loop.
 
-No AGY, o hook recebia o ID nativo do filho e o comparava ao ID do pai. Isso
-negava o pedido antes de enviá-lo à interface. Além disso, o modo `inherit`
-("Global da CLI") ignorava `toolPermission: "always-proceed"` do `settings.json`,
-ferramentas de coordenação (`invoke_subagent`, `send_message`) exigiam confirmação
-manual, e `step_type: "subagent"` marcava o agente como concluído ao lançá-lo
-sem aninhar os comandos do filho na linha do tempo.
+In AGY, the hook received the child's native ID and compared it to the parent's ID.
+That denied the request before sending it to the interface. Besides that, the
+`inherit` mode ("CLI global") ignored `toolPermission: "always-proceed"` from
+`settings.json`, coordination tools (`invoke_subagent`, `send_message`) required
+manual confirmation, and `step_type: "subagent"` marked the agent as finished when
+it was launched, without nesting the child's commands in the timeline.
 
-A ponte agora autentica a árvore de processos pelo segredo exclusivo herdado da
-CLI, mantendo as decisões na conversa local que a lançou, respeita a política
-global no modo `inherit`, não pede aprovação para ferramentas internas de
-coordenação de subagentes nem leituras do `ai-memory`, e acompanha
-`subagent_info.subagents` mantendo o subagente ativo e suas etapas aninhadas.
-Outro segredo, um ID inválido e pedidos depois de encerrar a ponte não concedem
-acesso. As regras globais de bloqueio da CLI continuam sendo preservadas.
+The bridge now authenticates the process tree through the exclusive secret inherited
+from the CLI, keeping the decisions in the local conversation that launched it,
+respects the global policy in `inherit` mode, doesn't ask for approval for internal
+subagent coordination tools or `ai-memory` reads, and follows
+`subagent_info.subagents`, keeping the subagent active and its steps nested.
+Another secret, an invalid ID and requests after the bridge closes don't grant
+access. The CLI's global deny rules are still preserved.
 
-## Evidência real
+## Real evidence
 
-- Codex CLI 0.166.0: um subagente executou um comando Node de três segundos,
-  imprimiu dois marcadores e concluiu; o adaptador recebeu um único agente,
-  seu comando aninhado e a saída antes da resposta final do pai. A CLI enviou
-  o marcador final por `outputDelta` e o inicial apenas no snapshot do comando.
-  Essa ausência de um delta inicial vem da CLI; o aplicativo recuperou o trecho
-  inicial sem repetir o trecho já recebido.
-- Antigravity 1.4.12, Gemini 3.8 Flash: um subagente executou o mesmo comando,
-  pediu permissão ao broker da conversa do pai e concluiu. Seu resultado chegou ao canal do shell
-  cerca de 5,7 segundos antes da resposta final. O comando síncrono não produziu
-  um log incremental: os dois marcadores ficaram disponíveis juntos no
-  transcript nativo ao terminar o comando. Isso comprova recuperação da saída,
-  não streaming intermediário desse comando.
-- O probe autorizou automaticamente os pedidos reais referentes ao comando
-  inofensivo. O clique em permitir/negar na janela foi validado com as CLIs
-  simuladas, não com esses processos reais.
-- Os probes usaram diretórios temporários com `.ai-memory.toml` apontando para
-  `default/beagledock-probes`. Não executaram testes nem modificaram arquivos
-  de outro projeto.
+- Codex CLI 0.166.0: a subagent ran a three-second Node command,
+  printed two markers and finished; the adapter received a single agent,
+  its nested command and the output before the parent's final reply. The CLI sent
+  the final marker through `outputDelta` and the initial one only in the command's
+  snapshot. That missing initial delta comes from the CLI; the app recovered the
+  initial chunk without repeating the chunk already received.
+- Antigravity 1.4.12, Gemini 3.8 Flash: a subagent ran the same command,
+  asked for permission from the parent conversation's broker and finished. Its result reached the
+  shell channel about 5.7 seconds before the final reply. The synchronous command didn't produce
+  an incremental log: both markers became available together in the
+  native transcript when the command ended. That proves output recovery,
+  not intermediate streaming of this command.
+- The probe automatically authorized the real requests for the harmless
+  command. The allow/deny click in the window was validated with the
+  simulated CLIs, not with these real processes.
+- The probes used temporary directories with `.ai-memory.toml` pointing to
+  `default/beagledock-probes`. They didn't run tests or change files
+  of another project.
 
-Para repetir o diagnóstico, use uma conversa em pasta temporária e peça um único
-subagente para executar diretamente, sem pipes ou redirecionamento:
+To repeat the diagnosis, use a conversation in a temporary folder and ask for a single
+subagent to run directly, without pipes or redirection:
 
 ```sh
 node -e "console.log('FIRST');setTimeout(()=>console.log('LAST'),3000)"
 ```
 
-Observe a permissão do filho, a quantidade de agentes, a saída do shell antes da
-resposta final e os eventos realmente expostos pela CLI. Não inferir saída ao
-vivo a partir de snapshots finais.
+Watch the child's permission, the number of agents, the shell output before the
+final reply and the events the CLI really exposes. Don't infer live output
+from final snapshots.
 
-## Evidência simulada
+## Simulated evidence
 
-`npm test` cobre o contrato de eventos do Codex, a autorização de filhos
-conhecidos, o isolamento de conversas desconhecidas, a ponte autenticada do AGY,
-a leitura incremental de arquivos e o filtro de resultados de comandos no
-transcript do filho. Os testes distinguem fim da criação do agente de fim do seu
-trabalho e verificam que esperas e mensagens não criam novos agentes.
+`npm test` covers Codex's event contract, the authorization of known
+children, the isolation of unknown conversations, AGY's authenticated bridge,
+incremental file reading and the filter of command results in the
+child's transcript. The tests tell the end of the agent's creation from the end of its
+work and check that waits and messages don't create new agents.
 
-`npm run test:desktop` exercita o aplicativo com CLIs simuladas de Claude Code,
-Codex e Antigravity. A cobertura adicional de filhos no Codex e AGY verifica
-permitir/negar na interface e receber saída no shell antes da conclusão. Essa
-cobertura não substitui a evidência real acima. O Claude Code não recebeu
-alteração de protocolo neste trabalho; seu contrato e a integração existente
-continuam na suíte de regressão.
+`npm run test:desktop` exercises the app with simulated Claude Code,
+Codex and Antigravity CLIs. The additional coverage of children in Codex and AGY checks
+allow/deny in the interface and receiving output in the shell before completion. That
+coverage doesn't replace the real evidence above. Claude Code didn't get a
+protocol change in this work; its contract and the existing integration
+remain in the regression suite.
 
-O contrato v2 do Codex foi conferido com `codex app-server generate-ts` na CLI
-instalada, incluindo `CollabAgentTool`, `SubAgentActivityKind` e `agentsStates`.
-A [documentação oficial do App Server](https://learn.chatgpt.com/docs/app-server)
-descreve o transporte de eventos e respostas interativas.
+Codex's v2 contract was checked with `codex app-server generate-ts` on the
+installed CLI, including `CollabAgentTool`, `SubAgentActivityKind` and `agentsStates`.
+The [official App Server documentation](https://learn.chatgpt.com/docs/app-server)
+describes the transport of events and interactive replies.

@@ -28,7 +28,7 @@ const env = {
   PATH: bin + path.delimiter + process.env.PATH,
 };
 delete env.ELECTRON_RUN_AS_NODE;
-// Diagnóstico real do ditado: reaproveita modelos já baixados (sem baixar 669 MB no teste).
+// Real dictation diagnosis: reuses already downloaded models (without downloading 669 MB in the test).
 if (process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS) {
   fs.mkdirSync(path.join(root, "data"), { recursive: true });
   fs.symlinkSync(path.resolve(process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS), path.join(root, "data", "models"));

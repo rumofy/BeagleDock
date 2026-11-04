@@ -1,6 +1,6 @@
-// Migração única das identidades antigas (CapyAI / Bleagle) para BeagleDock.
-// Deve rodar no processo principal ANTES de qualquer acesso ao banco ou ao userData.
-// Idempotente: sem o diretório antigo, ou com o novo já existente, não faz nada.
+// One-time migration of the old identities (CapyAI / Bleagle) to BeagleDock.
+// Must run in the main process BEFORE any access to the database or userData.
+// Idempotent: without the old directory, or with the new one already there, it does nothing.
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -45,7 +45,7 @@ function moveDir(from, to, { fsImpl = fs } = {}) {
   try {
     copyRecursive(from, to);
     if (JSON.stringify(snapshot(from)) !== JSON.stringify(snapshot(to)))
-      throw new Error("Cópia não confere com a origem.");
+      throw new Error("The copy doesn't match the source.");
   } catch (error) {
     fs.rmSync(to, { recursive: true, force: true });
     throw error;
@@ -68,11 +68,11 @@ function renameDb(dir) {
 function migrateDirectory(from, to, label, log) {
   if (!fs.existsSync(from)) return { status: "none" };
   if (fs.existsSync(to)) {
-    log(`[migração] ${label}: ${to} já existe; ${from} foi preservado.`);
+    log(`[migration] ${label}: ${to} already exists; ${from} was kept.`);
     return { status: "kept-both" };
   }
   const how = moveDir(from, to);
-  log(`[migração] ${label}: ${from} -> ${to} (${how}).`);
+  log(`[migration] ${label}: ${from} -> ${to} (${how}).`);
   return { status: how };
 }
 function migrateLegacyData({
@@ -94,13 +94,13 @@ function migrateLegacyData({
       if (fs.existsSync(target)) {
         result.db = renameDb(target);
         if (result.db.length)
-          log(`[migração] banco renomeado para ${NEW_DB} (${result.db.join(", ")}).`);
+          log(`[migration] database renamed to ${NEW_DB} (${result.db.join(", ")}).`);
       }
     } else if (fs.existsSync(env.BEAGLEDOCK_DATA_DIR)) {
       result.db = renameDb(env.BEAGLEDOCK_DATA_DIR);
     }
   } catch (error) {
-    log(`[migração] falha nos dados: ${error.message}`);
+    log(`[migration] data failed: ${error.message}`);
   }
   try {
     if (appData)
@@ -111,11 +111,11 @@ function migrateLegacyData({
         log,
       ).status;
   } catch (error) {
-    log(`[migração] falha no userData: ${error.message}`);
+    log(`[migration] userData failed: ${error.message}`);
   }
   return result;
 }
-// Remove entradas de hook de aprovação das identidades antigas, preservando as demais.
+// Removes approval hook entries of the old identities, keeping the others.
 function removeLegacyHooks(hooks) {
   const removed = [];
   for (const key of Object.keys(hooks))

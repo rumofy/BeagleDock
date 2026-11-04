@@ -13,14 +13,14 @@ const gitRepo = (dir, remotes = {}) => {
     execFileSync("git", ["-C", dir, "remote", "add", n, u]);
 };
 
-test("marcador no próprio cwd", async () => {
+test("marker in the cwd itself", async () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, ".ai-memory.toml"), '# c\nworkspace = "rumofy"\nproject = "rumofy-next" # x\n');
   const r = await resolveAiMemoryScope(d);
   assert.deepEqual(r, { workspace: "rumofy", project: "rumofy-next", source: "marker", markerPath: path.join(d, ".ai-memory.toml") });
 });
 
-test("marcador em diretório ancestral", async () => {
+test("marker in an ancestor directory", async () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, ".ai-memory.toml"), 'workspace = "w"\nproject = "p"\n');
   const sub = path.join(d, "a", "b");
@@ -30,7 +30,7 @@ test("marcador em diretório ancestral", async () => {
   assert.equal(r.markerPath, path.join(d, ".ai-memory.toml"));
 });
 
-test("marcador sem project usa remoto git (upstream antes de origin)", async () => {
+test("a marker without project uses the git remote (upstream before origin)", async () => {
   const d = tmp();
   fs.writeFileSync(path.join(d, ".ai-memory.toml"), 'workspace = "rumofy"\n');
   gitRepo(d, { origin: "git@github-rumofy:rumofy/BeagleDock.git", upstream: "https://github.com/acme/api.git" });
@@ -41,7 +41,7 @@ test("marcador sem project usa remoto git (upstream antes de origin)", async () 
   assert.ok(r.markerPath);
 });
 
-test("sem marcador, com remoto", async () => {
+test("no marker, with a remote", async () => {
   const d = tmp();
   gitRepo(d, { origin: "git@github-rumofy:rumofy/BeagleDock.git" });
   const r = await resolveAiMemoryScope(d);
@@ -51,7 +51,7 @@ test("sem marcador, com remoto", async () => {
   );
 });
 
-test("sem marcador e sem remoto usa nome da pasta", async () => {
+test("no marker and no remote uses the folder name", async () => {
   const d = path.join(tmp(), "minha-pasta");
   fs.mkdirSync(d);
   gitRepo(d);
@@ -60,7 +60,7 @@ test("sem marcador e sem remoto usa nome da pasta", async () => {
   assert.equal(r.source, "folder");
 });
 
-test("normalização de URLs", () => {
+test("URL normalization", () => {
   assert.equal(projectFromRemote("ssh://git@host:22/a/b/c.git"), "a-b-c");
   assert.equal(projectFromRemote("https://github.com/acme/api"), "acme-api");
   assert.equal(projectFromRemote(""), "");

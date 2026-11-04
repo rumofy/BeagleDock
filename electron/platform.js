@@ -2,6 +2,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const crossSpawn = require("cross-spawn");
+const { t } = require("./i18n");
 
 function binaryDirs(
   platform = process.platform,
@@ -94,7 +95,7 @@ function execCli(bin, args, options = {}) {
     };
     const timer = setTimeout(() => {
       child.kill();
-      done(new Error("Tempo limite ao consultar CLI."));
+      done(new Error(t("errors.cliQueryTimeout")));
     }, options.timeout || 10000);
     for (const [stream, append] of [
       [child.stdout, (c) => (stdout += c)],
@@ -104,7 +105,7 @@ function execCli(bin, args, options = {}) {
         bytes += chunk.length;
         if (bytes > (options.maxBuffer || 10 * 1024 * 1024)) {
           child.kill();
-          done(new Error("Saída da CLI excedeu o limite."));
+          done(new Error(t("errors.cliOutputLimit")));
         } else append(chunk.toString());
       });
     }
@@ -113,7 +114,7 @@ function execCli(bin, args, options = {}) {
       done(
         code === 0
           ? null
-          : new Error(stderr.trim() || `CLI encerrou com código ${code}.`),
+          : new Error(stderr.trim() || t("errors.cliExited", { code })),
       ),
     );
   });
@@ -131,7 +132,7 @@ function shellSpec(platform = process.platform, env = process.env) {
 function validCwd(cwd) {
   const target = cwd || os.homedir();
   if (!path.isAbsolute(target) || !fs.statSync(target).isDirectory())
-    throw new Error("Selecione um diretório de trabalho existente.");
+    throw new Error(t("errors.pickWorkdir"));
   return target;
 }
 // Terminate only the process tree created for this CLI invocation.

@@ -1,6 +1,7 @@
 const crossSpawn = require("cross-spawn");
 const { StringDecoder } = require("string_decoder");
 const { findBinary, execCli, terminateCli } = require("./platform");
+const { t } = require("./i18n");
 
 const MONTHS = [
   "jan",
@@ -92,8 +93,8 @@ function parseResetLabel(label, now = Date.now()) {
     if (monthName) {
       const month = MONTHS.indexOf(monthName.slice(0, 3).toLowerCase());
       if (month < 0) return null;
-      // O reinício fica a dias de agora: escolhe o ano cujo instante é o mais próximo de "agora"
-      // (cobre a virada de ano nos dois sentidos).
+      // The reset is days away: pick the year whose instant is closest to "now"
+      // (covers the year change in both directions).
       const candidates = [today.year - 1, today.year, today.year + 1].map(
         (year) =>
           zonedInstant(year, month, Number(dayText), hour, minute, zoneName),
@@ -123,11 +124,11 @@ function parseClaudeUsage(stdout, now = Date.now()) {
   try {
     report = JSON.parse(stdout);
   } catch {
-    throw new Error("O Claude Code retornou um relatório /usage inválido.");
+    throw new Error(t("usage.claudeInvalidReport"));
   }
   const text = typeof report?.result === "string" ? report.result : "";
   if (report?.is_error || !text)
-    throw new Error("O Claude Code não retornou um relatório /usage válido.");
+    throw new Error(t("usage.claudeInvalidUsage"));
   const find = (label) => {
     const line = text.match(
       new RegExp(
@@ -137,7 +138,7 @@ function parseClaudeUsage(stdout, now = Date.now()) {
     );
     if (!line) return { percent: null, resetAt: null };
     const resetAt = parseResetLabel(line[2], now);
-    // A janela que já reiniciou deixa de valer: não exibir percentual antigo.
+    // A window that already reset no longer applies: don't show an old percentage.
     if (resetAt && Date.parse(resetAt) <= now)
       return { percent: null, resetAt };
     return { percent: Math.round(Number(line[1])), resetAt };
@@ -146,14 +147,14 @@ function parseClaudeUsage(stdout, now = Date.now()) {
   const week = find("Current week \\(all models\\)");
   if (session.percent === null && week.percent === null)
     throw new Error(
-      "O /usage do Claude Code não informou cotas (conta sem assinatura?).",
+      t("usage.claudeNoQuotas"),
     );
   return {
     window5hPercent: session.percent,
     weeklyPercent: week.percent,
     window5hResetAt: session.resetAt,
     weeklyResetAt: week.resetAt,
-    sourceLabel: "Claude Code /usage · cotas do provedor",
+    sourceLabel: t("usage.claudeSource"),
   };
 }
 
@@ -162,7 +163,7 @@ function parseCodexRateLimits(result, now = Date.now()) {
     result?.rateLimitsByLimitId?.codex || result?.rateLimits || null;
   if (!snapshot)
     throw new Error(
-      "O Codex não retornou limites de uso (account/rateLimits).",
+      t("usage.codexNoLimits"),
     );
   const windows = [snapshot.primary, snapshot.secondary].filter(
     (w) => w && Number.isFinite(w.usedPercent),
@@ -192,14 +193,14 @@ function parseCodexRateLimits(result, now = Date.now()) {
   const a = read(five);
   const b = read(weekly);
   if (a.percent === null && b.percent === null)
-    throw new Error("O Codex não informou limites conhecidos e vigentes.");
+    throw new Error(t("usage.codexNoKnownLimits"));
   return {
     window5hPercent: a.percent,
     weeklyPercent: b.percent,
     window5hResetAt: a.resetAt,
     weeklyResetAt: b.resetAt,
     ...(snapshot.planType ? { planType: snapshot.planType } : {}),
-    sourceLabel: "Codex app-server · limites da conta (/status)",
+    sourceLabel: t("usage.codexSource"),
   };
 }
 
@@ -223,16 +224,16 @@ function queryCodexRateLimits({ bin, spawn = crossSpawn, timeoutMs = 20000 }) {
       else resolve(value);
     };
     const timer = setTimeout(
-      () => finish(new Error("Tempo limite ao consultar os limites do Codex.")),
+      () => finish(new Error(t("usage.codexTimeout"))),
       timeoutMs,
     );
     const send = (message) => child.stdin.write(JSON.stringify(message) + "\n");
     child.on("error", (error) => finish(error));
-    // EPIPE/ENOENT ao escrever em um codex que saiu na hora não pode virar erro não tratado.
+    // EPIPE/ENOENT when writing to a codex that just exited must not become an unhandled error.
     child.stdin?.on("error", (error) => finish(error));
     const decoder = new StringDecoder("utf8");
     child.on("close", () =>
-      finish(new Error("O Codex encerrou antes de informar os limites.")),
+      finish(new Error(t("usage.codexExited"))),
     );
     child.stderr?.on("data", () => {});
     child.stdout.on("data", (chunk) => {
@@ -253,7 +254,7 @@ function queryCodexRateLimits({ bin, spawn = crossSpawn, timeoutMs = 20000 }) {
           send({ id: "usage-read", method: "account/rateLimits/read" });
         } else if (message.id === "usage-read") {
           if (message.error)
-            finish(new Error(message.error.message || "Falha no Codex."));
+            finish(new Error(message.error.message || t("usage.codexFailed")));
           else finish(null, message.result);
         }
       }
@@ -305,10 +306,10 @@ function createProviderUsage({
   spawn = crossSpawn,
   now = Date.now,
   refreshMs = 45000,
-  // Em segundo plano (janela oculta/minimizada) consulta bem menos: cada leitura inicia uma CLI.
+  // In the background (hidden/minimized window) it queries much less: each read starts a CLI.
   getRefreshMs = () => refreshMs,
-  // Quanto a leitura espera pela CLI antes de devolver o último valor conhecido; a CLI lenta
-  // nunca deve atrasar a lista de ferramentas. Ao terminar em segundo plano, `onUpdate` avisa.
+  // How long a read waits for the CLI before returning the last known value; a slow CLI
+  // must never delay the tool list. When it finishes in the background, `onUpdate` notifies.
   waitMs = 1500,
   onUpdate = () => {},
   cwd = require("os").tmpdir(),
@@ -327,11 +328,11 @@ function createProviderUsage({
       lastAttempt: -Infinity,
       read: async () => {
         const bin = find("claude");
-        if (!bin) throw new Error("CLI do Claude Code não encontrada.");
+        if (!bin) throw new Error(t("errors.claudeNotFound"));
         let result;
         try {
-          // Sem transcript e sem os hooks/configurações do usuário: é só uma leitura de cota,
-          // não pode virar sessão no histórico do Claude nem disparar hooks (ex.: ai-memory).
+          // No transcript and no user hooks/settings: it's just a quota read,
+          // it can't become a session in Claude's history or fire hooks (e.g. ai-memory).
           result = await exec(
             bin,
             [
@@ -351,7 +352,7 @@ function createProviderUsage({
           );
         } catch {
           throw new Error(
-            "Não foi possível consultar /usage. Confira a autenticação do Claude Code no terminal.",
+            t("usage.claudeFailed"),
           );
         }
         return parseClaudeUsage(result.stdout, now());
@@ -363,7 +364,7 @@ function createProviderUsage({
       lastAttempt: -Infinity,
       read: async () => {
         const bin = find("codex");
-        if (!bin) throw new Error("CLI do Codex não encontrada.");
+        if (!bin) throw new Error(t("errors.codexNotFound"));
         const result = await queryCodexRateLimits({ bin, spawn });
         return parseCodexRateLimits(result, now());
       },
@@ -405,7 +406,7 @@ function createProviderUsage({
       );
       started.finally(() => clearTimeout(timer));
     });
-    // Leitura que passou do prazo ainda termina em segundo plano e avisa quem estiver ouvindo.
+    // A read past its deadline still finishes in the background and notifies whoever is listening.
     started.then(() => {
       if (providers[id].late) {
         providers[id].late = false;

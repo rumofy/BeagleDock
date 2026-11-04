@@ -7,8 +7,8 @@ const {
   createProviderUsage,
 } = require("../electron/provider-usage");
 
-// Saídas capturadas das CLIs reais: claude 2.1.316 (`-p /usage --output-format json`)
-// e codex-cli 0.166.0 (app-server, account/rateLimits/read).
+// Outputs captured from the real CLIs: claude 2.1.316 (`-p /usage --output-format json`)
+// and codex-cli 0.166.0 (app-server, account/rateLimits/read).
 const now = Date.parse("2026-10-31T12:00:00Z");
 const claudeReport = (result, extra = {}) =>
   JSON.stringify({ is_error: false, subtype: "success", result, ...extra });
@@ -32,7 +32,7 @@ const codexResult = {
   },
 };
 
-test("reset do Claude é convertido para o instante real no fuso informado", () => {
+test("Claude's reset is converted to the real instant in the reported time zone", () => {
   assert.equal(
     parseResetLabel("Oct 31, 3:20pm (America/Sao_Paulo)", now),
     "2026-10-31T18:20:00.000Z",
@@ -49,7 +49,7 @@ test("reset do Claude é convertido para o instante real no fuso informado", () 
   assert.equal(parseResetLabel(undefined, now), null);
 });
 
-test("/usage do Claude Code vira cota de 5h e semanal", () => {
+test("Claude Code's /usage becomes the 5h and weekly quota", () => {
   const usage = parseClaudeUsage(claudeReport(claudeText), now);
   assert.equal(usage.window5hPercent, 1);
   assert.equal(usage.weeklyPercent, 13);
@@ -57,25 +57,25 @@ test("/usage do Claude Code vira cota de 5h e semanal", () => {
   assert.equal(usage.weeklyResetAt, "2026-11-07T05:00:00.000Z");
 });
 
-test("janela do Claude que já reiniciou não exibe percentual antigo", () => {
+test("a Claude window that already reset doesn't show an old percentage", () => {
   const usage = parseClaudeUsage(claudeReport(claudeText), now + 7 * 3600000);
   assert.equal(usage.window5hPercent, null);
   assert.equal(usage.weeklyPercent, 13);
 });
 
-test("relatório do Claude inválido ou sem cotas falha explicitamente", () => {
-  assert.throws(() => parseClaudeUsage("não é json", now), /inválido/);
+test("an invalid Claude report or one without quotas fails explicitly", () => {
+  assert.throws(() => parseClaudeUsage("não é json", now), /invalid/);
   assert.throws(
     () => parseClaudeUsage(claudeReport("", { is_error: true }), now),
-    /válido/,
+    /valid \/usage/,
   );
   assert.throws(
     () => parseClaudeUsage(claudeReport("Using API key billing"), now),
-    /não informou cotas/,
+    /reported no quotas/,
   );
 });
 
-test("limites do Codex mapeiam janelas por duração e trazem o reset", () => {
+test("Codex limits map windows by duration and carry the reset", () => {
   const usage = parseCodexRateLimits(codexResult, now);
   assert.equal(usage.window5hPercent, 0);
   assert.equal(usage.weeklyPercent, 92);
@@ -83,7 +83,7 @@ test("limites do Codex mapeiam janelas por duração e trazem o reset", () => {
   assert.equal(usage.planType, "plus");
 });
 
-test("Codex só com janela semanal não vira cota de 5h", () => {
+test("Codex with only a weekly window doesn't become a 5h quota", () => {
   const usage = parseCodexRateLimits(
     {
       rateLimits: {
@@ -98,10 +98,10 @@ test("Codex só com janela semanal não vira cota de 5h", () => {
   );
   assert.equal(usage.window5hPercent, null);
   assert.equal(usage.weeklyPercent, 40);
-  assert.throws(() => parseCodexRateLimits({}, now), /não retornou/);
+  assert.throws(() => parseCodexRateLimits({}, now), /didn't return/);
 });
 
-test("leitura mantém o último valor como desatualizado quando a CLI falha", async () => {
+test("the reading keeps the last value as stale when the CLI fails", async () => {
   let clock = now;
   let fail = false;
   const usage = createProviderUsage({
@@ -128,7 +128,7 @@ test("leitura mantém o último valor como desatualizado quando a CLI falha", as
   assert.match(result.claude.quotaError, /\/usage/);
 });
 
-test("CLI lenta não atrasa a leitura: devolve o valor conhecido e avisa quando terminar", async () => {
+test("a slow CLI doesn't delay the reading: returns the known value and notifies when done", async () => {
   let release;
   const gate = new Promise((resolve) => (release = resolve));
   const updates = [];
@@ -147,7 +147,7 @@ test("CLI lenta não atrasa a leitura: devolve o valor conhecido e avisa quando 
   });
   const started = Date.now();
   const first = await usage.get();
-  assert.ok(Date.now() - started < 1000, "não esperou a CLI lenta");
+  assert.ok(Date.now() - started < 1000, "didn't wait for the slow CLI");
   assert.equal(first.claude.window5hPercent, null);
   release();
   await new Promise((r) => setTimeout(r, 30));
@@ -160,7 +160,7 @@ const { queryCodexRateLimits } = require("../electron/provider-usage");
 const { EventEmitter } = require("node:events");
 const { PassThrough, Writable } = require("node:stream");
 
-test("a leitura do Claude não grava transcript nem dispara hooks do usuário", async () => {
+test("Claude's reading doesn't write a transcript or fire the user's hooks", async () => {
   let args;
   const usage = createProviderUsage({
     find: (name) => `/bin/${name}`,
@@ -174,17 +174,17 @@ test("a leitura do Claude não grava transcript nem dispara hooks do usuário", 
   await usage.get();
   assert.ok(args.includes("--no-session-persistence"));
   assert.deepEqual(args.slice(args.indexOf("--setting-sources")), ["--setting-sources", "local"]);
-  assert.ok(!args.includes("--bare"), "--bare perderia a autenticação da assinatura");
+  assert.ok(!args.includes("--bare"), "--bare would lose the subscription's authentication");
 });
 
-test("virada de ano: escolhe o ano mais próximo nos dois sentidos", () => {
+test("year rollover: picks the closest year in both directions", () => {
   const jan1 = Date.parse("2027-01-01T03:00:00Z");
   assert.equal(parseResetLabel("Dec 31, 11pm (America/Sao_Paulo)", jan1), "2027-01-01T02:00:00.000Z");
   const dec31 = Date.parse("2026-12-31T12:00:00Z");
   assert.equal(parseResetLabel("Jan 2, 2am (America/Sao_Paulo)", dec31), "2027-01-02T05:00:00.000Z");
 });
 
-test("formatos extras de reset: 'at' e relativo", () => {
+test("extra reset formats: 'at' and relative", () => {
   assert.equal(parseResetLabel("Nov 7 at 2am (America/Sao_Paulo)", now), "2026-11-07T05:00:00.000Z");
   assert.equal(parseResetLabel("in 2h", now), new Date(now + 2 * 3600000).toISOString());
   assert.equal(parseResetLabel("in 1h 30m", now), new Date(now + 90 * 60000).toISOString());
@@ -207,18 +207,18 @@ function fakeCodex({ failOnWrite = false, exitImmediately = false } = {}) {
   return child;
 }
 
-test("codex que fecha o stdin ou sai na hora vira erro tratado, não exceção do app", async () => {
+test("a codex that closes stdin or exits right away becomes a handled error, not an app exception", async () => {
   await assert.rejects(
     queryCodexRateLimits({ bin: "codex", spawn: () => fakeCodex({ failOnWrite: true }), timeoutMs: 500 }),
     /EPIPE/,
   );
   await assert.rejects(
     queryCodexRateLimits({ bin: "codex", spawn: () => fakeCodex({ exitImmediately: true }), timeoutMs: 500 }),
-    /encerrou antes/,
+    /exited before/,
   );
 });
 
-test("com a janela em segundo plano a leitura espera o intervalo maior", async () => {
+test("with the window in the background the reading waits the longer interval", async () => {
   let clock = now;
   let calls = 0;
   let background = false;
@@ -235,11 +235,11 @@ test("com a janela em segundo plano a leitura espera o intervalo maior", async (
   await usage.get();
   clock += 60000;
   await usage.get();
-  assert.equal(calls, 2, "em primeiro plano relê após 45 s");
+  assert.equal(calls, 2, "in the foreground it rereads after 45 s");
   background = true;
   clock += 60000;
   await usage.get();
-  assert.equal(calls, 2, "em segundo plano não relê em 1 min");
+  assert.equal(calls, 2, "in the background it doesn't reread within 1 min");
   clock += 600000;
   await usage.get();
   assert.equal(calls, 3);

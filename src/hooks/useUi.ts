@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 export type AppTab = "chat" | "memory" | "terminal" | "settings";
 
-/** Navegação, aviso global e visibilidade de modais. */
+/** Navigation, global notice and modal visibility. */
 export function useUi() {
   const [activeTab, setActiveTab] = useState<AppTab>("chat");
   const [appError, setAppError] = useState("");
@@ -12,7 +12,7 @@ export function useUi() {
   const [showSkillsModal, setShowSkillsModal] = useState<boolean>(false);
   const [showHistoryModal, setShowHistoryModal] = useState<boolean>(false);
 
-  // Atalho global de teclado: Ctrl+K para Skills, Ctrl+H para Histórico
+  // Global keyboard shortcuts: Ctrl+K for Skills, Ctrl+H for History
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {

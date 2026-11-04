@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** Relógio que só roda enquanto `active`; evita renderizações periódicas em mensagens concluídas. */
+/** Clock that only ticks while `active`; avoids periodic renders on finished messages. */
 export function useNow(active: boolean, intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {

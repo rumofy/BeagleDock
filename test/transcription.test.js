@@ -19,10 +19,10 @@ function speechWav(seconds = 0.5) {
   return Buffer.from(wav.encodeWav(samples, 16000));
 }
 const audio64 = () => speechWav().toString("base64");
-// O app não traz nomes fixos: os testes usam um vocabulário cadastrado como o de quem usa.
+// The app ships no fixed names: the tests use a registered vocabulary like a user's.
 const VOCAB = "BeagleDock, Claude Code, Codex CLI, Codex, ai-memory, TypeScript, React, JSON, GitHub, GitLab";
 
-test("WAV gerado no renderer tem cabeçalho PCM 16 bits mono e é aceito pelo backend", () => {
+test("a WAV generated in the renderer has a 16-bit mono PCM header and is accepted by the backend", () => {
   const bytes = speechWav(0.25);
   assert.equal(bytes.toString("ascii", 0, 4), "RIFF");
   assert.equal(bytes.toString("ascii", 8, 12), "WAVE");
@@ -34,26 +34,26 @@ test("WAV gerado no renderer tem cabeçalho PCM 16 bits mono e é aceito pelo ba
   assert.equal(t.decodeWav(bytes.toString("base64")).length, bytes.length);
 });
 
-test("silêncio não é enviado; voz baixa é normalizada sem amplificar ruído puro", () => {
+test("silence isn't sent; a quiet voice is normalized without amplifying pure noise", () => {
   assert.equal(wav.hasSpeech(new Float32Array(16000)), false);
   const quiet = new Float32Array(1000).map((_, i) => 0.2 * Math.sin(i));
   assert.equal(wav.hasSpeech(quiet), true);
   const loud = wav.normalizePeak(quiet);
   assert.ok(Math.max(...loud) > 0.85 && Math.max(...loud) <= 0.9001);
-  // Ganho limitado a 8x: ruído baixíssimo não vira grito.
+  // Gain limited to 8x: very low noise doesn't become a shout.
   assert.ok(Math.max(...wav.normalizePeak(new Float32Array(100).fill(0.01))) <= 0.0801);
   const silence = new Float32Array(10);
   assert.equal(wav.normalizePeak(silence), silence);
 });
 
-test("texto ditado entra no cursor com espaços só onde faltam", () => {
+test("dictated text goes in at the cursor with spaces only where missing", () => {
   assert.deepEqual({ ...wav.insertDictation("", 0, " Olá mundo ") }, { text: "Olá mundo", caret: 9 });
   assert.deepEqual({ ...wav.insertDictation("corrige", 7, "o bug") }, { text: "corrige o bug", caret: 13 });
   assert.deepEqual({ ...wav.insertDictation("antes depois", 5, "meio") }, { text: "antes meio depois", caret: 10 });
   assert.deepEqual({ ...wav.insertDictation("abc", 99, "") }, { text: "abc", caret: 99 });
 });
 
-test("appendDictation continua no fim do texto e deixa o cursor no fim", () => {
+test("appendDictation continues at the end of the text and leaves the cursor at the end", () => {
   const first = wav.appendDictation("", "Primeira observação.");
   const second = wav.appendDictation(first.text, "Segunda observação.");
   assert.deepEqual({ ...second }, { text: "Primeira observação. Segunda observação.", caret: 40 });
@@ -61,14 +61,14 @@ test("appendDictation continua no fim do texto e deixa o cursor no fim", () => {
   assert.deepEqual({ ...wav.appendDictation("abc", "  ") }, { text: "abc", caret: 3 });
 });
 
-test("decodeWav recusa vazio, formato errado, curto demais e acima de 25 MB", () => {
-  assert.throws(() => t.decodeWav(""), /vazio/);
-  assert.throws(() => t.decodeWav(Buffer.from("OggS".padEnd(5000, "x")).toString("base64")), /inválido/);
-  assert.throws(() => t.decodeWav(Buffer.from(wav.encodeWav(new Float32Array(10), 16000)).toString("base64")), /curta/);
+test("decodeWav refuses empty, wrong format, too short and above 25 MB", () => {
+  assert.throws(() => t.decodeWav(""), /Empty/);
+  assert.throws(() => t.decodeWav(Buffer.from("OggS".padEnd(5000, "x")).toString("base64")), /Invalid/);
+  assert.throws(() => t.decodeWav(Buffer.from(wav.encodeWav(new Float32Array(10), 16000)).toString("base64")), /too short/);
   assert.throws(() => t.decodeWav("A".repeat(36 * 1024 * 1024)), /25 MB/);
 });
 
-test("configuração padrão é o ditado local; a API só quando escolhida", () => {
+test("the default setting is local dictation; the API only when chosen", () => {
   const c = t.resolveDictationConfig({});
   assert.equal(c.engine, "local");
   assert.equal(c.model, "gpt-4o-transcribe");
@@ -80,7 +80,7 @@ test("configuração padrão é o ditado local; a API só quando escolhida", () 
   assert.equal(t.resolveDictationConfig({ voiceDictation: { engine: "whisper" } }).engine, "local");
 });
 
-test("vocabulário corrige a transcrição: trocas 'errado => certo' e grafia de nomes", () => {
+test("the vocabulary fixes the transcription: 'wrong => right' swaps and name spelling", () => {
   const vocabulary = "cloud code => Claude Code\nsupabase, Rumofy; =>, a => ";
   const withNames = `${vocabulary}\n${VOCAB}`;
   assert.deepEqual(t.parseVocabulary(vocabulary), {
@@ -92,24 +92,24 @@ test("vocabulário corrige a transcrição: trocas 'errado => certo' e grafia de
     context: ["RumofyNext", "Testes"],
   });
   assert.equal(fixed, "Abre o Claude Code e o Codex CLI no RumofyNext, Rumofy e TypeScript. Faça os testes.");
-  // Só palavras inteiras: "reactivo" não vira "Reactivo"; acentos contam como letra.
+  // Whole words only: "reactivo" doesn't become "Reactivo"; accents count as letters.
   assert.equal(t.applyVocabulary("reactivo react ação", { vocabulary: VOCAB }), "reactivo React ação");
-  // Sem vocabulário cadastrado, nada é trocado: o app não traz nomes fixos.
+  // Without a registered vocabulary nothing is swapped: the app ships no fixed names.
   assert.equal(t.applyVocabulary("o Bigodok no git hub em typescript", {}), "o Bigodok no git hub em typescript");
 });
 
-test("prompt leva o vocabulário do usuário e da sessão primeiro, sem repetir e com limite", () => {
+test("the prompt carries the user's and the session's vocabulary first, without repeats and with a limit", () => {
   const prompt = t.buildPrompt({ language: "pt", vocabulary: "Rumofy, supabase\nRumofy, Claude Code, Codex CLI", context: ["RumofyNext", "claude code"] });
   assert.match(prompt, /português do Brasil/);
   assert.match(prompt, /Vocabulário: Rumofy, supabase, Claude Code, Codex CLI, RumofyNext\.$/);
   assert.equal((prompt.match(/Rumofy,/g) || []).length, 1);
-  assert.doesNotMatch(prompt, /claude code/); // já veio do vocabulário em outra grafia
+  assert.doesNotMatch(prompt, /claude code/); // already came from the vocabulary in another spelling
   const huge = t.buildPrompt({ language: "pt", vocabulary: Array.from({ length: 500 }, (_, i) => `termo${i}`).join(",") });
   assert.ok(huge.length <= 1501);
   assert.match(t.buildPrompt({ language: "en" }), /^Dictation/);
 });
 
-test("API: envia multipart com modelo, idioma, prompt e chave; devolve o texto limpo", async () => {
+test("API: sends multipart with model, language, prompt and key; returns the clean text", async () => {
   let call;
   const fetchImpl = async (url, init) => {
     call = { url, init };
@@ -134,7 +134,7 @@ test("API: envia multipart com modelo, idioma, prompt e chave; devolve o texto l
   assert.equal(form.get("file").type, "audio/wav");
 });
 
-test("API: idioma automático não manda language; erro do servidor sai sem vazar a chave", async () => {
+test("API: automatic language doesn't send language; a server error comes out without leaking the key", async () => {
   let form;
   await t.transcribeWithApi({
     audio: speechWav(),
@@ -157,13 +157,13 @@ test("API: idioma automático não manda language; erro do servidor sai sem vaza
   );
 });
 
-test("API: exige chave e https, mas aceita servidor local sem chave", async () => {
+test("API: requires a key and https, but accepts a local server without a key", async () => {
   const deps = (voiceDictation, key = "") => ({
     getSettings: async () => ({ voiceDictation: { engine: "api", ...voiceDictation } }),
     getSecret: async () => key,
     fetchImpl: async () => new Response('{"text":"local"}'),
   });
-  await assert.rejects(t.transcribeAudio({ audio: audio64() }, deps({})), /Cadastre a chave/);
+  await assert.rejects(t.transcribeAudio({ audio: audio64() }, deps({})), /Add the transcription API key/);
   await assert.rejects(t.transcribeAudio({ audio: audio64() }, deps({ baseUrl: "http://exemplo.com/v1" }, "k")), /https/);
   const local = await t.transcribeAudio({ audio: audio64() }, deps({ baseUrl: "http://127.0.0.1:8000/v1" }));
   assert.equal(local.text, "local");
@@ -193,13 +193,13 @@ const fakeModels = (installed = true) => ({
   modelPath: () => "/modelos/parakeet.bin",
 });
 
-test("local: roda o parakeet-cli com modelo e threads, corrige o vocabulário e apaga o temporário", async () => {
+test("local: runs parakeet-cli with model and threads, fixes the vocabulary and deletes the temp file", async () => {
   const { spawnImpl, calls } = fakeSpawn({ stdout: " Olá, beagledock.\n Tudo certo.\n" });
   const result = await t.transcribeAudio(
     { audio: audio64() },
     {
       getSettings: async () => ({ voiceDictation: { vocabulary: "BeagleDock" } }),
-      getSecret: async () => assert.fail("modo local não lê chave"),
+      getSecret: async () => assert.fail("local mode doesn't read a key"),
       spawnImpl,
       models: fakeModels(),
       findEngine: () => "/app/speech/parakeet-cli",
@@ -214,24 +214,24 @@ test("local: roda o parakeet-cli com modelo e threads, corrige o vocabulário e 
   assert.equal(fs.existsSync(path.dirname(calls[0].args[3])), false);
 });
 
-test("local: modelo ausente vira código próprio; motor ausente ou com erro viram mensagens claras", async () => {
+test("local: a missing model gets its own code; a missing or failing engine gives clear messages", async () => {
   await assert.rejects(
     t.transcribeAudio({ audio: audio64() }, { getSettings: async () => ({}), models: fakeModels(false), findEngine: () => "/x" }),
-    (e) => e.code === "SPEECH_MODEL_MISSING" && /Baixe o modelo de voz/.test(e.message),
+    (e) => e.code === "SPEECH_MODEL_MISSING" && /Download the voice model/.test(e.message),
   );
   const base = { audio: speechWav(), modelPath: "/m.bin" };
   await assert.rejects(t.transcribeLocally({ ...base, binary: null }), /npm run build:speech/);
   await assert.rejects(
     t.transcribeLocally({ ...base, binary: "/x", spawnImpl: fakeSpawn({ error: new Error("EACCES") }).spawnImpl }),
-    /Falha no motor de ditado: EACCES/,
+    /Dictation engine failed: EACCES/,
   );
   await assert.rejects(
     t.transcribeLocally({ ...base, binary: "/x", spawnImpl: fakeSpawn({ code: 3 }).spawnImpl }),
-    /erro \(3\): falha ao carregar modelo/,
+    /error \(3\): falha ao carregar modelo/,
   );
 });
 
-test("motor local é procurado no pacote instalado e depois em vendor/ do repositório", () => {
+test("the local engine is looked up in the installed package and then in the repository's vendor/", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "bd-engine-"));
   try {
     const vendor = path.join(root, "repo", "vendor", "speech");
@@ -243,7 +243,7 @@ test("motor local é procurado no pacote instalado e depois em vendor/ do reposi
     fs.writeFileSync(path.join(root, "res", "speech", "parakeet-cli"), "", { mode: 0o755 });
     assert.equal(t.findLocalEngine(opts), path.join(root, "res", "speech", "parakeet-cli"));
     fs.chmodSync(path.join(vendor, "parakeet-cli"), 0o644);
-    assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo") }), null, "sem permissão de execução não conta");
+    assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo") }), null, "without execute permission it doesn't count");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -252,7 +252,7 @@ test("motor local é procurado no pacote instalado e depois em vendor/ do reposi
   assert.equal(t.localThreads(1), 1);
 });
 
-test("chave de transcrição fica cifrada no cofre, some das configurações públicas e é lida só no backend", () => {
+test("the transcription key stays encrypted in the keyring, leaves the public settings and is read only in the backend", () => {
   const storage = {
     isEncryptionAvailable: () => true,
     getSelectedStorageBackend: () => "gnome_libsecret",
@@ -268,26 +268,26 @@ test("chave de transcrição fica cifrada no cofre, some das configurações pú
   assert.deepEqual(pub.voiceDictation, { model: "m" });
   assert.equal(revealSecret(stored.transcriptionApiKey, storage), "sk-voz");
   assert.equal(revealSecret(undefined, storage), "");
-  // Salvar só o ditado mantém a chave já cadastrada.
+  // Saving only the dictation settings keeps the already registered key.
   const again = protectSettings({ voiceDictation: { model: "n" } }, stored, storage);
   assert.deepEqual(again.transcriptionApiKey, stored.transcriptionApiKey);
 });
 
-test("nomes ditados com outra grafia são reconhecidos pelo som, sem mexer no português", () => {
+test("names dictated with another spelling are recognized by sound, without touching Portuguese", () => {
   const fix = (s, opts = {}) => t.applyVocabulary(s, { vocabulary: VOCAB, ...opts });
-  // Casos reais do Parakeet com fala rápida.
+  // Real Parakeet cases with fast speech.
   assert.equal(fix("o Bigodok está ótimo"), "o BeagleDock está ótimo");
   assert.equal(fix("Bigaloc ou é o próprio iMemory?"), "BeagleDock ou é o próprio ai-memory?");
   assert.equal(fix("Clod Code e o Codecs"), "Claude Code e o Codex");
   assert.equal(fix("subi em type script"), "subi em TypeScript");
-  // Pasta da sessão e termos cadastrados pela pessoa também entram.
+  // The session's folder and the terms registered by the person also count.
   const rumofy = { vocabulary: `Rumofy, ${VOCAB}`, context: ["RumofyNext"] };
   assert.equal(fix("projeto do Rumopy Next", rumofy), "projeto do RumofyNext");
   assert.equal(fix("alimentando o Bigodoc e não o Remofi", rumofy), "alimentando o BeagleDock e não o Rumofy");
-  // "cloud" sozinho é nuvem; só a expressão vira o nome da ferramenta.
+  // "cloud" alone is a cloud; only the expression becomes the tool's name.
   assert.equal(fix("abre o cloud code"), "abre o Claude Code");
   assert.equal(fix("guarda na cloud da AWS"), "guarda na cloud da AWS");
-  // Português e palavras parecidas ficam como estão.
+  // Portuguese and similar words stay as they are.
   for (const s of [
     "a memória do projeto",
     "o bigode dele",
@@ -301,7 +301,17 @@ test("nomes ditados com outra grafia são reconhecidos pelo som, sem mexer no po
     assert.equal(fix(s), s);
 });
 
-test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
+test("English dictation: similar short words and words next to a right name stay as they are", () => {
+  const fix = (s) => t.applyVocabulary(s, { vocabulary: VOCAB, context: ["BeagleDock"] });
+  assert.equal(fix("it checks the tests"), "it checks the tests", "“checks” isn't “Codex”");
+  assert.equal(fix("where BeagleDock is developed"), "where BeagleDock is developed");
+  assert.equal(fix("Codex's limits and Codex shows them"), "Codex's limits and Codex shows them");
+  assert.equal(fix("outside BeagleDock it defers"), "outside BeagleDock it defers");
+  // The real fixes still happen.
+  assert.equal(fix("open the Bigodok and the codecs"), "open the BeagleDock and the Codex");
+});
+
+test("the vocabulary doesn't touch paths, files or variables", () => {
   for (const s of [
     "package.json",
     "~/.beagledock",
@@ -309,7 +319,7 @@ test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
     "dev:vite",
     "`beagledock --quit`",
     "beagledock-probes",
-    // Regressão PR #73: o badge do README tinha `logo=linux` trocado por `logo=Linux`.
+    // Regression PR #73: the README badge had `logo=linux` swapped for `logo=Linux`.
     "https://img.shields.io/badge/Linux-x64?logo=linux&logoColor=white",
     "www.github.com/rumofy/beagledock",
   ])
@@ -322,11 +332,11 @@ test("vocabulário não mexe dentro de caminho, arquivo ou variável", () => {
   assert.equal(t.applyVocabulary("usa json e o codex: ok", { vocabulary: VOCAB }), "usa JSON e o Codex: ok");
 });
 
-test("documentação em português não sofre correções indevidas", () => {
+test("the documentation isn't wrongly corrected", () => {
   const fs = require("fs");
   const path = require("path");
   const root = path.join(__dirname, "..");
-  // Só as versões já lançadas: o texto novo cita de propósito exemplos de troca ("Bigodok").
+  // Only released versions: the new text quotes swap examples on purpose ("Bigodok").
   const changelog = fs.readFileSync(path.join(root, "CHANGELOG.md"), "utf8");
   const released = changelog.slice(changelog.indexOf("## [0.9.0]")).replace(/cloud code/gi, "");
   const text = [released, ...["README.md", "AGENTS.md"].map((f) => fs.readFileSync(path.join(root, f), "utf8"))].join("\n");

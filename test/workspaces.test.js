@@ -17,7 +17,7 @@ const dir = (name, files = []) => {
   return d;
 };
 
-test("manutenção: renomear e trocar a pasta, sem aceitar pasta de outro workspace nem id inexistente", async () => {
+test("maintenance: rename and change the folder, without accepting another workspace's folder or a missing id", async () => {
   const a = dir("a"), b = dir("b");
   await store.saveWorkspace({ id: "ws-a", name: "A", path: a, hasAIMemory: false });
   await store.saveWorkspace({ id: "ws-b", name: "B", path: b, hasAIMemory: false });
@@ -27,12 +27,12 @@ test("manutenção: renomear e trocar a pasta, sem aceitar pasta de outro worksp
   });
   const saved = (await store.getWorkspaces()).find((w) => w.id === "ws-a");
   assert.deepEqual([saved.name, saved.path, saved.hasAIMemory], ["Projeto A", moved, true]);
-  await assert.rejects(store.updateWorkspace("ws-a", { name: "X", path: b }), /outro workspace com esta pasta/);
-  await assert.rejects(store.updateWorkspace("nao-existe", { name: "X", path: a }), /não encontrado/);
-  assert.equal((await store.getWorkspaces()).find((w) => w.id === "ws-a").path, moved, "falhas não alteram nada");
+  await assert.rejects(store.updateWorkspace("ws-a", { name: "X", path: b }), /Another workspace already uses this folder/);
+  await assert.rejects(store.updateWorkspace("nao-existe", { name: "X", path: a }), /not found/);
+  assert.equal((await store.getWorkspaces()).find((w) => w.id === "ws-a").path, moved, "failures change nothing");
 });
 
-test("remover o workspace preserva as conversas, o histórico e o vínculo nativo", async () => {
+test("removing the workspace preserves the conversations, the history and the native link", async () => {
   const proj = dir("proj");
   await store.saveWorkspace({ id: "ws-p", name: "P", path: proj, hasAIMemory: false });
   await store.saveSession({ id: "conv-1", providerId: "claude", cwd: proj, title: "Conversa" });
@@ -45,7 +45,7 @@ test("remover o workspace preserva as conversas, o histórico e o vínculo nativ
   assert.deepEqual(await store.deleteWorkspace("ws-p"), { success: true, removed: false });
 });
 
-test("estado do workspace: pasta, git, ai-memory e conversas; pasta sumida é informada", () => {
+test("workspace state: folder, git, ai-memory and conversations; a vanished folder is reported", () => {
   const full = dir("full", [".git"]);
   fs.writeFileSync(path.join(full, ".ai-memory.toml"), "");
   assert.deepEqual(
@@ -58,14 +58,14 @@ test("estado do workspace: pasta, git, ai-memory e conversas; pasta sumida é in
   assert.deepEqual([gone.exists, gone.isGitRepo, gone.hasAIMemory, gone.conversations], [false, false, false, 0]);
   const file = path.join(root, "arquivo.txt");
   fs.writeFileSync(file, "x");
-  assert.equal(inspectWorkspace({ id: "3", name: "F", path: file }).exists, false, "arquivo não é pasta");
+  assert.equal(inspectWorkspace({ id: "3", name: "F", path: file }).exists, false, "a file isn't a folder");
 });
 
-test("validação da edição: nome obrigatório e limitado, pasta existente e absoluta", () => {
+test("edit validation: required and limited name, existing and absolute folder", () => {
   const ok = dir("ok");
   assert.deepEqual(validateWorkspaceEdit({ name: "  Meu  ", path: ok }, { validCwd }), { name: "Meu", path: ok });
-  assert.throws(() => validateWorkspaceEdit({ name: "   ", path: ok }, { validCwd }), /nome/);
+  assert.throws(() => validateWorkspaceEdit({ name: "   ", path: ok }, { validCwd }), /name/);
   assert.throws(() => validateWorkspaceEdit({ name: "x".repeat(81), path: ok }, { validCwd }), /80/);
   assert.throws(() => validateWorkspaceEdit({ name: "A", path: path.join(root, "nada") }, { validCwd }));
-  assert.throws(() => validateWorkspaceEdit({ name: "A", path: "relativo/pasta" }, { validCwd }), /existente/);
+  assert.throws(() => validateWorkspaceEdit({ name: "A", path: "relativo/pasta" }, { validCwd }), /existing/);
 });

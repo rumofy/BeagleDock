@@ -7,6 +7,7 @@ import {
 import { useApp } from "../../hooks/AppStateProvider";
 import { beagleApi } from "../../api/beagleApi";
 
+import { getLocale, t } from "../../i18n";
 export function NotificationsPopover() {
   const {
     setAppError,
@@ -65,7 +66,7 @@ export function NotificationsPopover() {
                 ref={notificationsButtonRef}
                 aria-expanded={showNotifications}
                 aria-controls="ecosystem-notifications"
-                title="Novidades de CLIs, novos modelos e ai-memory"
+                title={t("news.hint")}
               >
                 <Bell size={17} />
                 {notifications.some((n) => n.isNew) && (
@@ -78,14 +79,14 @@ export function NotificationsPopover() {
                   <div
                     id="ecosystem-notifications"
                     role="dialog"
-                    aria-label="Novidades do ecossistema"
+                    aria-label={t("news.label")}
                     style={notificationsPosition}
                     className="fixed w-80 max-w-[calc(100vw-24px)] bg-[#ffffff] border border-[#d8d2c3] rounded-2xl shadow-2xl z-50 p-3 flex flex-col gap-2.5 overflow-hidden [overflow-wrap:anywhere]"
                   >
                     <div className="flex items-center justify-between pb-2 border-b border-[#eeeae0] px-1">
                       <div className="font-bold text-xs text-[#1c1b18] flex items-center gap-1.5">
                         <Sparkle size={13} className="text-amber-600" />
-                        <span>Status do Ecossistema</span>
+                        <span>{t("news.title")}</span>
                       </div>
                       <span className="text-[10px] font-mono bg-[#f4f1e8] text-[#7d7565] px-1.5 py-0.5 rounded">
                         {notifications.filter((n) => n.isNew).length} ativos
@@ -110,26 +111,25 @@ export function NotificationsPopover() {
                         }}
                       >
                         {checkingUpdates
-                          ? "Verificando…"
-                          : "Verificar novas versões"}
+                          ? t("news.checking")
+                          : t("news.check")}
                       </button>
                       {!notifications.length && (
                         <p className="text-xs text-[#7d7565]">
-                          Nenhuma novidade detectada. Novos modelos são
-                          identificados ao sincronizar os catálogos das CLIs.
+                          {t("news.none")}
                         </p>
                       )}
                       {updateInfo.checkedAt && (
                         <p className="text-[10px] text-[#7d7565]">
-                          Última consulta:{" "}
-                          {new Date(updateInfo.checkedAt).toLocaleString()}
+                          {t("news.lastCheck")}{" "}
+                          {new Date(updateInfo.checkedAt).toLocaleString(getLocale())}
                         </p>
                       )}
                       {Object.entries(updateInfo.releases || {})
                         .filter(([, r]: any) => r.error)
                         .map(([id]) => (
                           <p key={id} className="text-[10px] text-amber-800">
-                            {id}: consulta de versões indisponível.
+                            {t("news.unavailable", { id })}
                           </p>
                         ))}
                       {notifications.map((notif) => (
@@ -154,8 +154,8 @@ export function NotificationsPopover() {
                                 : notif.category === "mcp_auth"
                                   ? "MCP"
                                   : notif.category === "new_model"
-                                  ? "Novo modelo"
-                                  : "CLI Status"}
+                                  ? t("news.newModel")
+                                  : t("news.cliStatus")}
                             </span>
                             <span className="text-[10px] text-[#938b7a]">
                               {notif.date}
@@ -198,7 +198,7 @@ export function NotificationsPopover() {
                                 }}
                                 className="text-[10px] font-bold text-indigo-700 hover:text-indigo-900"
                               >
-                                Copiar
+                                {t("common.copy")}
                               </button>
                             </div>
                           )}
@@ -211,7 +211,7 @@ export function NotificationsPopover() {
                         onClick={() => setShowNotifications(false)}
                         className="text-[11px] font-semibold text-[#8c8270] hover:text-[#1c1b18]"
                       >
-                        Fechar
+                        {t("common.close")}
                       </button>
                     </div>
                   </div>,

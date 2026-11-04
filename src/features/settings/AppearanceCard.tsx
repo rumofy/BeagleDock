@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import { Minus, Monitor, Moon, Plus, Sun } from "lucide-react";
+import { Languages, Minus, Monitor, Moon, Plus, Sun } from "lucide-react";
 import { backendAvailable, beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
 import { clampZoom, ZOOM_STEP, type ThemeSetting } from "../../lib/theme";
 
-const THEMES: Array<{ id: ThemeSetting; label: string; icon: typeof Sun }> = [
-  { id: "cream", label: "Claro", icon: Sun },
-  { id: "dark", label: "Escuro", icon: Moon },
-  { id: "system", label: "Sistema", icon: Monitor },
+import { LOCALE_NAMES, LOCALES, t, type Locale } from "../../i18n";
+const themes = (): Array<{ id: ThemeSetting; label: string; icon: typeof Sun }> => [
+  { id: "cream", label: t("appearance.light"), icon: Sun },
+  { id: "dark", label: t("appearance.dark"), icon: Moon },
+  { id: "system", label: t("appearance.system"), icon: Monitor },
 ];
 
 export function AppearanceCard() {
-  const { settings, setSettings, setAppError } = useApp();
+  const { settings, setSettings, setAppError, locale } = useApp();
   const [zoom, setZoom] = useState(1);
 
   useEffect(() => {
@@ -25,13 +26,25 @@ export function AppearanceCard() {
   const chooseTheme = async (theme: ThemeSetting) => {
     setSettings({ ...settings, theme });
     try {
-      // Só o tema: o servidor mescla com o resto (um zoomFactor antigo no estado não sobrescreve o atual).
+      // Only the theme: the server merges it with the rest (an old zoomFactor in the state doesn't overwrite the current one).
       const result = await beagleApi.saveAppSettings({
         theme,
       } as typeof settings);
       if (!result?.success)
-        throw new Error(result?.error || "Falha ao salvar o tema.");
+        throw new Error(result?.error || t("appearance.saveFailed"));
     } catch (error) {
+      setAppError((error as Error).message);
+    }
+  };
+  // Only the language: the whole interface redraws in it right away (the main process follows too).
+  const chooseLanguage = async (language: Locale) => {
+    const previous = settings;
+    setSettings({ ...settings, language });
+    try {
+      const result = await beagleApi.saveAppSettings({ language } as typeof settings);
+      if (!result?.success) throw new Error(result?.error || t("settings.saveFailed"));
+    } catch (error) {
+      setSettings(previous);
       setAppError((error as Error).message);
     }
   };
@@ -45,14 +58,28 @@ export function AppearanceCard() {
 
   return (
     <div className="bg-[#ffffff] border border-[#ded8cb] rounded-2xl p-6 shadow-xs">
-      <h2 className="font-bold text-lg text-[#1c1b18] mb-1">Aparência</h2>
+      <h2 className="font-bold text-lg text-[#1c1b18] mb-1">{t("appearance.title")}</h2>
       <p className="text-xs text-[#7d7565] mb-5">
-        Tema e tamanho da interface. O zoom também responde a Ctrl + / Ctrl − /
-        Ctrl 0.
+        {t("appearance.intro")}
       </p>
+      <label className="flex items-center gap-2 mb-5 text-xs font-bold text-[#2c2822]">
+        <Languages size={14} />
+        {t("appearance.language")}
+        <select
+          value={locale}
+          onChange={(e) => void chooseLanguage(e.target.value as Locale)}
+          className="px-2.5 py-1.5 rounded-xl border border-[#d6cfbe] bg-[#f4f1e8] text-xs font-semibold outline-none"
+        >
+          {LOCALES.map((id) => (
+            <option key={id} value={id}>
+              {LOCALE_NAMES[id]}
+            </option>
+          ))}
+        </select>
+      </label>
       <div className="flex flex-wrap items-center gap-6">
-        <div role="radiogroup" aria-label="Tema" className="flex gap-2">
-          {THEMES.map(({ id, label, icon: Icon }) => (
+        <div role="radiogroup" aria-label={t("appearance.theme")} className="flex gap-2">
+          {themes().map(({ id, label, icon: Icon }) => (
             <button
               key={id}
               type="button"
@@ -69,12 +96,12 @@ export function AppearanceCard() {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2" aria-label="Zoom da interface">
+        <div className="flex items-center gap-2" aria-label={t("appearance.zoom")}>
           <button
             type="button"
             onClick={() => changeZoom(zoom - ZOOM_STEP)}
             className="p-2 rounded-xl border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de]"
-            aria-label="Diminuir zoom"
+            aria-label={t("appearance.zoomOut")}
           >
             <Minus size={14} />
           </button>
@@ -85,7 +112,7 @@ export function AppearanceCard() {
             type="button"
             onClick={() => changeZoom(zoom + ZOOM_STEP)}
             className="p-2 rounded-xl border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de]"
-            aria-label="Aumentar zoom"
+            aria-label={t("appearance.zoomIn")}
           >
             <Plus size={14} />
           </button>
@@ -94,7 +121,7 @@ export function AppearanceCard() {
             onClick={() => changeZoom(1)}
             className="px-3 py-2 rounded-xl text-xs font-semibold text-[#6d6657] hover:bg-[#ede9de]"
           >
-            Redefinir
+            {t("appearance.reset")}
           </button>
         </div>
       </div>

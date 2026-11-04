@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
-/** Arquivos do projeto sugeridos para o `@arquivo`, abertos acima do campo de mensagem. */
+import { t } from "../../i18n";
+/** Project files suggested for `@file`, shown above the message field. */
 export function FileSuggestions({
   files,
   selected,
@@ -28,7 +29,7 @@ export function FileSuggestions({
       className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-[#dcd6c7] bg-white shadow-lg overflow-hidden"
     >
       {files.length > 0 ? (
-        <ul ref={listRef} role="listbox" aria-label="Arquivos do projeto" className="max-h-64 overflow-y-auto py-1">
+        <ul ref={listRef} role="listbox" aria-label={t("files.label")} className="max-h-64 overflow-y-auto py-1">
           {files.map((file, index) => {
             const slash = file.lastIndexOf("/");
             return (
@@ -38,7 +39,7 @@ export function FileSuggestions({
                 aria-selected={index === selected}
                 onMouseEnter={() => onHover(index)}
                 onMouseDown={(event) => {
-                  event.preventDefault(); // mantém o foco no campo
+                  event.preventDefault(); // keeps focus in the field
                   onPick(file);
                 }}
                 className={`flex items-baseline gap-2 px-3 py-1.5 cursor-pointer text-sm ${index === selected ? "bg-[#f4f1e8]" : ""}`}
@@ -53,7 +54,7 @@ export function FileSuggestions({
         </ul>
       ) : (
         <div className="px-3 py-2 text-xs text-[#7d7565]">
-          {loading ? "Procurando arquivos…" : error || "Nenhum arquivo do projeto corresponde."}
+          {loading ? t("files.searching") : error || t("files.none")}
         </div>
       )}
     </div>

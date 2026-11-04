@@ -2,16 +2,16 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createCliTerminals, terminalArgs, terminalEnv } = require("../electron/cli-terminal");
 
-test("terminalArgs retoma a conversa nativa com o argumento de cada CLI", () => {
+test("terminalArgs resumes the native conversation with each CLI's argument", () => {
   assert.deepEqual(terminalArgs("claude", "abc12345-uuid"), ["--resume", "abc12345-uuid"]);
   assert.deepEqual(terminalArgs("codex", "019a-thread-id"), ["resume", "019a-thread-id"]);
   assert.deepEqual(terminalArgs("antigravity", "conv_12345678"), ["--conversation", "conv_12345678"]);
   for (const id of ["claude", "codex", "antigravity"]) assert.deepEqual(terminalArgs(id, undefined), []);
-  assert.throws(() => terminalArgs("claude", "--dangerously-skip-permissions"), /ID nativo inválido/);
-  assert.throws(() => terminalArgs("outra", "abc12345"), /CLI desconhecida/);
+  assert.throws(() => terminalArgs("claude", "--dangerously-skip-permissions"), /Invalid native ID/);
+  assert.throws(() => terminalArgs("outra", "abc12345"), /Unknown CLI/);
 });
 
-test("terminalEnv liga as cores que o chat desliga", () => {
+test("terminalEnv turns on the colors the chat turns off", () => {
   const env = terminalEnv({
     PATH: "/bin",
     FORCE_COLOR: "0",
@@ -74,7 +74,7 @@ function setup({ link = null, beforeOpen, hooks } = {}) {
     find: (name) => (name === "antigravity" ? null : `/bin/${name}`),
     env: () => ({ PATH: "/bin", FORCE_COLOR: "0" }),
     checkCwd: (cwd) => {
-      if (cwd !== "/proj") throw new Error("Selecione um diretório de trabalho existente.");
+      if (cwd !== "/proj") throw new Error("Select an existing working directory.");
       return cwd;
     },
     store: { getNativeSession: async () => link },
@@ -86,7 +86,7 @@ function setup({ link = null, beforeOpen, hooks } = {}) {
   return { pty, events, opened, terminals };
 }
 
-test("abre a CLI no pty retomando a conversa e encerra o processo do chat antes", async () => {
+test("opens the CLI in the pty resuming the conversation and stops the chat's process first", async () => {
   const { pty, opened, terminals } = setup({ link: { nativeId: "conv_12345678", cwd: "/proj" } });
   const result = await terminals.open({ sessionId: "s1", providerId: "antigravity", cwd: "/proj", cols: 120, rows: 40 });
   assert.equal(result.ok, true);
@@ -101,7 +101,7 @@ test("abre a CLI no pty retomando a conversa e encerra o processo do chat antes"
   assert.equal(terminals.isOpen("s1"), true);
 });
 
-test("conversa sem id nativo abre uma conversa nova da CLI", async () => {
+test("a conversation without a native id opens a new CLI conversation", async () => {
   const { pty, terminals } = setup();
   const result = await terminals.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" });
   assert.equal(result.resumed, false);
@@ -109,7 +109,7 @@ test("conversa sem id nativo abre uma conversa nova da CLI", async () => {
   assert.equal(pty.spawned[0].bin, "/bin/codex");
 });
 
-test("reabrir uma visão reaproveita o processo e devolve a tela já emitida", async () => {
+test("reopening a view reuses the process and returns the screen already emitted", async () => {
   const { pty, events, terminals } = setup();
   await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
   pty.spawned[0].emitData("olá ");
@@ -121,7 +121,7 @@ test("reabrir uma visão reaproveita o processo e devolve a tela já emitida", a
   assert.equal(again.end, 9);
 });
 
-test("repassa teclas e tamanho, e fecha matando o processo", async () => {
+test("relays keys and size, and closes by killing the process", async () => {
   const { pty, terminals } = setup();
   await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
   assert.deepEqual(terminals.write({ sessionId: "s1", data: "\x16" }), { ok: true });
@@ -134,7 +134,7 @@ test("repassa teclas e tamanho, e fecha matando o processo", async () => {
   assert.deepEqual(terminals.write({ sessionId: "s1", data: "x" }), { ok: false });
 });
 
-test("CLI que encerrou: avisa a tela e a próxima abertura cria outro processo", async () => {
+test("a CLI that exited: tells the screen and the next opening creates another process", async () => {
   const { pty, events, terminals } = setup();
   await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
   pty.spawned[0].emitExit({ exitCode: 0 });
@@ -145,20 +145,20 @@ test("CLI que encerrou: avisa a tela e a próxima abertura cria outro processo",
   assert.equal(pty.spawned.length, 2);
 });
 
-test("recusa abrir com turno rodando no chat, diretório diferente ou CLI ausente", async () => {
+test("refuses to open with a turn running in the chat, a different directory or a missing CLI", async () => {
   const busy = setup({
     beforeOpen: async () => {
-      throw new Error("Espere a resposta atual terminar antes de abrir o terminal.");
+      throw new Error("Wait for the current reply to finish before opening the terminal.");
     },
   });
   const r1 = await busy.terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
-  assert.deepEqual(r1, { ok: false, error: "Espere a resposta atual terminar antes de abrir o terminal." });
+  assert.deepEqual(r1, { ok: false, error: "Wait for the current reply to finish before opening the terminal." });
   assert.equal(busy.pty.spawned.length, 0);
 
   const moved = setup({ link: { nativeId: "abc12345", cwd: "/outro" } });
   const r2 = await moved.terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
   assert.equal(r2.ok, false);
-  assert.match(r2.error, /outro diretório/);
+  assert.match(r2.error, /another directory/);
 
   const missing = createCliTerminals({
     pty: fakePty(),
@@ -167,13 +167,13 @@ test("recusa abrir com turno rodando no chat, diretório diferente ou CLI ausent
     store: { getNativeSession: async () => null },
   });
   const r3 = await missing.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" });
-  assert.match(r3.error, /não encontrada/);
+  assert.match(r3.error, /not found/);
 
   const noPty = createCliTerminals({ pty: null, find: () => "/bin/x", checkCwd: (c) => c, store: {} });
   assert.match((await noPty.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" })).error, /node-pty/);
 });
 
-test("closeAll encerra todos os terminais", async () => {
+test("closeAll stops every terminal", async () => {
   const { pty, terminals } = setup();
   await terminals.open({ sessionId: "a", providerId: "claude", cwd: "/proj" });
   await terminals.open({ sessionId: "b", providerId: "codex", cwd: "/proj" });
@@ -185,7 +185,7 @@ test("closeAll encerra todos os terminais", async () => {
   assert.deepEqual(terminals.list(), []);
 });
 
-test("duas aberturas ao mesmo tempo compartilham um único processo", async () => {
+test("two openings at the same time share a single process", async () => {
   const { pty, terminals } = setup();
   const [a, b] = await Promise.all([
     terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" }),
@@ -195,7 +195,7 @@ test("duas aberturas ao mesmo tempo compartilham um único processo", async () =
   assert.equal(a.pid, b.pid);
 });
 
-test("processo antigo não escreve na tela depois de fechado", async () => {
+test("an old process doesn't write to the screen after it's closed", async () => {
   const { pty, events, terminals } = setup();
   await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
   terminals.close("s1");
@@ -208,7 +208,7 @@ test("processo antigo não escreve na tela depois de fechado", async () => {
   assert.deepEqual(events.at(-1), ["cli-terminal-data", { sessionId: "s1", data: "novo", end: 4 }]);
 });
 
-test("Ctrl+V: lê a área de transferência assíncrona do Electron (imagem e texto)", async () => {
+test("Ctrl+V: reads Electron's async clipboard (image and text)", async () => {
   const { readTerminalClipboard } = require("../electron/cli-terminal");
   const clip = (types, text) => ({
     has: async (type) => types.includes(type),
@@ -217,15 +217,15 @@ test("Ctrl+V: lê a área de transferência assíncrona do Electron (imagem e te
   assert.deepEqual(await readTerminalClipboard(clip(["image/png"], "")), { image: true, text: "" });
   assert.deepEqual(await readTerminalClipboard(clip(["image/jpeg"], "")), { image: true, text: "" });
   assert.deepEqual(await readTerminalClipboard(clip([], "olá")), { image: false, text: "olá" });
-  // Falha ao ler não derruba o Ctrl+V.
+  // A failure reading doesn't break Ctrl+V.
   const broken = { has: async () => { throw new Error("x"); }, readText: () => { throw new Error("y"); } };
   assert.deepEqual(await readTerminalClipboard(broken), { image: false, text: "" });
 });
 
-test("conversa nova do Claude Code abre com um ID conhecido, para o histórico achá-la depois", async () => {
+test("a new Claude Code conversation opens with a known ID, so the history finds it later", async () => {
   assert.deepEqual(terminalArgs("claude", undefined, "abc12345-uuid"), ["--session-id", "abc12345-uuid"]);
-  assert.deepEqual(terminalArgs("codex", undefined, "abc12345-uuid"), [], "só o Claude Code aceita escolher o ID");
-  assert.throws(() => terminalArgs("claude", undefined, "--x"), /ID nativo inválido/);
+  assert.deepEqual(terminalArgs("codex", undefined, "abc12345-uuid"), [], "only Claude Code accepts choosing the ID");
+  assert.throws(() => terminalArgs("claude", undefined, "--x"), /Invalid native ID/);
   const calls = [];
   const hooks = Object.fromEntries(
     ["opened", "input", "output", "exited", "closed"].map((name) => [name, (...args) => calls.push([name, ...args])]),

@@ -5,7 +5,8 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { beagleApi } from "../../api/beagleApi";
 import type { WorkspaceItem, WorkspaceStatus } from "../../types";
 
-/** Manutenção dos workspaces cadastrados: estado da pasta, renomear, trocar a pasta e remover. */
+import { t, tn } from "../../i18n";
+/** Maintenance of registered workspaces: folder state, rename, change the folder and remove. */
 export function WorkspaceManager() {
   const { showWorkspaceManager, setShowWorkspaceManager, setWorkspaces, setAppError } = useApp();
   const [items, setItems] = useState<WorkspaceStatus[]>([]);
@@ -17,7 +18,7 @@ export function WorkspaceManager() {
     setLoading(true);
     try {
       const result = await beagleApi.listWorkspaceStatus();
-      if (!result.success) throw new Error(result.error || "Não foi possível ler os workspaces.");
+      if (!result.success) throw new Error(result.error || t("workspaces.loadFailed"));
       setItems(result.workspaces);
       setWorkspaces(
         result.workspaces.map(
@@ -57,7 +58,7 @@ export function WorkspaceManager() {
     if (!editing) return;
     try {
       const result = await beagleApi.updateWorkspace(editing);
-      if (!result.success) throw new Error(result.error || "Não foi possível salvar.");
+      if (!result.success) throw new Error(result.error || t("workspaces.saveFailed"));
       setEditing(null);
       await refresh();
     } catch (error) {
@@ -68,7 +69,7 @@ export function WorkspaceManager() {
   const openInVsCode = async (cwd: string) => {
     try {
       const result = await beagleApi.openInEditor({ cwd });
-      if (!result?.ok) setAppError(result?.error || "Não foi possível abrir o VS Code.");
+      if (!result?.ok) setAppError(result?.error || t("header.vsCodeFailed"));
     } catch (error) {
       setAppError((error as Error).message);
     }
@@ -77,7 +78,7 @@ export function WorkspaceManager() {
   const remove = async (id: string) => {
     try {
       const result = await beagleApi.deleteWorkspace(id);
-      if (!result.success) throw new Error(result.error || "Não foi possível remover.");
+      if (!result.success) throw new Error(result.error || t("workspaces.removeFailed"));
       setRemoving(null);
       await refresh();
     } catch (error) {
@@ -86,17 +87,16 @@ export function WorkspaceManager() {
   };
 
   return (
-    <Modal title="Gerenciar workspaces" onClose={() => setShowWorkspaceManager(false)} wide>
+    <Modal title={t("header.manageWorkspaces")} onClose={() => setShowWorkspaceManager(false)} wide>
       <div className="flex items-center justify-between">
         <p className="text-xs text-[#6d6657]">
-          Editar ou remover um workspace só muda o cadastro: as conversas, o histórico e os
-          identificadores nativos continuam como estão, cada um na pasta em que foi iniciado.
+          {t("workspaces.intro")}
         </p>
         <button
           type="button"
           onClick={() => void refresh()}
           disabled={loading}
-          title="Reler o estado das pastas"
+          title={t("workspaces.refresh")}
           className="shrink-0 ml-3 p-2 rounded-lg hover:bg-[#ede9de] text-[#6d6657] disabled:opacity-40"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
@@ -104,21 +104,21 @@ export function WorkspaceManager() {
       </div>
       <ul data-testid="workspace-list" className="space-y-2">
         {items.length === 0 && !loading && (
-          <li className="text-xs text-[#8c8270] py-4 text-center">Nenhum workspace cadastrado.</li>
+          <li className="text-xs text-[#8c8270] py-4 text-center">{t("workspaces.none")}</li>
         )}
         {items.map((ws) => (
           <li key={ws.id} className="rounded-xl border border-[#e4dec9] bg-[#fcfbfa] p-3 space-y-2">
             {editing?.id === ws.id ? (
               <div className="space-y-2">
                 <input
-                  aria-label="Nome do workspace"
+                  aria-label={t("workspaces.name")}
                   value={editing.name}
                   onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                   className="w-full px-3 py-1.5 rounded-lg border border-[#d6cfbe] bg-white text-sm outline-none focus:border-[#968d7a]"
                 />
                 <div className="flex gap-2">
                   <input
-                    aria-label="Pasta do workspace"
+                    aria-label={t("workspaces.folder")}
                     value={editing.path}
                     onChange={(e) => setEditing({ ...editing, path: e.target.value })}
                     className="flex-1 min-w-0 px-3 py-1.5 rounded-lg border border-[#d6cfbe] bg-white text-xs font-mono outline-none focus:border-[#968d7a]"
@@ -128,21 +128,20 @@ export function WorkspaceManager() {
                     onClick={pickFolder}
                     className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-xs font-bold text-[#2c2822]"
                   >
-                    <FolderSearch size={13} /> Escolher pasta
+                    <FolderSearch size={13} /> {t("workspaces.chooseFolder")}
                   </button>
                 </div>
                 {ws.conversations > 0 && editing.path !== ws.path && (
                   <p className="text-[11px] text-[#8a4b0f]">
-                    As {ws.conversations} conversas deste workspace continuam na pasta antiga: elas
-                    não mudam de pasta, porque a sessão nativa da CLI pertence a ela.
+                    {t("workspaces.moveNote", { count: ws.conversations })}
                   </p>
                 )}
                 <div className="flex justify-end gap-2">
                   <button type="button" onClick={() => setEditing(null)} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-[#6d6657] hover:bg-[#ede9de]">
-                    Cancelar
+                    {t("common.cancel")}
                   </button>
                   <button type="button" onClick={() => void save()} disabled={!editing.name.trim() || !editing.path.trim()} className="px-3 py-1.5 rounded-lg bg-[#1c1b18] hover:bg-[#32302b] disabled:opacity-30 text-white text-xs font-bold">
-                    Salvar
+                    {t("common.save")}
                   </button>
                 </div>
               </div>
@@ -157,8 +156,8 @@ export function WorkspaceManager() {
                   </div>
                   <button
                     type="button"
-                    aria-label={`Abrir ${ws.name} no VS Code`}
-                    title={ws.exists ? "Abrir a pasta no VS Code" : "A pasta não foi encontrada"}
+                    aria-label={t("workspaces.openInVsCode", { name: ws.name })}
+                    title={ws.exists ? t("workspaces.openFolderHint") : t("workspaces.folderMissingHint")}
                     disabled={!ws.exists}
                     onClick={() => void openInVsCode(ws.path)}
                     className="p-1.5 rounded-lg hover:bg-[#ede9de] text-[#6d6657] disabled:opacity-30"
@@ -167,8 +166,8 @@ export function WorkspaceManager() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Editar ${ws.name}`}
-                    title="Renomear ou trocar a pasta"
+                    aria-label={t("workspaces.editLabel", { name: ws.name })}
+                    title={t("workspaces.editHint")}
                     onClick={() => setEditing({ id: ws.id, name: ws.name, path: ws.path })}
                     className="p-1.5 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
                   >
@@ -176,8 +175,8 @@ export function WorkspaceManager() {
                   </button>
                   <button
                     type="button"
-                    aria-label={`Remover ${ws.name}`}
-                    title="Remover do cadastro"
+                    aria-label={t("workspaces.removeLabel", { name: ws.name })}
+                    title={t("workspaces.removeHint")}
                     onClick={() => setRemoving(ws.id)}
                     className="p-1.5 rounded-lg hover:bg-rose-50 text-rose-700"
                   >
@@ -186,26 +185,25 @@ export function WorkspaceManager() {
                 </div>
                 <div className="flex flex-wrap gap-1.5 text-[10px] font-semibold">
                   <span className={`px-1.5 py-0.5 rounded ${ws.exists ? "bg-emerald-50 text-emerald-800" : "bg-rose-50 text-rose-800"}`}>
-                    {ws.exists ? "pasta encontrada" : "pasta não encontrada"}
+                    {ws.exists ? t("workspaces.folderFound") : t("workspaces.folderMissing")}
                   </span>
                   {ws.isGitRepo && <span className="px-1.5 py-0.5 rounded bg-[#f4f1e8] text-[#665e4f]">git</span>}
                   {ws.hasAIMemory && <span className="px-1.5 py-0.5 rounded bg-[#f4f1e8] text-[#665e4f]">ai-memory</span>}
                   <span className="px-1.5 py-0.5 rounded bg-[#f4f1e8] text-[#665e4f]">
-                    {ws.conversations} {ws.conversations === 1 ? "conversa" : "conversas"}
+                    {tn("workspaces.conversations", ws.conversations)}
                   </span>
                 </div>
                 {removing === ws.id && (
                   <div role="alertdialog" className="rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs text-rose-900 space-y-2">
                     <p>
-                      Remover “{ws.name}” do cadastro? A pasta e as {ws.conversations} conversas
-                      continuam intactas.
+                      {t("workspaces.removeConfirm", { name: ws.name, count: ws.conversations })}
                     </p>
                     <div className="flex justify-end gap-2">
                       <button type="button" onClick={() => setRemoving(null)} className="px-3 py-1 rounded-lg text-xs font-semibold hover:bg-rose-100">
-                        Cancelar
+                        {t("common.cancel")}
                       </button>
                       <button type="button" onClick={() => void remove(ws.id)} className="px-3 py-1 rounded-lg bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold">
-                        Remover
+                        {t("common.remove")}
                       </button>
                     </div>
                   </div>

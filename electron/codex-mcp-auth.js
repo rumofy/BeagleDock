@@ -1,8 +1,9 @@
 const { findBinary, execCli } = require("./platform");
+const { t } = require("./i18n");
 
 const ANSI = /\x1B\[[0-9;?]*[a-zA-Z]/g;
 
-// Hosts de MCPs remotos que o Codex não conseguiu autenticar, a partir da saída do PTY:
+// Hosts of remote MCPs Codex couldn't authenticate, from the PTY output:
 // `... AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\"https://mcp.postman.com/..."`
 function authErrorHosts(text) {
   const clean = String(text || "").replace(ANSI, "");
@@ -20,8 +21,8 @@ const isAuthLogLine = (line) => {
   return /rmcp::transport/.test(clean) && /AuthRequired/i.test(clean);
 };
 
-// O app-server do Codex escreve logs de diagnóstico no stderr (o TUI os grava em arquivo).
-// A linha de MCP sem login é retirada do shell e entregue a `onAuthError`; o resto passa intacto.
+// Codex's app-server writes diagnostic logs to stderr (the TUI saves them to a file).
+// The MCP-without-login line is taken out of the shell and handed to `onAuthError`; the rest passes through.
 function createStderrFilter({ forward, onAuthError }) {
   let buffer = "";
   return (chunk) => {
@@ -89,11 +90,11 @@ function createMcpAuthWatcher({
     notify(
       `mcp-auth:codex:${name}`,
       "mcp_auth",
-      `Codex: MCP ${name} precisa de login`,
-      `O Codex não conseguiu conectar a ${host} e imprime esse erro no shell a cada sessão. ` +
+      t("mcpAuth.title", { name }),
+      t("mcpAuth.body", { host }) +
         (command
-          ? "Faça o login uma vez com o comando abaixo ou desative o MCP na configuração do Codex."
-          : "Faça o login desse MCP no Codex ou desative-o na configuração."),
+          ? t("mcpAuth.withCommand")
+          : t("mcpAuth.withoutCommand")),
       command ? { actionCommand: command } : {},
     );
   }

@@ -9,6 +9,7 @@ import { relativeTime } from "./memoryUtils";
 import { PaneMessage } from "./PaneMessage";
 import { TempCleanupPanel } from "./TempCleanupPanel";
 
+import { t } from "../../i18n";
 export function ProjectList() {
   const {
     memoryStatus,
@@ -33,7 +34,7 @@ export function ProjectList() {
         <div className="w-9 shrink-0 border-r border-[#dfdacd] flex flex-col items-center py-2">
           <button
             onClick={() => setLeftCollapsed(false)}
-            title="Mostrar projetos"
+            title={t("projects.show")}
             className="p-1.5 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
           >
             <PanelLeftOpen size={16} />
@@ -41,16 +42,16 @@ export function ProjectList() {
         </div>
       ) : (
         <section
-          aria-label="Projetos"
+          aria-label={t("projects.title")}
           className="w-44 xl:w-60 shrink-0 border-r border-[#dfdacd] flex flex-col min-h-0"
         >
           <div className="p-2.5 border-b border-[#eeeae0] space-y-1.5">
             <div className="flex items-center gap-1.5">
               <BrainCircuit size={14} className="text-[#6d6657]" />
-              <span className="text-xs font-bold flex-1">Projetos</span>
+              <span className="text-xs font-bold flex-1">{t("projects.title")}</span>
               <button
                 onClick={refreshAll}
-                title="Atualizar"
+                title={t("projects.refresh")}
                 className="p-1 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
               >
                 <RefreshCw
@@ -60,7 +61,7 @@ export function ProjectList() {
               </button>
               <button
                 onClick={() => setLeftCollapsed(true)}
-                title="Recolher"
+                title={t("projects.collapse")}
                 className="p-1 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
               >
                 <PanelLeftClose size={14} />
@@ -86,18 +87,18 @@ export function ProjectList() {
           </div>
           <div className="flex-1 min-h-0 overflow-y-auto">
             {projectsLoading && !projects.length && (
-              <PaneMessage>Carregando projetos…</PaneMessage>
+              <PaneMessage>{t("projects.loading")}</PaneMessage>
             )}
             {projectsError && (
               <PaneMessage tone="error">
                 {projectsError}
                 <button className="block mt-2 underline" onClick={refreshAll}>
-                  Tentar novamente
+                  {t("common.retry")}
                 </button>
               </PaneMessage>
             )}
             {!projectsLoading && !projectsError && !shownProjects.length && (
-              <PaneMessage>Nenhum projeto encontrado.</PaneMessage>
+              <PaneMessage>{t("projects.none")}</PaneMessage>
             )}
             {shownProjects.map((pr) => {
               const active =
@@ -115,7 +116,7 @@ export function ProjectList() {
                     {pr.workspace}
                   </div>
                   <div className="text-[10px] text-[#6d6657] mt-0.5">
-                    {pr.pageCount} pág. · {pr.sessionCount} sess. ·{" "}
+                    {t("projects.counts", { pages: pr.pageCount, sessions: pr.sessionCount })} ·{" "}
                     {relativeTime(pr.lastActivity || pr.lastUpdated)}
                   </div>
                 </button>

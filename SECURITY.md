@@ -1,16 +1,16 @@
-# Segurança
+# Security
 
-O BeagleDock executa CLIs de IA com permissões sobre seus projetos, guarda chaves no cofre do sistema e instala um hook de aprovação no Antigravity. Levamos relatos de segurança a sério.
+BeagleDock runs AI CLIs with permissions over your projects, keeps keys in the system keyring and installs an approval hook in Antigravity. We take security reports seriously.
 
-## Como relatar
+## How to report
 
-Não abra issue pública. Use o [relato privado de vulnerabilidades do GitHub](https://github.com/rumofy/BeagleDock/security/advisories/new) com:
+Don't open a public issue. Use [GitHub's private vulnerability reporting](https://github.com/rumofy/BeagleDock/security/advisories/new) with:
 
-- versão do BeagleDock, sistema operacional e versões das CLIs envolvidas;
-- passos para reproduzir e o impacto esperado.
+- the BeagleDock version, operating system and versions of the CLIs involved;
+- steps to reproduce and the expected impact.
 
-Responderemos assim que possível e combinaremos a divulgação depois da correção.
+We'll answer as soon as possible and agree on disclosure after the fix.
 
-## Versões cobertas
+## Supported versions
 
-Somente a versão mais recente recebe correções de segurança.
+Only the latest version gets security fixes.

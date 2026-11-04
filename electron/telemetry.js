@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { t } = require("./i18n");
 function readJson(file, fallback = {}) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
@@ -135,7 +136,7 @@ function readLocalMetrics({
   const claude = {
     ...unavailable,
     ...aggregateClaude(walkFiles(path.join(dirs.claude, "projects")), cutoff),
-    sourceLabel: "Logs locais · tokens dos últimos 7 dias; cota indisponível",
+    sourceLabel: t("usage.localLogsNoQuota"),
   };
   const usageBySession = new Map();
   let newestRate = null;
@@ -183,7 +184,7 @@ function readLocalMetrics({
   const codex = {
     ...unavailable,
     ...sumUsage([...usageBySession.values()]),
-    sourceLabel: "Telemetria local Codex · tokens dos últimos 7 dias",
+    sourceLabel: t("usage.codexTelemetry"),
   };
   if (newestRate) {
     const rate = newestRate.value;
@@ -261,7 +262,7 @@ function readLocalMetrics({
     ...sumUsage([...agyUsage.values()]),
     prompts5h,
     prompts7d,
-    sourceLabel: `Logs locais · ${prompts5h} prompts (5h), ${prompts7d} prompts (7d); cota indisponível`,
+    sourceLabel: t("usage.agyLogs", { prompts5h, prompts7d }),
   };
   return { claude, codex, antigravity };
 }

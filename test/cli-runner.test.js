@@ -433,7 +433,7 @@ test("AGY steps become timeline events and failed tools are marked as errors", a
   assert.equal(generic.status, "done");
 });
 
-test("Claude: a escolha 'permitir nesta sessão' volta à CLI como updatedPermissions; negar leva a instrução", async () => {
+test("Claude: the 'allow in this session' choice returns to the CLI as updatedPermissions; deny carries the note", async () => {
   const request = {
     subtype: "can_use_tool", tool_name: "Bash", display_name: "Bash",
     input: { command: "touch /tmp/x" },
@@ -485,8 +485,8 @@ test("Claude: a escolha 'permitir nesta sessão' volta à CLI como updatedPermis
   await pending;
 });
 
-test("Claude: aprovar o plano (ExitPlanMode) sai do modo plano para aceitar edições e avisa a interface", async () => {
-  // Pedido real do Claude Code 2.1.316 no modo plano (sem permission_suggestions).
+test("Claude: approving the plan (ExitPlanMode) leaves plan mode for accept edits and tells the interface", async () => {
+  // Real Claude Code 2.1.316 request in plan mode (without permission_suggestions).
   const request = {
     subtype: "can_use_tool", tool_name: "ExitPlanMode", display_name: "ExitPlanMode",
     input: { plan: "# Plano\n\n1. Criar hello.txt", planFilePath: "/home/u/.claude/plans/p.md" },
@@ -522,6 +522,7 @@ test("Claude: aprovar o plano (ExitPlanMode) sai do modo plano para aceitar edi�
   await tick();
   assert.deepEqual(asked[0].options.map((o) => o.id), ["approve-plan", "deny"]);
   assert.equal(asked[0].input, request.input.plan);
+  assert.equal(asked[0].kind, "plan", "a plan is never shown or released as a tool permission");
   const response = child.inputs.map((s) => JSON.parse(s)).find((m) => m.type === "control_response").response.response;
   assert.equal(response.behavior, "allow");
   assert.deepEqual(response.updatedInput, request.input);
@@ -531,7 +532,7 @@ test("Claude: aprovar o plano (ExitPlanMode) sai do modo plano para aceitar edi�
   });
   child.event({ type: "result", session_id: "claude-native-plan", result: "ok", is_error: false });
   await first;
-  // A próxima mensagem já vem com "Aceitar edições": segue no mesmo processo, sem voltar ao plano.
+  // The next message already comes with "Accept edits": it stays in the same process, without going back to plan.
   const second = runner.execute({ ...payload("claude"), permission: "edits", prompt: "continua" });
   await tick();
   assert.equal(calls.length, 1);
@@ -540,13 +541,13 @@ test("Claude: aprovar o plano (ExitPlanMode) sai do modo plano para aceitar edi�
   await second;
 });
 
-test("planExit mantém o acesso total escolhido durante a espera; senão vai para aceitar edições", () => {
+test("planExit keeps the full access chosen during the wait; otherwise it goes to accept edits", () => {
   assert.deepEqual(planExit({ permission: "plan" }), { permission: "edits", mode: "acceptEdits" });
   assert.deepEqual(planExit({ permission: "ask" }), { permission: "edits", mode: "acceptEdits" });
   assert.deepEqual(planExit({ permission: "full" }), { permission: "full", mode: "bypassPermissions" });
 });
 
-test("Claude: thinking_tokens (texto do raciocínio vem vazio) vira progresso visível na etapa", async () => {
+test("Claude: thinking_tokens (the reasoning text arrives empty) becomes visible progress in the step", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-think" });
@@ -559,19 +560,19 @@ test("Claude: thinking_tokens (texto do raciocínio vem vazio) vira progresso vi
   child.event({ type: "system", subtype: "thinking_tokens", estimated_tokens: 189, estimated_tokens_delta: 139 });
   await tick();
   const live = h.emitted.filter((e) => e.ch === "cli-activity-event").map((e) => e.data.event).filter((e) => e.kind === "reasoning");
-  assert.equal(live.at(-1).detail, "~189 tokens de raciocínio");
+  assert.equal(live.at(-1).detail, "~189 reasoning tokens");
   assert.equal(live.at(-1).status, "running");
-  assert.ok(h.emitted.some((e) => e.ch === "cli-stream-chunk" && e.data.detail === "~189 tokens de raciocínio"));
+  assert.ok(h.emitted.some((e) => e.ch === "cli-stream-chunk" && e.data.detail === "~189 reasoning tokens"));
   child.event({ type: "stream_event", event: { type: "content_block_stop", index: 0 } });
   child.event({ type: "result", session_id: "claude-native-123", result: "ok", is_error: false });
   child.close(0);
   const result = await pending;
   const thinking = result.events.find((e) => e.kind === "reasoning");
   assert.equal(thinking.status, "done");
-  assert.equal(thinking.detail, "~189 tokens de raciocínio");
+  assert.equal(thinking.detail, "~189 reasoning tokens");
 });
 
-test("Claude: contexto ao vivo pelo usage, janela real pelo result e compactação com antes/depois", async () => {
+test("Claude: live context from usage, real window from the result and compaction with before/after", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-ctx" });
@@ -582,11 +583,11 @@ test("Claude: contexto ao vivo pelo usage, janela real pelo result e compactaç�
   child.event({ type: "assistant", message: { model: "claude-haiku-5-5", usage: { input_tokens: 2, cache_creation_input_tokens: 6390, cache_read_input_tokens: 9014, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 6390 }, output_tokens: 4 }, content: [{ type: "text", text: "ok" }] } });
   await tick();
   assert.equal(contexts().at(-1).used, 15406);
-  assert.equal(contexts().at(-1).cacheTtlMs, 3600000, "validade do cache vem da escrita ephemeral_1h");
-  assert.equal(contexts().at(-1).model, "", "modelo padrão da CLI fica registrado como escolhido no app");
+  assert.equal(contexts().at(-1).cacheTtlMs, 3600000, "the cache lifetime comes from the ephemeral_1h write");
+  assert.equal(contexts().at(-1).model, "", "the CLI default model is recorded as chosen in the app");
   assert.ok(Number.isFinite(contexts().at(-1).lastCallAt));
-  assert.equal(contexts().at(-1).window, null, "sem janela real ainda: nada estimado");
-  // subagente (sidechain) não conta como contexto da conversa principal
+  assert.equal(contexts().at(-1).window, null, "no real window yet: nothing estimated");
+  // a subagent (sidechain) doesn't count as the main conversation's context
   child.event({ type: "assistant", parent_tool_use_id: "tool-9", message: { model: "claude-haiku-5-5", usage: { input_tokens: 999999 }, content: [] } });
   await tick();
   assert.equal(contexts().at(-1).used, 15406);
@@ -606,8 +607,8 @@ test("Claude: contexto ao vivo pelo usage, janela real pelo result e compactaç�
   assert.equal(result.context.lastCompaction.pre, 15522);
 });
 
-// Eventos capturados do AGY 1.4.12 real: tipos de etapa, tool_info e usage por chamada.
-test("AGY real: etapas de pedido e prompt de sistema não viram eventos; ferramenta e uso por chamada sim", async () => {
+// Events captured from the real AGY 1.4.12: step types, tool_info and usage per call.
+test("real AGY: request and system prompt steps don't become events; tools and usage per call do", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "resp-agy-real" });
@@ -622,20 +623,20 @@ test("AGY real: etapas de pedido e prompt de sistema não viram eventos; ferrame
   child.event({ event: "step_update", step_update: { conversation_id: cid, step_index: 6, state: "DONE", step_type: "agent_response", text_delta: "\n", duration_seconds: 1.38, usage: { input_tokens: 16572, output_tokens: 4, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 16576 } } });
   child.event({ event: "result", result: { conversation_id: cid, status: "SUCCESS", response: "ok\n", num_turns: 1, usage: { input_tokens: 16572, output_tokens: 4, total_tokens: 16576 } } });
   const result = await pending;
-  assert.deepEqual(result.events.map((e) => e.id), ["step-5"], "só a ferramenta aparece");
+  assert.deepEqual(result.events.map((e) => e.id), ["step-5"], "only the tool shows up");
   assert.equal(result.events[0].title, "run_command");
   assert.equal(result.events[0].kind, "command");
   assert.equal(result.events[0].detail, "ls -A /tmp | wc -l");
   assert.equal(result.events[0].status, "done");
   assert.equal(result.context.used, 16572);
-  assert.equal(result.context.window, null, "o AGY não informa a janela do modelo");
-  assert.deepEqual(result.context.cache, { read: 0 }, "cache_read_tokens da etapa vira leitura de cache");
-  assert.equal("cacheTtlMs" in result.context, false, "o AGY não informa a validade do cache");
-  assert.equal(result.context.model, "", "modelo do cache registrado também no AGY");
+  assert.equal(result.context.window, null, "AGY doesn't report the model's window");
+  assert.deepEqual(result.context.cache, { read: 0 }, "the step's cache_read_tokens becomes a cache read");
+  assert.equal("cacheTtlMs" in result.context, false, "AGY doesn't report the cache lifetime");
+  assert.equal(result.context.model, "", "the cache's model is recorded in AGY too");
   assert.equal(result.context.source, "antigravity");
 });
 
-test("Claude: comando Bash em segundo plano (task local_bash) continua comando e não conta como agente", async () => {
+test("Claude: a background Bash command (local_bash task) stays a command and doesn't count as an agent", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-bash-task" });
@@ -653,8 +654,8 @@ test("Claude: comando Bash em segundo plano (task local_bash) continua comando e
   assert.equal(result.events.filter((e) => e.kind === "agent").length, 0);
 });
 
-// Sequência capturada do Claude Code 2.1.316 real: ferramenta `Agent`, ciclo task_* e etapas internas.
-test("Claude real: o subagente vira uma etapa de agente com as etapas internas aninhadas e o resumo final", async () => {
+// Sequence captured from the real Claude Code 2.1.316: `Agent` tool, task_* cycle and internal steps.
+test("real Claude: the subagent becomes an agent step with the internal steps nested and the final summary", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-agent" });
@@ -688,11 +689,11 @@ test("Claude real: o subagente vira uma etapa de agente com as etapas internas a
   assert.equal(inner.kind, "command");
   assert.equal(inner.status, "done");
   assert.ok(result.events.every((e) => e.status !== "running"));
-  // a chamada do subagente não conta como contexto da conversa principal
+  // the subagent's call doesn't count as the main conversation's context
   assert.ok(!h.emitted.some((e) => e.ch === "cli-context" && e.data.used === 999999));
 });
 
-test("AGY: ferramenta de subagente é classificada como agente", async () => {
+test("AGY: a subagent tool is classified as an agent", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "resp-agy-agent" });
@@ -707,7 +708,7 @@ test("AGY: ferramenta de subagente é classificada como agente", async () => {
   assert.equal(result.events[0].title, "browser_subagent");
 });
 
-test("comando que guarda a saída até o fim (| tail) recebe aviso na etapa, nas três CLIs", async () => {
+test("a command that holds its output until the end (| tail) gets a notice in the step, in all three CLIs", async () => {
   const { bufferingNote } = require("../electron/activity-labels");
   assert.match(bufferingNote("npm test 2>&1 | tail -40"), /\| tail/);
   assert.match(bufferingNote("cat x | sort | head -3"), /\| sort|\| head/);
@@ -737,9 +738,9 @@ test("comando que guarda a saída até o fim (| tail) recebe aviso na etapa, nas
   assert.match((await p2).events.find((e) => e.id === "step-5").meta.note, /tail/);
 });
 
-// O cenário de um agente lançado em segundo plano (run_in_background): a chamada volta na hora e o
-// agente trabalha depois do fim do turno. Sequência no formato real do Claude Code 2.1.316.
-test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualizações tardias chegam à resposta de origem", async () => {
+// The scenario of an agent launched in the background (run_in_background): the call returns right away and the
+// agent works after the end of the turn. Sequence in the real Claude Code 2.1.316 format.
+test("Claude: a background agent stays 'running' after the turn and late updates reach the original reply", async () => {
   const h = harness();
   const late = [];
   const runner = h.make({ onLateEvents: (p) => late.push(p) });
@@ -754,9 +755,9 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   const result = await pending;
   const atEnd = result.events.find((e) => e.id === AGENT);
   assert.equal(atEnd.kind, "agent");
-  assert.equal(atEnd.status, "running", "o retorno imediato da chamada não encerra o agente");
+  assert.equal(atEnd.status, "running", "the call's immediate return doesn't close the agent");
   assert.equal(atEnd.meta.background, true);
-  // ...e o agente trabalha depois do fim do turno: os eventos continuam chegando.
+  // ...and the agent works after the end of the turn: the events keep coming.
   const emitted = () => h.emitted.filter((e) => e.ch === "cli-activity-event").map((e) => e.data);
   child.event({ type: "system", subtype: "task_started", task_id: "tk1", tool_use_id: AGENT, subagent_type: "general-purpose", description: "Rodar testes unitários", is_backgrounded: true });
   child.event({ type: "assistant", parent_tool_use_id: AGENT, message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "inner-1", name: "Bash", input: { command: "timeout 600 npm test 2>&1 | tail -n 400" } }] } });
@@ -772,8 +773,8 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   const inner = toOrigin.filter((d) => d.event.id === "inner-1").at(-1).event;
   assert.equal(inner.parentId, AGENT);
   assert.equal(inner.status, "done");
-  assert.match(inner.meta.note, /tail/, "o aviso do | tail também vale para o agente");
-  // A gravação tardia (com atraso) recebe a resposta de origem com o estado final.
+  assert.match(inner.meta.note, /tail/, "the | tail notice also applies to the agent");
+  // The late (delayed) save gets the original reply with the final state.
   await new Promise((r) => setTimeout(r, 500));
   const saved = late.filter((p) => p.responseMessageId === "resp-bg").at(-1);
   assert.equal(saved.events.find((e) => e.id === AGENT).status, "done");
@@ -781,7 +782,7 @@ test("Claude: agente em segundo plano segue 'rodando' após o turno e as atualiz
   child.close(0);
 });
 
-test("Claude: comando em segundo plano segue 'rodando' depois do turno e só termina com o aviso da tarefa", async () => {
+test("Claude: a background command stays 'running' after the turn and only ends with the task notice", async () => {
   const h = harness();
   const late = [];
   const runner = h.make({ onLateEvents: (p) => late.push(p) });
@@ -795,7 +796,7 @@ test("Claude: comando em segundo plano segue 'rodando' depois do turno e só ter
   child.event({ type: "result", session_id: "claude-native-123", result: "Aguardando a suíte.", is_error: false });
   const result = await pending;
   const atEnd = result.events.find((e) => e.id === CMD);
-  assert.equal(atEnd.status, "running", "o retorno imediato não encerra o comando");
+  assert.equal(atEnd.status, "running", "the immediate return doesn't close the command");
   assert.equal(atEnd.meta.background, true);
   child.event({ type: "system", subtype: "task_started", task_id: "b1", tool_use_id: CMD, task_type: "local_bash", description: "npm run test:integration" });
   child.event({ type: "system", subtype: "task_notification", task_id: "b1", tool_use_id: CMD, status: "completed", summary: "suíte passou" });
@@ -805,7 +806,7 @@ test("Claude: comando em segundo plano segue 'rodando' depois do turno e só ter
   child.close(0);
 });
 
-test("Claude: se a CLI encerra com comando em segundo plano ainda 'rodando', ele deixa de constar como rodando", async () => {
+test("Claude: if the CLI exits with a background command still 'running', it's no longer listed as running", async () => {
   const h = harness();
   const late = [];
   const runner = h.make({ onLateEvents: (p) => late.push(p) });
@@ -824,16 +825,16 @@ test("Claude: se a CLI encerra com comando em segundo plano ainda 'rodando', ele
   assert.equal(saved.events.find((e) => e.id === CMD).status, "error");
 });
 
-// O agente principal recebe o resultado do agente em segundo plano e responde sozinho (turno
-// espontâneo). Sequência no formato real do Claude Code: nenhuma mensagem do usuário em andamento.
+// The main agent gets the background agent's result and replies on its own (spontaneous
+// turn). Sequence in the real Claude Code format: no user message in progress.
 const until = async (check, ms = 1500) => {
   const start = Date.now();
   while (!check()) {
-    if (Date.now() - start > ms) throw new Error("condição não atingida: " + check);
+    if (Date.now() - start > ms) throw new Error("condition not met: " + check);
     await new Promise((r) => setTimeout(r, 5));
   }
 };
-test("Claude: o turno que a CLI começa sozinha vira uma mensagem nova (ao vivo, gravada e avisada)", async () => {
+test("Claude: the turn the CLI starts on its own becomes a new message (live, saved and notified)", async () => {
   const h = harness();
   const autos = [];
   const runner = h.make({ onAutoTurn: (p) => autos.push(p) });
@@ -848,15 +849,15 @@ test("Claude: o turno que a CLI começa sozinha vira uma mensagem nova (ao vivo,
   child.event({ type: "result", session_id: "claude-native-123", result: "Mandei um agente. Aviso quando terminar.", is_error: false });
   const first = await pending;
   assert.equal(first.output, "Mandei um agente. Aviso quando terminar.");
-  assert.equal(autos.length, 0, "o turno pedido por você não é espontâneo");
+  assert.equal(autos.length, 0, "the turn you asked for isn't spontaneous");
 
-  // Etapas internas de um subagente (parent_tool_use_id) NÃO começam turno.
+  // A subagent's internal steps (parent_tool_use_id) do NOT start a turn.
   child.event({ type: "assistant", parent_tool_use_id: AGENT, message: { model: "claude-sonnet-5-5", content: [{ type: "tool_use", id: "in1", name: "Bash", input: { command: "ls" } }] } });
   child.event({ type: "system", subtype: "task_notification", tool_use_id: AGENT, status: "completed", summary: "789 passaram" });
   await tick();
   assert.equal(h.emitted.filter((e) => e.ch === "cli-turn-started").length, 0);
 
-  // O agente principal recebe o resultado e responde sozinho.
+  // The main agent gets the result and replies on its own.
   child.event({ type: "stream_event", event: { type: "message_start", message: { model: "claude-sonnet-5-5" } } });
   child.event({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Os testes " } } });
   child.event({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "passaram: 789." } } });
@@ -867,8 +868,8 @@ test("Claude: o turno que a CLI começa sozinha vira uma mensagem nova (ao vivo,
   assert.match(id, /^auto-/);
   assert.equal(started[0].data.providerId, "claude");
   const chunks = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.responseMessageId === id);
-  assert.equal(chunks.at(-1).data.fullText, "Os testes passaram: 789.", "o texto chega ao vivo");
-  assert.equal(autos.length, 0, "ainda em andamento");
+  assert.equal(chunks.at(-1).data.fullText, "Os testes passaram: 789.", "the text arrives live");
+  assert.equal(autos.length, 0, "still in progress");
   child.event({ type: "assistant", message: { model: "claude-sonnet-5-5", usage: { input_tokens: 10, cache_read_input_tokens: 500 }, content: [{ type: "text", text: "Os testes passaram: 789." }] } });
   child.event({ type: "result", session_id: "claude-native-123", result: "Os testes passaram: 789.", is_error: false });
   await until(() => autos.length === 1);
@@ -877,12 +878,12 @@ test("Claude: o turno que a CLI começa sozinha vira uma mensagem nova (ao vivo,
   assert.equal(finished[0].data.text, "Os testes passaram: 789.");
   assert.equal(finished[0].data.ok, true);
   assert.equal(finished[0].data.discard, false);
-  assert.equal(autos.length, 1, "o app foi avisado para gravar e notificar");
+  assert.equal(autos.length, 1, "the app was told to save and notify");
   assert.equal(autos[0].responseMessageId, id);
   assert.equal(autos[0].context.used, 510);
 });
 
-test("Claude: turno espontâneo sem texto é descartado e uma mensagem sua espera um turno espontâneo em andamento", async () => {
+test("Claude: a spontaneous turn without text is discarded and a message of yours waits for a spontaneous turn in progress", async () => {
   const h = harness();
   const autos = [];
   const runner = h.make({ onAutoTurn: (p) => autos.push(p) });
@@ -892,29 +893,29 @@ test("Claude: turno espontâneo sem texto é descartado e uma mensagem sua esper
   child.event({ type: "system", subtype: "init", session_id: "claude-native-123" });
   child.event({ type: "result", session_id: "claude-native-123", result: "ok", is_error: false });
   await p1;
-  // turno espontâneo só com ferramenta, sem texto
+  // spontaneous turn with only a tool, no text
   child.event({ type: "stream_event", event: { type: "message_start", message: {} } });
   child.event({ type: "result", session_id: "claude-native-123", result: "", is_error: false });
   await until(() => autos.length === 1);
   assert.equal(autos.at(-1).discard, true);
-  // nova mensagem sua com um turno espontâneo em andamento: espera terminar
+  // a new message of yours with a spontaneous turn in progress: it waits for it to end
   child.event({ type: "stream_event", event: { type: "message_start", message: {} } });
   child.event({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "resposta espontânea" } } });
   await tick();
   let second = false;
   const p2 = runner.execute({ ...payload("claude"), prompt: "outra", responseMessageId: "r2" }).then((r) => ((second = true), r));
   await tick();
-  assert.equal(child.inputs.length, 1, "a mensagem nova ainda não foi enviada à CLI");
+  assert.equal(child.inputs.length, 1, "the new message hasn't been sent to the CLI yet");
   assert.equal(second, false);
   child.event({ type: "result", session_id: "claude-native-123", result: "resposta espontânea", is_error: false });
   await until(() => child.inputs.length === 2);
-  assert.equal(child.inputs.length, 2, "agora foi");
+  assert.equal(child.inputs.length, 2, "now it was");
   child.event({ type: "assistant", message: { content: [{ type: "text", text: "resposta à outra" }] } });
   child.event({ type: "result", session_id: "claude-native-123", result: "resposta à outra", is_error: false });
   assert.equal((await p2).output, "resposta à outra");
 });
 
-test("AGY: step_type subagent registra o filho, mantém o agente ativo durante o trabalho e aninha comandos do transcript", async (t) => {
+test("AGY: step_type subagent registers the child, keeps the agent active during the work and nests transcript commands", async (t) => {
   const fs = require("node:fs"),
     os = require("node:os"),
     path = require("node:path");
@@ -989,7 +990,7 @@ test("AGY: step_type subagent registra o filho, mantém o agente ativo durante o
     .map((e) => e.data.event)
     .at(-1);
   assert.equal(liveAgent.kind, "agent");
-  assert.equal(liveAgent.status, "running", "continua ativo enquanto o subagente trabalha");
+  assert.equal(liveAgent.status, "running", "stays active while the subagent works");
   assert.equal(liveAgent.detail, "Execute npm test");
   fs.appendFileSync(
     transcript,
@@ -1017,13 +1018,13 @@ test("AGY: step_type subagent registra o filho, mantém o agente ativo durante o
   const agentEvent = result.events.find((e) => e.id === "step-3");
   const cmdEvent = result.events.find((e) => e.kind === "command" && e.parentId === "step-3");
   assert.equal(agentEvent.status, "done");
-  assert.ok(cmdEvent, "comando do subagente fica aninhado no agente pai");
+  assert.ok(cmdEvent, "the subagent's command is nested in the parent agent");
   assert.equal(cmdEvent.detail, "npm test");
   assert.equal(cmdEvent.status, "done");
   runner.shutdown();
 });
 
-test("Claude: comandos em paralelo chegam ao shell etiquetados com o id da ferramenta (shellId)", async () => {
+test("Claude: parallel commands reach the shell tagged with the tool id (shellId)", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-sh" });
   await tick();
@@ -1048,7 +1049,7 @@ test("Claude: comandos em paralelo chegam ao shell etiquetados com o id da ferra
   assert.doesNotMatch(of("tool-a"), /built/);
 });
 
-test("AGY: o passo da ferramenta é a origem da saída no shell (shellId)", async () => {
+test("AGY: the tool step is the source of the shell output (shellId)", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "response-sh" });
   await tick();
@@ -1070,7 +1071,7 @@ test("AGY: o passo da ferramenta é a origem da saída no shell (shellId)", asyn
   assert.doesNotMatch(of("step-2"), /building/);
 });
 
-test("AGY: a saída que o manage_task devolve vai para a aba do comando que iniciou a tarefa", async () => {
+test("AGY: the output manage_task returns goes to the tab of the command that started the task", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute({ ...payload("antigravity"), responseMessageId: "response-task" });
   await tick();
@@ -1085,10 +1086,10 @@ test("AGY: a saída que o manage_task devolve vai para a aba do comando que inic
   await pending;
   const chunks = h.emitted.filter((e) => e.ch === "pty-data").map((e) => e.data);
   assert.match(chunks.filter((d) => d.shellId === "step-2").map((d) => d.data).join(""), /build ok/);
-  assert.equal(chunks.some((d) => d.shellId === "step-5"), false, "não cria aba própria para o manage_task");
+  assert.equal(chunks.some((d) => d.shellId === "step-5"), false, "doesn't create its own tab for manage_task");
 });
 
-test("Claude e AGY: só comando vira shell; leitura de arquivo e outras ferramentas ficam sem origem", async () => {
+test("Claude and AGY: only commands become shells; file reads and other tools have no source", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute({ ...payload("claude"), responseMessageId: "resp-read" });
   await tick();
@@ -1109,7 +1110,7 @@ test("Claude e AGY: só comando vira shell; leitura de arquivo e outras ferramen
   const tagged = (id) => chunks.filter((d) => d.shellId === id).map((d) => d.data).join("");
   assert.match(tagged("tool-bash"), /TESTES_OK/);
   assert.equal(chunks.some((d) => d.shellId === "tool-read"), false);
-  assert.match(chunks.filter((d) => !d.shellId).map((d) => d.data).join(""), /CONTEUDO_DO_ARQUIVO/, "a saída continua em Tudo");
+  assert.match(chunks.filter((d) => !d.shellId).map((d) => d.data).join(""), /CONTEUDO_DO_ARQUIVO/, "the output stays in All");
 
   const g = harness(), r2 = g.make();
   const p2 = r2.execute({ ...payload("antigravity"), responseMessageId: "response-read" });
@@ -1125,7 +1126,7 @@ test("Claude e AGY: só comando vira shell; leitura de arquivo e outras ferramen
   assert.equal(agy.some((d) => d.shellId), false);
 });
 
-test("Claude: o texto já escrito no turno não é trocado pelo result final nem pela mensagem de erro (limite de uso)", async () => {
+test("Claude: text already written in the turn isn't replaced by the final result or by the error message (usage limit)", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute(payload("claude"));
@@ -1142,7 +1143,7 @@ test("Claude: o texto já escrito no turno não é trocado pelo result final nem
   assert.match(result.error, /5-hour limit/);
 });
 
-test("Claude: no sucesso, o texto final reúne todos os trechos e não só o último do result", async () => {
+test("Claude: on success, the final text gathers all the parts and not only the result's last one", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute(payload("claude"));
@@ -1157,7 +1158,7 @@ test("Claude: no sucesso, o texto final reúne todos os trechos e não só o úl
   assert.equal(result.output, `Vou ler.${SEGMENT_SEPARATOR}Pronto.`);
 });
 
-test("Claude: mensagem enviada durante a execução entra no turno em andamento (stdin) e outras CLIs não aceitam", async () => {
+test("Claude: a message sent during the run joins the turn in progress (stdin) and other CLIs don't accept it", async () => {
   const h = harness();
   const runner = h.make();
   const pending = runner.execute(payload("claude"));
@@ -1168,16 +1169,16 @@ test("Claude: mensagem enviada durante a execução entra no turno em andamento 
   assert.ok(await runner.inject({ ...payload("claude"), prompt: "e também isto" }));
   assert.equal(child.inputs.length, 2);
   assert.match(child.inputs[1], /e também isto/);
-  assert.equal(await runner.inject({ ...payload("claude"), prompt: "x", effort: "high" }), false, "outro esforço espera na fila");
+  assert.equal(await runner.inject({ ...payload("claude"), prompt: "x", effort: "high" }), false, "another effort waits in the queue");
   assert.equal(await runner.inject({ ...payload("codex"), prompt: "x" }), false);
   assert.equal(await runner.inject({ ...payload("antigravity"), prompt: "x" }), false);
   child.event({ type: "result", session_id: "claude-native-3", is_error: false, result: "ok" });
   child.close(0);
   await pending;
-  assert.equal(await runner.inject({ ...payload("claude"), prompt: "depois" }), false, "sem turno em andamento");
+  assert.equal(await runner.inject({ ...payload("claude"), prompt: "depois" }), false, "no turn in progress");
 });
 
-test("AGY e Claude: falha sem saída própria (evento de erro) mantém o texto já escrito no turno", async () => {
+test("AGY and Claude: a failure without its own output (error event) keeps the text already written in the turn", async () => {
   for (const provider of ["claude", "antigravity"]) {
     const h = harness();
     const runner = h.make();
@@ -1200,8 +1201,8 @@ test("AGY e Claude: falha sem saída própria (evento de erro) mantém o texto j
   }
 });
 
-// Compactação automática (issue #58): o limite vai para o Claude Code pelo ambiente do processo.
-test("claude: limite de compactação automática vai no ambiente (padrão 200 mil) e muda o processo quando alterado", async () => {
+// Automatic compaction (issue #58): the limit goes to Claude Code through the process environment.
+test("claude: the automatic compaction limit goes in the environment (200 thousand by default) and changes the process when altered", async () => {
   const h = harness();
   let limit;
   const runner = h.make({ getAutoCompactTokens: () => limit });
@@ -1216,24 +1217,24 @@ test("claude: limite de compactação automática vai no ambiente (padrão 200 m
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "200000");
   await run();
-  assert.equal(h.calls.length, 1, "mesmo limite: o processo da conversa é reaproveitado");
+  assert.equal(h.calls.length, 1, "same limit: the conversation's process is reused");
   limit = 300000;
   await run();
-  assert.equal(h.calls.length, 2, "limite novo: processo novo com a variável nova");
+  assert.equal(h.calls.length, 2, "new limit: a new process with the new variable");
   assert.equal(h.calls[1].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "300000");
   limit = 0;
   await run();
   assert.equal(h.calls.length, 3);
-  assert.equal(h.calls[2].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined, "desligado: a CLI segue o padrão dela");
+  assert.equal(h.calls[2].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined, "off: the CLI follows its own default");
   runner.shutdown();
 });
 
-// Issue #59: cada trecho de texto da resposta vira uma caixa própria (separador invisível entre eles).
+// Issue #59: each text part of the reply becomes its own box (invisible separator between them).
 const textBlock = (child, text) => {
   child.event({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } } });
   child.event({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } });
 };
-test("claude: textos entre ferramentas ficam em trechos separados, na tela e no resultado final", async () => {
+test("claude: texts between tools stay in separate parts, on screen and in the final result", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1248,10 +1249,10 @@ test("claude: textos entre ferramentas ficam em trechos separados, na tela e no 
   const result = await run;
   assert.equal(result.output, ["Vou rodar os testes.", "Passou, agora o build.", "Tudo certo."].join(SEGMENT_SEPARATOR));
   const live = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText).at(-1).data.fullText;
-  assert.equal(live, result.output, "o texto ao vivo já traz os mesmos trechos do resultado final");
+  assert.equal(live, result.output, "the live text already carries the same parts as the final result");
   runner.shutdown();
 });
-test("claude: mensagem entregue no meio do turno abre outra resposta, abaixo dela, com o texto escrito depois", async () => {
+test("claude: a message delivered mid-turn opens another reply, below it, with the text written afterwards", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1272,11 +1273,11 @@ test("claude: mensagem entregue no meio do turno abre outra resposta, abaixo del
   );
   const chunks = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText);
   assert.equal(chunks[0].data.responseMessageId, payload("claude").responseMessageId);
-  assert.equal(chunks.at(-1).data.responseMessageId, "ai-segunda", "o texto novo aparece na resposta nova");
-  assert.equal(chunks.at(-1).data.fullText, "Sobre o build: passou.", "só o trecho escrito depois da entrega");
+  assert.equal(chunks.at(-1).data.responseMessageId, "ai-segunda", "the new text shows in the new reply");
+  assert.equal(chunks.at(-1).data.fullText, "Sobre o build: passou.", "only the part written after the delivery");
   runner.shutdown();
 });
-test("antigravity: cada etapa de resposta é um trecho, e as partes da mesma etapa continuam juntas", async () => {
+test("antigravity: each reply step is a part, and pieces of the same step stay together", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("antigravity"));
@@ -1293,12 +1294,12 @@ test("antigravity: cada etapa de resposta é um trecho, e as partes da mesma eta
   const live = h.emitted.filter((e) => e.ch === "cli-stream-chunk" && e.data.fullText).at(-1).data.fullText;
   assert.equal(live, `Olá mundo${SEGMENT_SEPARATOR}Fim.`);
   const result = await run;
-  // O `result` do AGY junta as etapas com "\n" (CLI real): o resultado final não pode apagar as caixas.
+  // AGY's `result` joins the steps with "\n" (real CLI): the final result can't erase the boxes.
   assert.equal(result.output, `Olá mundo${SEGMENT_SEPARATOR}Fim.`);
   runner.shutdown();
 });
 
-test("Claude: troca de permissão no meio da resposta vai ao vivo pelo set_permission_mode", async () => {
+test("Claude: a permission change mid-reply goes live through set_permission_mode", async () => {
   const h = harness();
   const approved = [];
   const approvals = {
@@ -1310,7 +1311,7 @@ test("Claude: troca de permissão no meio da resposta vai ao vivo pelo set_permi
   const first = runner.execute({ ...payload("claude"), permission: "edits" });
   await tick();
   const call = h.calls[0];
-  assert.ok(call.args.includes("--allow-dangerously-skip-permissions"), "habilita a troca para Acesso total sem ligá-la");
+  assert.ok(call.args.includes("--allow-dangerously-skip-permissions"), "enables switching to Full access without turning it on");
   assert.ok(!call.args.includes("--dangerously-skip-permissions"));
   call.child.event({ type: "system", subtype: "init", session_id: "claude-native-live" });
   const controls = () => call.child.inputs.map((s) => JSON.parse(s)).filter((m) => m.type === "control_request");
@@ -1320,16 +1321,16 @@ test("Claude: troca de permissão no meio da resposta vai ao vivo pelo set_permi
   assert.deepEqual(sent.request, { subtype: "set_permission_mode", mode: "bypassPermissions" });
   call.child.event({ type: "control_response", response: { subtype: "success", request_id: sent.request_id, response: { mode: "bypassPermissions" } } });
   assert.deepEqual(await change, { ok: true, applied: "now", approved: 1 });
-  assert.deepEqual(approved, ["app-session"], "Acesso total libera as aprovações pendentes");
+  assert.deepEqual(approved, ["app-session"], "Full access releases the pending approvals");
   call.child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
   assert.equal((await first).ok, true);
-  // A próxima mensagem já com o novo nível reaproveita o mesmo processo (sem reiniciar a CLI).
+  // The next message already with the new level reuses the same process (without restarting the CLI).
   const second = runner.execute({ ...payload("claude"), permission: "full" });
   await tick();
   assert.equal(h.calls.length, 1);
   call.child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
   assert.equal((await second).ok, true);
-  // Para somente leitura: modo plano; a CLI recusar deixa a troca para a próxima mensagem.
+  // To read-only: plan mode; the CLI refusing leaves the change for the next message.
   const refused = runner.setPermission({ sessionId: "app-session", permission: "plan" });
   await tick();
   const planReq = controls().at(-1);
@@ -1338,14 +1339,14 @@ test("Claude: troca de permissão no meio da resposta vai ao vivo pelo set_permi
   assert.deepEqual(await refused, { ok: true, applied: "next", approved: 0 });
   const third = runner.execute({ ...payload("claude"), permission: "plan" });
   await tick();
-  assert.equal(h.calls.length, 2, "recusada ao vivo: reinicia com a nova política e retoma a conversa");
+  assert.equal(h.calls.length, 2, "refused live: restarts with the new policy and resumes the conversation");
   assert.ok(h.calls[1].args.includes("--resume"));
   h.calls[1].child.event({ type: "result", session_id: "claude-native-live", result: "ok", is_error: false });
   assert.equal((await third).ok, true);
   runner.shutdown();
 });
 
-test("troca de permissão sem CLI aberta (ou Codex) vale na próxima mensagem; nível inválido é recusado", async () => {
+test("a permission change without an open CLI (or Codex) applies on the next message; an invalid level is refused", async () => {
   const h = harness();
   const runner = h.make({ approvals: { askDetailed: async () => ({ allow: false }), approveSession: () => 2, cancelSession() {}, shutdown() {} } });
   assert.deepEqual(await runner.setPermission({ sessionId: "app-session", permission: "full" }), { ok: true, applied: "next", approved: 2 });
@@ -1354,13 +1355,13 @@ test("troca de permissão sem CLI aberta (ou Codex) vale na próxima mensagem; n
   runner.shutdown();
 });
 
-test("Claude: conversa em Global da CLI também troca ao vivo; voltar ao global vale na próxima mensagem", async () => {
+test("Claude: a conversation in CLI global also switches live; going back to global applies on the next message", async () => {
   const h = harness();
   const runner = h.make({ approvals: { askDetailed: () => new Promise(() => {}), approveSession: () => 0, cancelSession() {}, shutdown() {} } });
   const first = runner.execute({ ...payload("claude"), permission: "inherit" });
   await tick();
   const { args, child } = h.calls[0];
-  assert.ok(!args.includes("--permission-mode"), "global: nenhum modo imposto");
+  assert.ok(!args.includes("--permission-mode"), "global: no mode imposed");
   assert.ok(args.includes("--allow-dangerously-skip-permissions"));
   const change = runner.setPermission({ sessionId: "app-session", permission: "edits" });
   await tick();
@@ -1374,8 +1375,8 @@ test("Claude: conversa em Global da CLI também troca ao vivo; voltar ao global 
   runner.shutdown();
 });
 
-// "Responder agora" (Claude Code 2.1.317, sequência verificada com a CLI real): o comando em
-// execução vira tarefa (task_started local_bash); background_tasks o manda para o segundo plano.
+// "Answer now" (Claude Code 2.1.317, sequence verified with the real CLI): the running
+// command becomes a task (task_started local_bash); background_tasks sends it to the background.
 const claudeCommand = (child, id = "toolu_cmd1", taskId = "task1") => {
   child.event({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", id, name: "Bash", input: { command: "sleep 90" } }] } });
   child.event({ type: "system", subtype: "task_started", task_id: taskId, tool_use_id: id, task_type: "local_bash", is_backgrounded: false });
@@ -1383,7 +1384,7 @@ const claudeCommand = (child, id = "toolu_cmd1", taskId = "task1") => {
 const controlRequests = (child) =>
   child.inputs.map((l) => JSON.parse(l)).filter((m) => m.type === "control_request");
 
-test("claude: comando mandado para o segundo plano segue rodando até o aviso final da CLI", async () => {
+test("claude: a command sent to the background keeps running until the CLI's final notice", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1396,7 +1397,7 @@ test("claude: comando mandado para o segundo plano segue rodando até o aviso fi
   child.event({ type: "result", is_error: false, result: "ok" });
   const result = await run;
   const command = result.events.find((e) => e.id === "toolu_cmd1");
-  assert.equal(command.status, "running", "o tool_result do segundo plano não encerra o comando");
+  assert.equal(command.status, "running", "the background tool_result doesn't close the command");
   assert.equal(command.meta.background, true);
   child.event({ type: "system", subtype: "task_notification", task_id: "task1", tool_use_id: "toolu_cmd1", status: "completed", summary: "terminou" });
   await tick();
@@ -1405,7 +1406,7 @@ test("claude: comando mandado para o segundo plano segue rodando até o aviso fi
   runner.shutdown();
 });
 
-test("claude: Responder agora manda o comando em execução para o segundo plano", async () => {
+test("claude: Answer now sends the running command to the background", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1415,7 +1416,7 @@ test("claude: Responder agora manda o comando em execução para o segundo plano
   claudeCommand(child);
   await tick();
   const none = await runner.answerNow({ sessionId: "app-session", providerId: "claude" });
-  assert.equal(none.ok, false, "sem mensagem entregue não há o que responder");
+  assert.equal(none.ok, false, "without a delivered message there's nothing to answer");
   assert.ok(await runner.inject({ ...payload("claude"), prompt: "quanto é 17+25?", responseMessageId: "ai-segunda" }));
   const answering = runner.answerNow({ sessionId: "app-session", providerId: "claude", mode: "background" });
   await tick();
@@ -1432,7 +1433,7 @@ test("claude: Responder agora manda o comando em execução para o segundo plano
   runner.shutdown();
 });
 
-test("claude: Interromper e responder mantém o turno aberto até a resposta à mensagem entregue", async () => {
+test("claude: Interrupt and answer keeps the turn open until the reply to the delivered message", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1448,8 +1449,8 @@ test("claude: Interromper e responder mantém o turno aberto até a resposta à 
   assert.deepEqual(request.request, { subtype: "interrupt" });
   child.event({ type: "control_response", response: { subtype: "success", request_id: request.request_id, response: { still_queued: [] } } });
   assert.deepEqual(await answering, { ok: true, mode: "interrupt" });
-  // Sequência real: o comando é parado, a parte interrompida termina com erro e a mensagem
-  // entregue é respondida num resultado próprio.
+  // Real sequence: the command is stopped, the interrupted part ends with an error and the delivered
+  // message is answered in its own result.
   child.event({ type: "system", subtype: "task_notification", task_id: "task1", tool_use_id: "toolu_cmd1", status: "stopped" });
   child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "The user doesn't want to proceed", is_error: true }] } });
   child.event({ type: "user", message: { content: [{ type: "text", text: "[Request interrupted by user for tool use]" }] } });
@@ -1457,18 +1458,18 @@ test("claude: Interromper e responder mantém o turno aberto até a resposta à 
   let settled = false;
   run.then(() => (settled = true));
   await tick();
-  assert.equal(settled, false, "o resultado da parte interrompida não encerra a resposta");
+  assert.equal(settled, false, "the interrupted part's result doesn't close the reply");
   textBlock(child, "RESPOSTA=42");
   child.event({ type: "result", is_error: false, subtype: "success", result: "RESPOSTA=42" });
   const result = await run;
   assert.equal(result.ok, true);
   assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "RESPOSTA=42"]]);
   const cmd = result.events.find((e) => e.id === "toolu_cmd1");
-  assert.ok(cmd && cmd.status !== "running", "o comando interrompido não fica em andamento na resposta original");
+  assert.ok(cmd && cmd.status !== "running", "the interrupted command doesn't stay in progress in the original reply");
   runner.shutdown();
 });
 
-test("claude: cada mensagem entregue fecha a resposta anterior e recebe as próprias etapas", async () => {
+test("claude: each delivered message closes the previous reply and gets its own steps", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));
@@ -1482,23 +1483,23 @@ test("claude: cada mensagem entregue fecha a resposta anterior e recebe as próp
   child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_cmd1", content: "ok" }] } });
   child.event({ type: "assistant", message: { model: "m", content: [{ type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "/x" } }] } });
   const second = await runner.inject({ ...payload("claude"), prompt: "e mais", responseMessageId: "ai-terceira" });
-  assert.equal(second.from, "ai-segunda", "a segunda entrega fecha a resposta da primeira, não a original");
+  assert.equal(second.from, "ai-segunda", "the second delivery closes the first one's reply, not the original");
   child.event({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "toolu_read", content: "x" }] } });
   textBlock(child, "Pronto.");
   child.event({ type: "result", result: "Pronto." });
   const result = await run;
   const ids = (events) => (events || []).map((e) => e.id);
-  assert.ok(ids(result.events).includes("toolu_cmd1"), "o comando fica na resposta original");
+  assert.ok(ids(result.events).includes("toolu_cmd1"), "the command stays in the original reply");
   assert.ok(!ids(result.events).includes("toolu_read"));
   const byId = Object.fromEntries(result.followUps.map((f) => [f.responseMessageId, f]));
-  assert.ok(ids(byId["ai-segunda"].events).includes("toolu_read"), "a leitura feita depois da entrega vai para a resposta dela");
+  assert.ok(ids(byId["ai-segunda"].events).includes("toolu_read"), "the read done after the delivery goes to its reply");
   assert.equal(byId["ai-terceira"].text, "Pronto.");
   const readEvents = h.emitted.filter((e) => e.ch === "cli-activity-event" && e.data.event.id === "toolu_read");
   assert.ok(readEvents.length && readEvents.every((e) => e.data.responseMessageId === "ai-segunda"));
   runner.shutdown();
 });
 
-test("claude: Responder agora sem comando em segundo plano possível cai em interromper; AGY não aceita", async () => {
+test("claude: Answer now without a possible background command falls back to interrupt; AGY doesn't accept it", async () => {
   const h = harness();
   const runner = h.make();
   const run = runner.execute(payload("claude"));

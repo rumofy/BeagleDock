@@ -1,25 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { beagleApi, terminalAvailable } from "../api/beagleApi";
 
-/** Conversas abertas no modo terminal (a interface própria da CLI) e o estado de cada processo. */
+/** Conversations open in terminal mode (the CLI's own interface) and the state of each process. */
 export interface TerminalState {
   exited: boolean;
   exitCode: number | null;
 }
 
-// Colagem como o terminal faz: a CLI recebe o bloco inteiro de uma vez, sem enviar no meio.
+// Paste the way a terminal does: the CLI gets the whole block at once, without submitting midway.
 const bracketed = (text: string) => `\x1b[200~${text.replace(/\x1b\[20[01]~/g, "")}\x1b[201~`;
 
 /**
- * `enabled`: a configuração "Terminal da CLI" está ligada. Cada conversa aberta na tela passa a
- * usar o terminal; os terminais abertos continuam rodando ao trocar de conversa (a grade mostra).
+ * `enabled`: the "CLI terminal" setting is on. Every conversation opened on screen uses the
+ * terminal; open terminals keep running when switching conversations (the grid shows them).
  */
 export function useCliTerminals(setAppError: (message: string) => void, enabled: boolean) {
   const [terminals, setTerminals] = useState<Record<string, TerminalState>>({});
-  // A visão montada registra a colagem do xterm, que respeita o modo de colagem pedido pela CLI.
+  // The mounted view registers xterm's paste, which honors the paste mode the CLI asked for.
   const pasters = useRef(new Map<string, (text: string) => void>());
 
-  // Uma recarga da janela não perde os terminais que continuam rodando no processo principal.
+  // Reloading the window doesn't lose the terminals still running in the main process.
   useEffect(() => {
     if (!terminalAvailable()) return;
     beagleApi
@@ -42,7 +42,7 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
   const active = enabled && terminalAvailable();
   const isTerminal = useCallback((sessionId?: string) => active && !!sessionId, [active]);
 
-  /** Encerra a CLI do terminal da conversa (conversa apagada ou volta para o chat). */
+  /** Stops the conversation's terminal CLI (conversation deleted or back to the chat). */
   const closeTerminal = useCallback(
     async (sessionId: string) => {
       try {
@@ -61,8 +61,8 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
     [setAppError],
   );
 
-  // Voltou para o chat nas configurações: encerra todas as CLIs do terminal, para o chat poder usar
-  // as conversas.
+  // Switched back to the chat in settings: stop every terminal CLI so the chat can use the
+  // conversations.
   const openIds = Object.keys(terminals).join("|");
   useEffect(() => {
     if (active || !openIds) return;
@@ -78,14 +78,14 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
     else pasters.current.delete(sessionId);
   }, []);
 
-  /** Cola texto na CLI (ditado, handoff); `submit` aperta Enter depois, como a pessoa faria. */
+  /** Pastes text into the CLI (dictation, handoff); `submit` presses Enter afterwards, as a person would. */
   const pasteToTerminal = useCallback(
     async (sessionId: string, text: string, submit = false) => {
       const paste = pasters.current.get(sessionId);
       try {
         if (paste) paste(text);
         else await beagleApi.cliTerminalWrite({ sessionId, data: bracketed(text) });
-        // A CLI precisa terminar de receber a colagem antes do Enter; junto, ele viraria parte do texto.
+        // The CLI must finish receiving the paste before Enter; sent together, it would become part of the text.
         if (submit) {
           await new Promise((resolve) => setTimeout(resolve, 200));
           await beagleApi.cliTerminalWrite({ sessionId, data: "\r" });

@@ -2,6 +2,7 @@ const sqlite3 = require("sqlite3").verbose();
 const path = require("path");
 const os = require("os");
 const fs = require("fs");
+const { t } = require("./i18n");
 const {
   protectSettings,
   publicSettings,
@@ -72,10 +73,10 @@ function initDatabase() {
       "CREATE TRIGGER IF NOT EXISTS session_delete_children AFTER DELETE ON sessions BEGIN DELETE FROM chat_history WHERE session_id=OLD.id; DELETE FROM session_links WHERE session_id=OLD.id; END",
     );
     await run(
-      "CREATE TRIGGER IF NOT EXISTS chat_requires_session BEFORE INSERT ON chat_history WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversa inexistente ou removida.'); END",
+      "CREATE TRIGGER IF NOT EXISTS chat_requires_session BEFORE INSERT ON chat_history WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversation does not exist or was removed.'); END",
     );
     await run(
-      "CREATE TRIGGER IF NOT EXISTS link_requires_session BEFORE INSERT ON session_links WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversa inexistente ou removida.'); END",
+      "CREATE TRIGGER IF NOT EXISTS link_requires_session BEFORE INSERT ON session_links WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversation does not exist or was removed.'); END",
     );
     for (const [table, columns] of Object.entries({
       sessions: ["permission", "archived", "context_json", "title_locked"],
@@ -101,8 +102,8 @@ function initDatabase() {
   })();
   return ready;
 }
-// Bancos antigos guardavam as imagens em base64 dentro da mensagem: passam para arquivos na pasta
-// da conversa (uma vez só) e o espaço liberado volta para o disco.
+// Old databases kept images as base64 inside the message: they move to files in the conversation's
+// folder (just once) and the freed space goes back to the disk.
 async function moveInlineAttachments() {
   const rows = await all(
     "SELECT id, session_id, attachments_json FROM chat_history WHERE attachments_json LIKE '%data:%'",
@@ -144,19 +145,19 @@ async function saveSession(s) {
     !/^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,200}$/.test(s.id) ||
     !["claude", "codex", "antigravity"].includes(s.providerId)
   )
-    throw new Error("Sessão inválida.");
+    throw new Error(t("errors.invalidSession"));
   const previous = await get("SELECT provider_id FROM sessions WHERE id=?", [
     s.id,
   ]);
   if (previous && previous.provider_id !== s.providerId)
-    throw new Error("O provedor de uma conversa não pode ser alterado.");
+    throw new Error(t("errors.providerImmutable"));
   const link = await getNativeSession(s.id, s.providerId);
   if (s.nativeSessionId && !/^[a-zA-Z0-9_-]{8,160}$/.test(s.nativeSessionId))
-    throw new Error("ID nativo inválido.");
+    throw new Error(t("errors.invalidNativeId"));
   if (link && s.nativeSessionId && link.nativeId !== s.nativeSessionId)
-    throw new Error("Esta conversa já possui outro ID nativo.");
+    throw new Error(t("errors.nativeIdTaken"));
   if (link && link.cwd !== s.cwd)
-    throw new Error("Crie uma nova sessão para trocar de diretório.");
+    throw new Error(t("errors.newSessionForCwd"));
   await run(
     "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,updated_ts=CURRENT_TIMESTAMP",
     [
@@ -184,17 +185,17 @@ async function getNativeSession(sessionId, providerId) {
     sessionId,
   ]);
   if (row && row.provider_id !== providerId)
-    throw new Error("Provedor incompatível com a conversa salva.");
+    throw new Error(t("errors.providerMismatch"));
   return row ? { nativeId: row.native_id, cwd: row.cwd } : null;
 }
 async function setNativeSession(sessionId, providerId, nativeId, cwd) {
   await initDatabase();
   if (!/^[a-zA-Z0-9_-]{8,160}$/.test(nativeId))
-    throw new Error("ID nativo inválido.");
+    throw new Error(t("errors.invalidNativeId"));
   const existing = await getNativeSession(sessionId, providerId);
   if (existing && (existing.nativeId !== nativeId || existing.cwd !== cwd))
     throw new Error(
-      "A conversa já está associada a outra sessão ou diretório.",
+      t("errors.conversationLinkedElsewhere"),
     );
   await run(
     "INSERT INTO session_links(session_id,provider_id,native_id,cwd) VALUES (?,?,?,?) ON CONFLICT(session_id) DO NOTHING",
@@ -226,7 +227,7 @@ function parseContext(json) {
     return undefined;
   }
 }
-// Último contexto conhecido da conversa, para a barra aparecer ao reabrir o app.
+// Last known context of the conversation, so the bar shows when the app reopens.
 async function setSessionContext(id, context) {
   await initDatabase();
   if (!context || !Number.isFinite(context.used)) return { success: false };
@@ -254,7 +255,7 @@ async function setSessionArchived(id, archived) {
     archived ? "1" : null,
     id,
   ]);
-  if (!result.changes) throw new Error("Conversa inexistente ou removida.");
+  if (!result.changes) throw new Error(t("session.missing"));
   return { success: true, id, archived: !!archived };
 }
 async function deleteSessionFromDb(id) {
@@ -263,7 +264,7 @@ async function deleteSessionFromDb(id) {
   removeSessionAttachments({ root: dbDir, sessionId: id });
   return { success: true };
 }
-// Horário de gravação no SQLite (UTC sem fuso) ou ISO vindo da interface.
+// Save time in SQLite (UTC without a time zone) or ISO coming from the interface.
 function sqlTime(value) {
   if (!value) return NaN;
   const text = String(value);
@@ -271,8 +272,8 @@ function sqlTime(value) {
 }
 const likeEscape = (text) => text.replace(/[\\%_]/g, (c) => "\\" + c);
 /**
- * Conversas do BeagleDock para o histórico: só os dados da lista (as mensagens carregam ao abrir).
- * A busca procura no título e no texto das mensagens.
+ * BeagleDock conversations for the history: only the list data (messages load when opened).
+ * The search looks in the title and in the message text.
  */
 async function listConversationHistory(query = "") {
   await initDatabase();
@@ -308,7 +309,7 @@ async function listConversationHistory(query = "") {
     })
     .sort((a, b) => b.timestampMs - a.timestampMs);
 }
-/** IDs nativos já ligados a conversas do BeagleDock (o histórico não os repete). */
+/** Native IDs already linked to BeagleDock conversations (the history doesn't repeat them). */
 async function linkedNativeIds() {
   await initDatabase();
   return (await all("SELECT provider_id, native_id FROM session_links")).map(
@@ -319,7 +320,7 @@ async function getSavedSessions() {
   await initDatabase();
   return (
     await all(
-      "SELECT s.*,l.native_id FROM sessions s LEFT JOIN session_links l ON l.session_id=s.id ORDER BY s.updated_ts DESC",
+      "SELECT s.*,l.native_id,(SELECT MAX(created_at) FROM chat_history c WHERE c.session_id=s.id) AS last_message FROM sessions s LEFT JOIN session_links l ON l.session_id=s.id ORDER BY s.updated_ts DESC",
     )
   ).map((r) => ({
     id: r.id,
@@ -336,6 +337,8 @@ async function getSavedSessions() {
     titleLocked: r.title_locked === "1",
     context: parseContext(r.context_json),
     nativeSessionId: r.native_id || undefined,
+    // Sidebar sort key: last message, or the last save for a conversation without messages yet.
+    lastMessageAt: sqlTime(r.last_message) || sqlTime(r.updated_ts) || 0,
     ptyLog: [],
   }));
 }
@@ -347,6 +350,8 @@ const messageSql =
 const MAX_EVENTS_JSON = 512 * 1024;
 const META_NUMBERS = ["tokens", "toolUses", "durationMs", "threads"];
 const META_STRINGS = ["taskId", "subagentType", "lastTool", "model", "note"];
+// A proposed plan (meta.proposal) keeps its full text in the history.
+const MAX_PLAN_TEXT = 60000;
 function cleanMeta(meta) {
   if (!meta || typeof meta !== "object") return undefined;
   const out = {};
@@ -356,6 +361,7 @@ function cleanMeta(meta) {
     if (typeof meta[key] === "string" && meta[key])
       out[key] = meta[key].slice(0, key === "note" ? 200 : 120);
   if (meta.background === true) out.background = true;
+  if (meta.proposal === true) out.proposal = true;
   return Object.keys(out).length ? out : undefined;
 }
 function eventsJson(events) {
@@ -370,7 +376,9 @@ function eventsJson(events) {
       kind: String(e.kind || "status"),
       title: String(e.title || "").slice(0, 200),
       detail: e.detail ? String(e.detail).slice(0, 400) : undefined,
-      text: e.text ? String(e.text).slice(0, 4000) : undefined,
+      text: e.text
+        ? String(e.text).slice(0, e.meta?.proposal === true ? MAX_PLAN_TEXT : 4000)
+        : undefined,
       status: ["running", "done", "error"].includes(e.status)
         ? e.status
         : "done",
@@ -409,7 +417,7 @@ function messageParams(m) {
     typeof m.createdAt === "string" ? m.createdAt : null,
   ];
 }
-// Reposiciona uma mensagem no histórico (mensagem entregue no meio de uma resposta em andamento).
+// Repositions a message in the history (a message delivered in the middle of a reply in progress).
 async function setMessageTime(sessionId, messageId, createdAt) {
   await initDatabase();
   await run("UPDATE chat_history SET created_at=? WHERE id=? AND session_id=?", [
@@ -435,7 +443,7 @@ async function replaceChatMessages(id, messages) {
         typeof m.text !== "string",
     )
   )
-    throw new Error("Histórico inválido.");
+    throw new Error(t("errors.invalidHistory"));
   // A dedicated connection prevents unrelated writes from joining this transaction.
   const transaction = new sqlite3.Database(dbPath);
   const txRun = (sql, args = []) =>
@@ -457,7 +465,7 @@ async function replaceChatMessages(id, messages) {
     await txRun("BEGIN IMMEDIATE");
     started = true;
     if (!(await txGet("SELECT 1 FROM sessions WHERE id=?", [id])))
-      throw new Error("Conversa inexistente ou removida.");
+      throw new Error(t("session.missing"));
     await txRun("DELETE FROM chat_history WHERE session_id=?", [id]);
     for (const message of messages)
       await txRun(insertMessageSql, messageParams(message));
@@ -473,8 +481,8 @@ async function replaceChatMessages(id, messages) {
     );
   }
 }
-// Atualização tardia de uma resposta (agente em segundo plano): mescla por id com o que já foi
-// gravado, sem apagar o resto da linha do tempo.
+// Late update of a reply (background agent): merges by id with what was already
+// saved, without erasing the rest of the timeline.
 async function mergeMessageEvents(sessionId, messageId, events) {
   await initDatabase();
   const row = await get(
@@ -517,7 +525,7 @@ async function deleteChatMessage(sessionId, messageId) {
   LIVE_MESSAGE_IDS.delete(messageId);
   return { success: true };
 }
-// Respostas com agentes em segundo plano ainda ativas nesta execução do app.
+// Replies with background agents still active in this run of the app.
 const LIVE_MESSAGE_IDS = new Set();
 function chatRow(r) {
   let attachments;
@@ -532,7 +540,7 @@ function chatRow(r) {
   let events;
   try {
     events = JSON.parse(r.events_json || "null") || undefined;
-    // "Rodando" no histórico é de uma execução anterior do app: o desfecho real é desconhecido.
+    // "Running" in the history is from a previous run of the app: the real outcome is unknown.
     if (events && !LIVE_MESSAGE_IDS.has(r.id))
       events = events.map((e) =>
         e.status === "running"
@@ -541,7 +549,7 @@ function chatRow(r) {
               status: "done",
               meta: {
                 ...e.meta,
-                note: "estado final desconhecido: o app foi fechado antes do fim",
+                note: t("activity.unknownOutcome"),
               },
             }
           : e,
@@ -570,7 +578,7 @@ async function getChatMessages(id) {
     )
   ).map(chatRow);
 }
-// Só as conversas abertas carregam as mensagens ao iniciar; as fechadas carregam ao reabrir.
+// Only open conversations load their messages at startup; closed ones load when reopened.
 async function getAllChatMessagesGrouped() {
   await initDatabase();
   const grouped = {};
@@ -588,14 +596,14 @@ async function saveWorkspace(ws) {
   );
   return { success: true, workspace: ws };
 }
-// Manutenção: só mexe no cadastro. As conversas guardam a própria pasta (cwd) e o vínculo com a sessão
-// nativa da CLI, então editar ou remover um workspace nunca altera nem apaga conversas.
+// Maintenance: only touches the registry. Conversations keep their own folder (cwd) and the link to the CLI's
+// native session, so editing or removing a workspace never changes or deletes conversations.
 async function updateWorkspace(id, { name, path: dir, hasAIMemory }) {
   await initDatabase();
   const current = await get("SELECT id FROM workspaces WHERE id=?", [id]);
-  if (!current) throw new Error("Workspace não encontrado.");
+  if (!current) throw new Error(t("errors.workspaceNotFound"));
   const clash = await get("SELECT id FROM workspaces WHERE path=? AND id<>?", [dir, id]);
-  if (clash) throw new Error("Já existe outro workspace com esta pasta.");
+  if (clash) throw new Error(t("errors.workspaceFolderTaken"));
   await run(
     "UPDATE workspaces SET name=?,path=?,has_ai_memory=? WHERE id=?",
     [name, dir, hasAIMemory ? 1 : 0, id],
@@ -651,7 +659,7 @@ function saveAppSettings(settings) {
   settingsQueue = operation.catch(() => {});
   return operation;
 }
-// Descarta credenciais que o cofre atual não consegue decifrar (ex.: troca de identidade do app).
+// Discards credentials the current keyring can't decrypt (e.g. the app's identity changed).
 async function dropUnreadableCredentials(storage) {
   await initDatabase();
   const current = await rawSettings();
@@ -659,9 +667,9 @@ async function dropUnreadableCredentials(storage) {
   if (dropped.length) await writeSettings(settings);
   return dropped;
 }
-// Credencial em claro para o processo principal (nunca vai para o renderer).
+// Plain credential for the main process (never goes to the renderer).
 async function getSecret(key) {
-  if (!SECRET_KEYS.includes(key)) throw new Error("Credencial desconhecida.");
+  if (!SECRET_KEYS.includes(key)) throw new Error(t("errors.unknownCredential"));
   await initDatabase();
   return revealSecret((await rawSettings())[key]);
 }
@@ -679,7 +687,7 @@ async function getAppSettings() {
     return {
       ...publicSettings(current),
       securityWarning:
-        "Há credenciais antigas sem criptografia. Abra no aplicativo desktop com o cofre do sistema disponível para migrá-las.",
+        t("errors.plainCredentials"),
     };
   }
 }

@@ -96,7 +96,7 @@ const payload = {
   effort: "high",
   responseMessageId: "response-1",
 };
-test("Codex: espera e mensagens não criam agentes nem mudam o pai; saída do filho chega antes da conclusão", async (t) => {
+test("Codex: waits and messages don't create agents or change the parent; the child's output arrives before completion", async (t) => {
   const h = harness(), runner = h.make();
   t.after(() => runner.shutdown());
   const pending = runner.execute(payload);
@@ -119,7 +119,7 @@ test("Codex: espera e mensagens não criam agentes nem mudam o pai; saída do fi
   assert.match(shell(), /CHILD_FIRST/);
   assert.equal(runner.isBusy(payload.sessionId), true);
   const lastAgent = () => h.events.filter((e) => e.channel === "cli-activity-event" && e.data.event.id === "spawn").at(-1).data.event;
-  assert.equal(lastAgent().status, "running", "fim de spawn é só a criação, não o fim do trabalho");
+  assert.equal(lastAgent().status, "running", "end of spawn is only the creation, not the end of the work");
   sub("item/completed", { item: { id: "cmd", type: "commandExecution", status: "completed", aggregatedOutput: "CHILD_FIRST\nCHILD_LAST\n" } });
   h.notify("item/completed", { item: { id: "done", type: "subAgentActivity", kind: "completed", agentThreadId: "child-1" } });
   assert.equal(lastAgent().status, "done");
@@ -127,11 +127,11 @@ test("Codex: espera e mensagens não criam agentes nem mudam o pai; saída do fi
   const result = await pending;
   assert.equal(result.events.filter((e) => e.kind === "agent").length, 1);
   assert.equal(result.events.find((e) => e.id === "child-1:cmd").parentId, "spawn");
-  assert.equal(shell().split("CHILD_FIRST").length - 1, 1, "snapshot final não duplica o stream");
+  assert.equal(shell().split("CHILD_FIRST").length - 1, 1, "the final snapshot doesn't duplicate the stream");
   assert.match(shell(), /CHILD_LAST/);
 });
 
-test("Codex: permissões do filho conhecido aguardam o usuário; conversas alheias continuam negadas", async (t) => {
+test("Codex: permissions of the known child wait for the user; other conversations stay denied", async (t) => {
   const h = harness(), asked = [];
   let decide;
   const approvals = { askDetailed: (request) => (asked.push(request), new Promise((r) => (decide = r))), cancelSession() {}, shutdown() {} };
@@ -266,7 +266,7 @@ test("Codex rejects overlapping turns, wrong cwd, unexpected native id and faile
   assert.equal((await runner.execute({ ...payload, cwd: "/other" })).ok, false);
   h.setWrong();
   pending = runner.execute({ ...payload, permission: "plan" });
-  assert.match((await pending).error, /outra conversa/);
+  assert.match((await pending).error, /another conversation/);
   assert.equal(h.links.get(payload.sessionId).nativeId, "native-codex-123");
   runner.shutdown();
 });
@@ -356,11 +356,11 @@ test("Codex timeline: reasoning, MCP, plan and compaction appear live and are re
   runner.shutdown();
 });
 
-test("app-server do Codex que cai cancela as permissões pendentes da sessão", async () => {
+test("a Codex app-server that crashes cancels the session's pending permissions", async () => {
   const h = harness();
   const cancelled = [];
   const approvals = {
-    ask: () => new Promise(() => {}), // ninguém responde
+    ask: () => new Promise(() => {}), // nobody answers
     cancelSession: (id) => cancelled.push(id),
     shutdown() {},
   };
@@ -370,15 +370,15 @@ test("app-server do Codex que cai cancela as permissões pendentes da sessão", 
   const c = h.calls[0].child;
   c.event({ id: "req-1", method: "item/commandExecution/requestApproval", params: { threadId: c.threadId, command: "rm -rf x" } });
   await tick();
-  assert.deepEqual(cancelled, [], "ainda não houve queda");
+  assert.deepEqual(cancelled, [], "no crash yet");
   c.close(1);
   const result = await pending;
   assert.equal(result.ok, false);
-  assert.ok(cancelled.includes(payload.sessionId), "a permissão pendente foi cancelada na queda");
+  assert.ok(cancelled.includes(payload.sessionId), "the pending permission was cancelled on the crash");
   runner.shutdown();
 });
 
-test("raciocínio do Codex: resumo e conteúdo não se misturam e o resumo ganha parágrafos", async () => {
+test("Codex reasoning: summary and content don't mix and the summary gets paragraphs", async () => {
   const h = harness(), runner = h.make(), pending = runner.execute(payload);
   await tick();
   const live = () => h.events.filter((e) => e.channel === "cli-activity-event").map((e) => e.data.event).filter((e) => e.id === "r1");
@@ -398,12 +398,12 @@ test("raciocínio do Codex: resumo e conteúdo não se misturam e o resumo ganha
   h2.notify("item/reasoning/textDelta", { itemId: "r9", delta: "conteúdo bruto" });
   h2.notify("turn/completed", { turn: { status: "completed" } });
   const r2 = (await pending2).events.find((e) => e.id === "r9");
-  assert.equal(r2.text, "conteúdo bruto", "com conteúdo, o resumo não é concatenado");
+  assert.equal(r2.text, "conteúdo bruto", "with content, the summary isn't concatenated");
   runner.shutdown();
   runner2.shutdown();
 });
 
-test("progresso de MCP de item desconhecido não cria etapa sem título", async () => {
+test("MCP progress of an unknown item doesn't create an untitled step", async () => {
   const h = harness(), runner = h.make(), pending = runner.execute(payload);
   await tick();
   h.notify("item/mcpToolCall/progress", { itemId: "fantasma", message: "?" });
@@ -413,7 +413,7 @@ test("progresso de MCP de item desconhecido não cria etapa sem título", async 
   runner.shutdown();
 });
 
-test("Codex: a opção escolhida volta ao app-server no formato nativo (sessão, emenda, cancelar)", async () => {
+test("Codex: the chosen option returns to the app-server in the native format (session, amendment, cancel)", async () => {
   const h = harness();
   const answers = [
     { allow: true, optionId: "acceptForSession", native: { decision: "acceptForSession" } },
@@ -436,7 +436,7 @@ test("Codex: a opção escolhida volta ao app-server no formato nativo (sessão,
   assert.deepEqual(reply(703), { decision: "cancel" });
   assert.deepEqual(asked[0].options.map((o) => o.id), ["accept", "acceptForSession", "amend", "decline", "cancel"]);
   assert.equal(asked[0].tool, "item/commandExecution/requestApproval");
-  // Permissão adicional mantém o formato próprio (permissions + scope), sem opções inventadas.
+  // An additional permission keeps its own format (permissions + scope), without made-up options.
   answers.push({ allow: true });
   c.event({ id: 704, method: "item/permissions/requestApproval", params: { threadId: c.threadId, permissions: { network: true } } });
   await tick();
@@ -446,24 +446,24 @@ test("Codex: a opção escolhida volta ao app-server no formato nativo (sessão,
   runner.shutdown();
 });
 
-test("Codex: contexto vem do tokenUsage, compactação é capturada e o comando nativo é enviado", async () => {
-  // O app escolhe um alias; o executor resolve para o modelo nativo passado ao app-server.
+test("Codex: context comes from tokenUsage, compaction is captured and the native command is sent", async () => {
+  // The app picks an alias; the runner resolves it to the native model passed to the app-server.
   const resolveSelection = ({ model, effort }) => ({ model: model === "gpt-alias" ? "gpt-5.5" : model, effort });
   const h = harness(), runner = h.make({ resolveSelection }), pending = runner.execute({ ...payload, model: "gpt-alias" });
   await tick();
   const ctxs = () => h.events.filter((e) => e.channel === "cli-context").map((e) => e.data);
   h.notify("thread/tokenUsage/updated", { tokenUsage: { last: { totalTokens: 8200 }, total: { totalTokens: 90000 }, modelContextWindow: 272000 } });
   assert.equal(ctxs().at(-1).used, 8200);
-  assert.equal(ctxs().at(-1).model, "gpt-alias", "o modelo do cache é o escolhido no app, não o resolvido");
-  assert.ok(h.calls[0].args.includes('model="gpt-5.5"'), "o app-server recebe o modelo resolvido");
+  assert.equal(ctxs().at(-1).model, "gpt-alias", "the cache's model is the one chosen in the app, not the resolved one");
+  assert.ok(h.calls[0].args.includes('model="gpt-5.5"'), "the app-server gets the resolved model");
   assert.equal(ctxs().at(-1).window, 272000);
   h.notify("item/started", { item: { id: "c1", type: "contextCompaction" } });
   assert.equal(ctxs().at(-1).compacting, true);
   h.notify("item/completed", { item: { id: "c1", type: "contextCompaction" } });
   assert.equal(ctxs().at(-1).compacting, false);
   assert.equal(ctxs().at(-1).compactions, 1);
-  // Durante a execução não compacta; ocioso, envia thread/compact/start.
-  assert.match((await runner.compact(payload.sessionId, "codex")).error, /Aguarde/);
+  // During the run it doesn't compact; when idle, it sends thread/compact/start.
+  assert.match((await runner.compact(payload.sessionId, "codex")).error, /Wait for the run/);
   h.notify("turn/completed", { turn: { status: "completed" } });
   const result = await pending;
   assert.equal(result.context.window, 272000);
@@ -473,19 +473,19 @@ test("Codex: contexto vem do tokenUsage, compactação é capturada e o comando 
   const request = c.messages.find((m) => m.method === "thread/compact/start");
   assert.equal(request.params.threadId, "native-codex-123");
   c.event({ id: request.id, result: {} });
-  // O comando espera a compactação terminar (evento do app-server) antes de responder.
+  // The command waits for the compaction to finish (app-server event) before answering.
   c.event({ method: "item/completed", params: { threadId: c.threadId, item: { id: "cmp-1", type: "contextCompaction" } } });
   const done = await compact;
   assert.equal(done.ok, true);
-  assert.equal(done.context.compactions, 2, "uma automática no turno anterior + esta manual");
+  assert.equal(done.context.compactions, 2, "one automatic in the previous turn + this manual one");
   assert.equal((await runner.compact("sem-conversa", "codex")).ok, false);
   assert.match((await runner.compact("x", "antigravity")).error, /AGY/);
   assert.match((await runner.compact("x", "claude")).error, /\/compact/);
   runner.shutdown();
 });
 
-// Formato do esquema do protocolo (v2); o disparo de subagentes pelo Codex real NÃO foi verificado.
-test("Codex: etapas da conversa de um subagente entram aninhadas sob o agente (formato do esquema)", async () => {
+// Format of the protocol schema (v2); subagent spawning by the real Codex was NOT verified.
+test("Codex: steps of a subagent's conversation are nested under the agent (schema format)", async () => {
   const h = harness(), runner = h.make(), pending = runner.execute(payload);
   await tick();
   const c = h.calls[0].child;
@@ -494,7 +494,7 @@ test("Codex: etapas da conversa de um subagente entram aninhadas sob o agente (f
   sub("item/started", { item: { id: "cmd-s1", type: "commandExecution", command: "find . | wc -l" } });
   sub("item/started", { item: { id: "msg-s1", type: "agentMessage" } });
   sub("item/completed", { item: { id: "cmd-s1", type: "commandExecution", status: "completed", durationMs: 12 } });
-  // conversa desconhecida: ignorada
+  // unknown conversation: ignored
   c.event({ method: "item/started", params: { threadId: "outra", item: { id: "x", type: "commandExecution", command: "rm" } } });
   h.notify("item/completed", { item: { id: "collab-1", type: "collabAgentToolCall", tool: "spawn_agent", receiverThreadIds: ["sub-thread-1"], status: "completed" } });
   h.notify("turn/completed", { turn: { status: "completed" } });
@@ -505,12 +505,12 @@ test("Codex: etapas da conversa de um subagente entram aninhadas sob o agente (f
   assert.equal(byId["sub-thread-1:cmd-s1"].parentId, "collab-1");
   assert.equal(byId["sub-thread-1:cmd-s1"].status, "done");
   assert.equal(byId["sub-thread-1:cmd-s1"].durationMs, 12);
-  assert.equal(byId["sub-thread-1:msg-s1"], undefined, "mensagens do subagente não viram etapas");
-  assert.equal(byId["outra:x"], undefined, "conversa desconhecida é ignorada");
+  assert.equal(byId["sub-thread-1:msg-s1"], undefined, "the subagent's messages don't become steps");
+  assert.equal(byId["outra:x"], undefined, "an unknown conversation is ignored");
   runner.shutdown();
 });
 
-test("Codex: enviar durante a compactação manual espera ela terminar e o fim da compactação não encerra a resposta", async () => {
+test("Codex: sending during a manual compaction waits for it to finish and the end of the compaction doesn't close the reply", async () => {
   const h = harness(), runner = h.make(), first = runner.execute(payload);
   await tick();
   h.notify("turn/completed", { turn: { status: "completed" } });
@@ -524,22 +524,22 @@ test("Codex: enviar durante a compactação manual espera ela terminar e o fim d
   c.event({ method: "turn/started", params: { threadId: c.threadId, turn: { id: "turn-compact" } } });
   await tick();
   assert.equal(ctxs().at(-1).compacting, true);
-  // A pessoa envia uma mensagem no meio da compactação: ela espera.
+  // The person sends a message in the middle of the compaction: it waits.
   const second = runner.execute({ ...payload, prompt: "segunda", responseMessageId: "response-2" });
   await tick();
-  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 1, "o turno novo ainda não começou");
-  // Fim da compactação (evento + fim do turno dela): termina a espera, sem encerrar nada indevidamente.
+  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 1, "the new turn hasn't started yet");
+  // End of the compaction (event + end of its turn): ends the wait, without closing anything wrongly.
   c.event({ method: "item/completed", params: { threadId: c.threadId, turnId: "turn-compact", item: { id: "cmp", type: "contextCompaction" } } });
   c.event({ method: "thread/compacted", params: { threadId: c.threadId, turnId: "turn-compact" } });
   c.event({ method: "turn/completed", params: { threadId: c.threadId, turn: { id: "turn-compact", status: "completed" } } });
   const compacted = await compact;
   assert.equal(compacted.ok, true);
   assert.equal(compacted.context, undefined === compacted.context ? undefined : compacted.context);
-  assert.equal(ctxs().at(-1).compactions, 1, "dois eventos, uma compactação");
+  assert.equal(ctxs().at(-1).compactions, 1, "two events, one compaction");
   assert.equal(ctxs().at(-1).lastCompaction.trigger, "manual");
   await tick();
-  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 2, "agora o turno novo começou");
-  // Um turn/completed ATRASADO da compactação não pode encerrar a segunda resposta.
+  assert.equal(c.messages.filter((m) => m.method === "turn/start").length, 2, "now the new turn started");
+  // A LATE turn/completed of the compaction can't close the second reply.
   c.event({ method: "turn/completed", params: { threadId: c.threadId, turn: { id: "turn-compact", status: "completed" } } });
   h.notify("item/agentMessage/delta", { itemId: "a2", delta: "resposta real" });
   h.notify("turn/completed", { turn: { id: c.turnId, status: "completed" } });
@@ -549,7 +549,7 @@ test("Codex: enviar durante a compactação manual espera ela terminar e o fim d
   runner.shutdown();
 });
 
-test("Codex: parar a sessão com permissão pendente responde 'cancel' ao app-server", async () => {
+test("Codex: stopping the session with a pending permission answers 'cancel' to the app-server", async () => {
   const h = harness();
   const { createApprovalBroker } = require("../electron/approvals");
   const approvals = createApprovalBroker();
@@ -567,7 +567,7 @@ test("Codex: parar a sessão com permissão pendente responde 'cancel' ao app-se
   runner.shutdown();
 });
 
-test("Codex recebe a orientação de saída ao vivo e a etapa de comando com | tail ganha aviso", async () => {
+test("Codex gets the output guidance live and a command step with | tail gets a notice", async () => {
   const h = harness(), runner = h.make(), pending = runner.execute(payload);
   await tick();
   const start = h.calls[0].child.messages.find((m) => m.method === "thread/start");
@@ -579,8 +579,8 @@ test("Codex recebe a orientação de saída ao vivo e a etapa de comando com | t
   runner.shutdown();
 });
 
-// Formato do esquema do protocolo; agentes do Codex real NÃO foram verificados.
-test("Codex: agente ainda em andamento no fim do turno segue rodando e as etapas dele chegam depois, na resposta de origem", async () => {
+// Format of the protocol schema; real Codex agents were NOT verified.
+test("Codex: an agent still running at the end of the turn keeps running and its steps arrive later, in the original reply", async () => {
   const h = harness();
   const late = [];
   const runner = h.make({ onLateEvents: (p) => late.push(p) });
@@ -593,10 +593,10 @@ test("Codex: agente ainda em andamento no fim do turno segue rodando e as etapas
   h.notify("turn/completed", { turn: { status: "completed" } });
   const result = await pending;
   const at = Object.fromEntries(result.events.map((e) => [e.id, e]));
-  assert.equal(at["collab-9"].status, "running", "o agente não é encerrado com o turno");
+  assert.equal(at["collab-9"].status, "running", "the agent isn't closed with the turn");
   assert.equal(at["sub-thread-9:cmd-a"].status, "running");
   assert.match(at["sub-thread-9:cmd-a"].meta?.note ?? "", /tail/);
-  // depois do turno
+  // after the turn
   sub("item/completed", { item: { id: "cmd-a", type: "commandExecution", status: "completed", durationMs: 40000 } });
   sub("item/started", { item: { id: "cmd-b", type: "commandExecution", command: "git status" } });
   h.notify("item/completed", { item: { id: "collab-9", type: "collabAgentToolCall", tool: "spawnAgent", receiverThreadIds: ["sub-thread-9"], status: "completed", agentsStates: { "sub-thread-9": { status: "completed", message: "Terminou" } } } });
@@ -607,7 +607,7 @@ test("Codex: agente ainda em andamento no fim do turno segue rodando e as etapas
   runner.shutdown();
 });
 
-test("Codex: turno que o app-server começa sozinho vira mensagem nova; compactação e turno vazio são descartados", async () => {
+test("Codex: a turn the app-server starts on its own becomes a new message; compaction and an empty turn are discarded", async () => {
   const h = harness();
   const autos = [];
   const runner = h.make({ onAutoTurn: (p) => autos.push(p) });
@@ -617,7 +617,7 @@ test("Codex: turno que o app-server começa sozinho vira mensagem nova; compacta
   await first;
   const c = h.calls[0].child;
   const ev = (method, params = {}) => c.event({ method, params: { threadId: c.threadId, ...params } });
-  // o agente principal responde sozinho
+  // the main agent replies on its own
   ev("turn/started", { turn: { id: "auto-turn-1" } });
   const started = h.events.filter((e) => e.channel === "cli-turn-started");
   assert.equal(started.length, 1);
@@ -632,11 +632,11 @@ test("Codex: turno que o app-server começa sozinho vira mensagem nova; compacta
   assert.equal(finished[0].data.text, "O agente terminou: 789 testes.");
   assert.equal(autos.length, 1);
   assert.equal(autos[0].discard, false);
-  // compactação automática (sem texto): descartada
+  // automatic compaction (no text): discarded
   ev("turn/started", { turn: { id: "auto-turn-2" } });
   ev("turn/completed", { turn: { id: "auto-turn-2", status: "completed" } });
   assert.equal(autos.at(-1).discard, true);
-  // o turno do usuário NÃO é espontâneo
+  // the user's turn is NOT spontaneous
   const before = h.events.filter((e) => e.channel === "cli-turn-started").length;
   const second = runner.execute({ ...payload, prompt: "de novo", responseMessageId: "r2" });
   await tick();
@@ -647,7 +647,7 @@ test("Codex: turno que o app-server começa sozinho vira mensagem nova; compacta
   runner.shutdown();
 });
 
-test("Codex: dois comandos em paralelo saem etiquetados com o id de cada um (shellId)", async () => {
+test("Codex: two parallel commands come out tagged with each one's id (shellId)", async () => {
   const h = harness(), runner = h.make(), pending = runner.execute(payload);
   await tick();
   const c = h.calls[0].child;
@@ -663,13 +663,13 @@ test("Codex: dois comandos em paralelo saem etiquetados com o id de cada um (she
   assert.doesNotMatch(of("cmd-a"), /building/);
   assert.match(of("cmd-b"), /\$ npm run build[\s\S]*building/);
   assert.doesNotMatch(of("cmd-b"), /testing/);
-  assert.ok(chunks.every((d) => d.shellId), "toda saída de comando tem origem");
+  assert.ok(chunks.every((d) => d.shellId), "every command output has a source");
   h.notify("turn/completed", { turn: { id: c.turnId, status: "completed" } });
   await pending;
   runner.shutdown();
 });
 
-test("contrato Codex: turn/start leva imagem como localImage e arquivos como mention (formato nativo do app-server)", async () => {
+test("Codex contract: turn/start carries an image as localImage and files as mention (the app-server's native format)", async () => {
   const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-codex-attach-")));
   fs.writeFileSync(path.join(dir, "app.ts"), "export {}");
@@ -692,7 +692,7 @@ test("contrato Codex: turn/start leva imagem como localImage e arquivos como men
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("Codex: mensagem durante a execução vai ao turno ativo por turn/steer, sem abrir turno novo", async (t) => {
+test("Codex: a message during the run goes to the active turn through turn/steer, without opening a new turn", async (t) => {
   const h = harness(), runner = h.make();
   t.after(() => runner.shutdown());
   const pending = runner.execute(payload);
@@ -704,13 +704,13 @@ test("Codex: mensagem durante a execução vai ao turno ativo por turn/steer, se
   assert.equal(steer.params.expectedTurnId, child.turnId);
   assert.match(JSON.stringify(steer.params.input), /e também isto/);
   assert.equal(child.messages.filter((m) => m.method === "turn/start").length, 1);
-  assert.equal(await runner.inject({ ...payload, prompt: "x", effort: "low" }), false, "outra configuração espera na fila");
+  assert.equal(await runner.inject({ ...payload, prompt: "x", effort: "low" }), false, "another configuration waits in the queue");
   h.notify("turn/completed", { turn: { status: "completed" } });
   await pending;
-  assert.equal(await runner.inject({ ...payload, prompt: "depois" }), false, "sem turno em andamento");
+  assert.equal(await runner.inject({ ...payload, prompt: "depois" }), false, "no turn in progress");
 });
 
-test("Codex: se o turn/steer for recusado (turno já acabou), a mensagem cai na fila", async (t) => {
+test("Codex: if turn/steer is refused (the turn already ended), the message falls into the queue", async (t) => {
   const h = harness(), runner = h.make();
   t.after(() => runner.shutdown());
   const pending = runner.execute(payload);
@@ -721,14 +721,14 @@ test("Codex: se o turn/steer for recusado (turno já acabou), a mensagem cai na 
   await pending;
 });
 
-// Compactação automática (issue #58): o limite vai ao app-server do Codex como configuração.
-test("Codex: limite de compactação automática vai em model_auto_compact_token_limit (padrão 200 mil, 0 desliga)", async () => {
+// Automatic compaction (issue #58): the limit goes to Codex's app-server as configuration.
+test("Codex: the automatic compaction limit goes in model_auto_compact_token_limit (200 thousand by default, 0 turns it off)", async () => {
   for (const [value, expected] of [[undefined, "model_auto_compact_token_limit=200000"], [150000, "model_auto_compact_token_limit=150000"], [0, null]]) {
     const h = harness(), runner = h.make({ getAutoCompactTokens: () => value });
     const pending = runner.execute(payload);
     await tick();
     const args = h.calls[0].args;
-    if (expected) assert.ok(args.includes(expected), `esperava ${expected} em ${args.join(" ")}`);
+    if (expected) assert.ok(args.includes(expected), `expected ${expected} in ${args.join(" ")}`);
     else assert.ok(!args.some((a) => String(a).includes("model_auto_compact_token_limit")));
     h.notify("turn/completed", { turn: { status: "completed" } });
     await pending;
@@ -736,7 +736,7 @@ test("Codex: limite de compactação automática vai em model_auto_compact_token
   }
 });
 
-test("Codex: cada mensagem do agente é um trecho separado (issue #59)", async () => {
+test("Codex: each agent message is a separate part (issue #59)", async () => {
   const { SEGMENT_SEPARATOR } = require("../electron/message-segments");
   const h = harness(), runner = h.make();
   const pending = runner.execute(payload);
@@ -753,7 +753,7 @@ test("Codex: cada mensagem do agente é um trecho separado (issue #59)", async (
   runner.shutdown();
 });
 
-test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto escrito depois", async () => {
+test("Codex: a message delivered through turn/steer opens another reply with the text written afterwards", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute(payload);
   await tick(); await tick();
@@ -774,21 +774,21 @@ test("Codex: mensagem entregue por turn/steer abre outra resposta com o texto es
     result.followUps.map(({ responseMessageId, text }) => ({ responseMessageId, text })),
     [{ responseMessageId: "ai-segunda", text: "O build passou." }],
   );
-  // Cada resposta leva as próprias etapas: o comando iniciado antes da entrega fica na original.
+  // Each reply carries its own steps: the command started before the delivery stays in the original.
   assert.deepEqual(result.events.map((e) => e.id).filter((id) => id.startsWith("cmd")), ["cmd-test"]);
   assert.deepEqual(result.followUps[0].events.map((e) => e.id).filter((id) => id.startsWith("cmd")), ["cmd-build"]);
   runner.shutdown();
 });
 
-// "Responder agora" no Codex (sequência a validar com a CLI real): turn/interrupt e a mensagem
-// entregue por turn/steer segue num turno novo, na mesma resposta.
-test("Codex: Responder agora interrompe o turno e reenvia a mensagem entregue num turno novo", async () => {
+// "Answer now" in Codex (sequence to validate with the real CLI): turn/interrupt and the message
+// delivered through turn/steer goes on in a new turn, in the same reply.
+test("Codex: Answer now interrupts the turn and resends the delivered message in a new turn", async () => {
   const h = harness(), runner = h.make();
   const pending = runner.execute(payload);
   await tick(); await tick();
   const child = h.calls[0].child;
   const none = await runner.answerNow({ sessionId: payload.sessionId, providerId: "codex" });
-  assert.equal(none.ok, false, "sem mensagem entregue não há o que responder");
+  assert.equal(none.ok, false, "without a delivered message there's nothing to answer");
   assert.ok(await runner.inject({ ...payload, prompt: "quanto é 17+25?", responseMessageId: "ai-segunda" }));
   const firstTurn = child.turnId;
   const answered = await runner.answerNow({ sessionId: payload.sessionId, providerId: "codex" });
@@ -798,7 +798,7 @@ test("Codex: Responder agora interrompe o turno e reenvia a mensagem entregue nu
   h.notify("turn/completed", { turn: { id: firstTurn, status: "interrupted" } });
   await tick(); await tick();
   const starts = child.messages.filter((m) => m.method === "turn/start");
-  assert.equal(starts.length, 2, "a mensagem entregue vai num turno novo");
+  assert.equal(starts.length, 2, "the delivered message goes in a new turn");
   assert.match(JSON.stringify(starts[1].params.input), /17\+25/);
   h.notify("item/agentMessage/delta", { itemId: "m2", delta: "42" });
   h.notify("turn/completed", { turn: { status: "completed" } });

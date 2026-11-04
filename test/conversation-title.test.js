@@ -9,16 +9,16 @@ const ctx = { exports: {}, RegExp };
 vm.runInNewContext(out, ctx);
 const { conversationTitle } = ctx.exports;
 
-test("título genérico vira o assunto do primeiro pedido com conteúdo", () => {
+test("a generic title becomes the subject of the first request with content", () => {
   assert.equal(conversationTitle("Nova sessão #1", "corrige o login"), "corrige o login");
   assert.equal(conversationTitle("Nova sessão #1", "oi"), "Nova sessão #1");
 });
 
-test("comandos (/compact, /handoff) não viram título", () => {
+test("commands (/compact, /handoff) don't become a title", () => {
   assert.equal(conversationTitle("Nova sessão #2", "/compact"), "Nova sessão #2");
   assert.equal(conversationTitle("Nova sessão #2", "  /handoff agora"), "Nova sessão #2");
 });
 
-test("título que não é genérico nunca é trocado", () => {
+test("a title that isn't generic is never replaced", () => {
   assert.equal(conversationTitle("Refatorar billing", "outro assunto"), "Refatorar billing");
 });

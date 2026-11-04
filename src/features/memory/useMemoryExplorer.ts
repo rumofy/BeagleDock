@@ -22,6 +22,7 @@ import {
   splitFrontmatter,
 } from "./memoryUtils";
 
+import { t } from "../../i18n";
 const LAST_PROJECT_KEY = "beagledock.memory.lastProject";
 export const GROUP_CAP = 150;
 
@@ -57,7 +58,7 @@ export function writeLast(v: string) {
 }
 
 
-/** Estado e ações do explorador do ai-memory (projetos, páginas, leitor, exclusão e manutenção). */
+/** State and actions of the ai-memory explorer (projects, pages, reader, deletion and maintenance). */
 export function useMemoryExplorer({
   providers,
   memoryStatus,
@@ -131,7 +132,7 @@ export function useMemoryExplorer({
     setProjectsError("");
     try {
       const res = await beagleApi.listAIMemoryProjects();
-      if (!res?.ok) throw new Error(res?.error || "Falha ao listar projetos.");
+      if (!res?.ok) throw new Error(res?.error || t("memoryErrors.listProjects"));
       const list: AIMemoryProject[] = res.data || [];
       setProjects(list);
       setSel((cur) => {
@@ -171,7 +172,7 @@ export function useMemoryExplorer({
       setPages(pagesRes.data || []);
     } else {
       setPages([]);
-      setPagesError(pagesRes?.error || "Falha ao listar páginas.");
+      setPagesError(pagesRes?.error || t("memoryErrors.listPages"));
     }
     setOverview(ovRes?.ok ? ovRes.data : null);
     setPagesLoading(false);
@@ -192,7 +193,7 @@ export function useMemoryExplorer({
     void loadProject(sel);
   }, [sel?.ws, sel?.p, loadProject]);
 
-  // Ao terminar um turno da manutenção, atualiza o projeto.
+  // When a maintenance turn ends, refresh the project.
   const wasExecuting = useRef(false);
   useEffect(() => {
     if (wasExecuting.current && chat && !chat.executing && maintTarget.current) {
@@ -237,8 +238,8 @@ export function useMemoryExplorer({
       } else {
         setPageError(
           res?.notFound
-            ? "Página não encontrada."
-            : res?.error || "Falha ao ler a página.",
+            ? t("memoryErrors.pageNotFound")
+            : res?.error || t("memoryErrors.readPage"),
         );
       }
     } catch (e) {
@@ -275,7 +276,7 @@ export function useMemoryExplorer({
         sel?.ws,
         sel?.p,
       );
-      if (!res?.ok) throw new Error(res?.error || "Falha na busca.");
+      if (!res?.ok) throw new Error(res?.error || t("memoryErrors.search"));
       setServerResults(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       setServerResults(null);
@@ -352,7 +353,7 @@ export function useMemoryExplorer({
         page.path,
         protection !== "none" ? page.path : undefined,
       );
-      if (!res?.ok) throw new Error(res?.error || "Falha ao excluir a página.");
+      if (!res?.ok) throw new Error(res?.error || t("memoryErrors.deletePage"));
       setDeleteOpen(false);
       setDeleteInput("");
       setPage(null);
@@ -378,7 +379,7 @@ export function useMemoryExplorer({
         sel.p,
         `${sel.ws}/${sel.p}`,
       );
-      if (!res?.ok) throw new Error(res?.error || "Falha ao excluir o projeto.");
+      if (!res?.ok) throw new Error(res?.error || t("memoryErrors.deleteProject"));
       setPurgeOpen(false);
       setPurgeInput("");
       setPage(null);

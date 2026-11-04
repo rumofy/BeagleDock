@@ -37,7 +37,8 @@ const {
   DEFAULT_AUTO_COMPACT_TOKENS,
   resolveAutoCompactForWindow,
 } = require("./auto-compact");
-const { askApproval, claudeApprovalOptions } = require("./approval-options");
+const { askApproval, approvalKind, claudeApprovalOptions } = require("./approval-options");
+const { t } = require("./i18n");
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 const PERMISSIONS = new Set(["inherit", "plan", "ask", "edits", "full"]);
 
@@ -99,8 +100,8 @@ function buildArgs({
       else {
         if (permission !== "inherit")
           args.push("--permission-mode", readonly ? "plan" : "acceptEdits");
-        // Só habilita (não liga) o modo sem confirmação: sem isso o Claude Code recusa a troca
-        // para "Acesso total" durante a sessão (set_permission_mode, verificado no 2.1.316).
+        // Only enables (doesn't turn on) the no-confirmation mode: without it Claude Code refuses switching
+        // to "Full access" during the session (set_permission_mode, verified in 2.1.316).
         if (interactive) args.push("--allow-dangerously-skip-permissions");
       }
       if (nativeId) args.push("--resume", nativeId);
@@ -123,8 +124,8 @@ function buildArgs({
   return args;
 }
 
-// Para onde a conversa vai quando o plano é aprovado: mantém "Acesso total" se ele já foi escolhido
-// (inclusive durante a espera); de resto, "Aceitar edições", como o atalho que desliga o plano.
+// Where the conversation goes when the plan is approved: keeps "Full access" if it was already chosen
+// (including during the wait); otherwise, "Accept edits", like the shortcut that turns plan off.
 function planExit(entry) {
   const permission = entry.permission === "full" ? "full" : "edits";
   return { permission, mode: permission === "full" ? "bypassPermissions" : "acceptEdits" };
@@ -137,24 +138,24 @@ function createCliRunner({
   find = findBinary,
   spawn = spawnCli,
   checkCwd = validCwd,
-  // 0 = sem limite: execuções longas e sessões em segundo plano nunca são encerradas por tempo.
+  // 0 = no limit: long runs and background sessions are never stopped by time.
   turnTimeout = 0,
   resolveSelection = ({ model, effort }) => ({ model, effort }),
   readAgyPermissions = readInheritedPermissions,
   globalFingerprint = () => "",
-  // Limite de contexto para compactar sozinho (0 = desligado). Lido a cada turno: a mudança vale já.
+  // Context limit for compacting on its own (0 = off). Read on every turn: a change applies right away.
   getAutoCompactTokens = () => DEFAULT_AUTO_COMPACT_TOKENS,
   approvals,
   onMcpAuthError = () => {},
-  // Atualizações de eventos depois do fim do turno (agentes em segundo plano).
+  // Event updates after the end of the turn (background agents).
   onLateEvents = () => {},
-  // Turno espontâneo da CLI (o agente principal recebeu o resultado de um agente em segundo plano
-  // e responde sozinho): o app o guarda e avisa, em vez de descartar.
+  // The CLI's spontaneous turn (the main agent got the result of a background agent
+  // and replies on its own): the app keeps it and notifies, instead of discarding it.
   onAutoTurn = () => {},
-  // Pasta onde os anexos de cada conversa são gravados.
+  // Folder where each conversation's attachments are saved.
   attachmentsRoot = dataRoot(),
 }) {
-  // Janela de cada modelo, aprendida com as respostas: o limite de compactação automático depende dela.
+  // Each model's window, learned from the replies: the automatic compaction limit depends on it.
   const knownWindows = new Map();
   const windowKey = (providerId, model) => `${providerId}:${model || ""}`;
   const autoCompactFor = (providerId, model) =>
@@ -174,12 +175,12 @@ function createCliRunner({
   const busy = new Set();
   const cancelled = new Set();
   let closed = false;
-  // `shellId` é o id do evento da linha do tempo do comando ou da ferramenta que produziu a saída;
-  // sem ele, a saída não pôde ser atribuída a uma origem e fica só na visão geral.
+  // `shellId` is the id of the timeline event of the command or tool that produced the output;
+  // without it, the output couldn't be attributed to a source and stays only in the overview.
   const output = (sessionId, data, pid, shellId) =>
     emit("pty-data", { sessionId, data, pid, ...(shellId ? { shellId } : {}) });
-  // `restart`: a própria execução troca o processo (nível, modelo ou esforço mudou). Não marca a
-  // mensagem que está começando como cancelada; antes, no AGY ela acabava em "Execução interrompida".
+  // `restart`: the run itself swaps the process (level, model or effort changed). It doesn't mark the
+  // message that's starting as cancelled; before, in AGY it ended as "Run stopped".
   function kill(sessionId, { restart = false } = {}) {
     approvals?.cancelSession(sessionId);
     codex.kill(sessionId);
@@ -188,7 +189,7 @@ function createCliRunner({
     if (!entry) return;
     processes.delete(sessionId);
     for (const waiting of entry.controls?.values() || [])
-      waiting.reject(new Error("CLI encerrada."));
+      waiting.reject(new Error(t("errors.cliClosed")));
     entry.controls?.clear();
     entry.approvalBridge?.close();
     void entry.liveFiles?.stop();
@@ -197,7 +198,7 @@ function createCliRunner({
         ok: false,
         cancelled: true,
         output: entry.turn.text,
-        error: "Execução interrompida.",
+        error: t("errors.runStopped"),
       });
     try {
       entry.child.stdin.end();
@@ -213,7 +214,7 @@ function createCliRunner({
       effort: requestedEffort = "",
       permission = "edits",
     } = payload || {};
-    if (closed) return { ok: false, error: "Executor encerrado." };
+    if (closed) return { ok: false, error: t("errors.runnerClosed") };
     if (
       typeof sessionId !== "string" ||
       !/^[a-zA-Z0-9][a-zA-Z0-9:_-]{0,200}$/.test(sessionId) ||
@@ -221,7 +222,7 @@ function createCliRunner({
       typeof prompt !== "string" ||
       !prompt.trim()
     )
-      return { ok: false, error: "Sessão, provedor ou mensagem inválidos." };
+      return { ok: false, error: t("errors.invalidRunRequest") };
     if (
       !PERMISSIONS.has(permission) ||
       typeof requestedEffort !== "string" ||
@@ -230,11 +231,11 @@ function createCliRunner({
       typeof requestedModel !== "string" ||
       requestedModel.length > 200
     )
-      return { ok: false, error: "Modelo, permissão ou esforço inválidos." };
+      return { ok: false, error: t("errors.invalidRunOptions") };
     if (busy.has(sessionId))
       return {
         ok: false,
-        error: "Esta conversa já tem uma execução em andamento.",
+        error: t("errors.runAlreadyActive"),
       };
     busy.add(sessionId);
     cancelled.delete(sessionId);
@@ -251,17 +252,17 @@ function createCliRunner({
           : find(providerId);
       if (!bin)
         throw new Error(
-          `CLI ${providerId} não encontrada. Instale e autentique a ferramenta na máquina.`,
+          t("errors.cliMissingInstall", { id: providerId }),
         );
       const link = await store.getNativeSession(sessionId, providerId);
       if (link && link.cwd !== cwd)
         throw new Error(
-          "Esta conversa pertence a outro diretório. Crie uma nova sessão para trocar de projeto.",
+          t("errors.otherDirectoryNewSession"),
         );
       if (cancelled.has(sessionId) || closed)
-        return { ok: false, cancelled: true, error: "Execução interrompida." };
+        return { ok: false, cancelled: true, error: t("errors.runStopped") };
       const nativeId = link?.nativeId;
-      // Anexos e @arquivos viram a entrada nativa de cada CLI; o que a CLI não suporta vira aviso.
+      // Attachments and @files become each CLI's native input; what the CLI doesn't support becomes a notice.
       const built = buildInput(providerId, {
         prompt,
         files: saveAttachments({
@@ -298,8 +299,8 @@ function createCliRunner({
           : undefined;
       const autoCompactTokens = providerId === "claude" ? autoCompactFor(providerId, model) : 0;
       const fingerprint = globalFingerprint(providerId);
-      // A permissão faz parte da chave: mudar reinicia a CLI na próxima mensagem, exceto quando a
-      // troca já foi aplicada ao vivo (setPermission atualiza a chave do processo em andamento).
+      // The permission is part of the key: changing it restarts the CLI on the next message, except when the
+      // change was already applied live (setPermission updates the running process's key).
       const keyFor = (level, settings) =>
         JSON.stringify([
           providerId,
@@ -310,7 +311,7 @@ function createCliRunner({
           level,
           settings,
           fingerprint,
-          // O valor escolhido (não o derivado da janela): aprender a janela não reinicia a CLI.
+          // The chosen value (not the one derived from the window): learning the window doesn't restart the CLI.
           getAutoCompactTokens() ?? "auto",
         ]);
       const key = keyFor(permission, agySettings);
@@ -349,7 +350,7 @@ function createCliRunner({
             return {
               ok: false,
               cancelled: true,
-              error: "Execução interrompida.",
+              error: t("errors.runStopped"),
             };
           }
         }
@@ -419,11 +420,11 @@ function createCliRunner({
             if (providerId === "antigravity" && id !== current.nativeId && !current.childOutputs.has(id)) {
               current.childOutputs.set(id, createAgyChildOutput({
                 onCommand: (command, key) => {
-                  activity("Executando comando…", oneLine(command));
+                  activity(t("activity.commandNow"), oneLine(command));
                   output(sessionId, `$ ${command}\r\n`, child.pid, `child-${id}-${key}`);
                 },
                 onOutput: (text, key) => {
-                  activity("Recebendo saída do comando…");
+                  activity(t("activity.commandOutput"));
                   output(
                     sessionId,
                     text,
@@ -496,9 +497,9 @@ function createCliRunner({
                   current.liveTexts.set(id, old + data);
               }
               current.hasLiveOutput = true;
-              activity("Recebendo saída do comando…");
-              // Antigravity: o log da tarefa é do passo. Claude: só dá para atribuir com uma
-              // ferramenta em andamento; com várias, a origem é ambígua e não é inventada.
+              activity(t("activity.commandOutput"));
+              // Antigravity: the task log belongs to the step. Claude: it can only be attributed with one
+              // tool in progress; with several, the source is ambiguous and isn't made up.
               const liveShell =
                 meta.stepIndex && !meta.conversationId
                   ? `step-${meta.stepIndex}`
@@ -524,7 +525,7 @@ function createCliRunner({
             return;
           if (current.nativeId) {
             current.persistenceError =
-              "A CLI abriu outra conversa durante a retomada. Execução interrompida para preservar a sessão.";
+              t("errors.cliOtherThread");
             child.kill();
             return;
           }
@@ -533,7 +534,7 @@ function createCliRunner({
           current.idWrite = store
             .setNativeSession(sessionId, providerId, id, cwd)
             .catch((err) => {
-              current.persistenceError = `Não foi possível persistir a conversa: ${err.message}`;
+              current.persistenceError = t("errors.persistFailed", { error: err.message });
               child.kill();
             });
         };
@@ -541,7 +542,7 @@ function createCliRunner({
           const turn = current.turn;
           if (!turn || !text) return;
           if (delta) {
-            // AGY: cada etapa de resposta é um trecho; o texto de uma etapa nova abre outra caixa.
+            // AGY: each reply step is a part; the text of a new step opens another box.
             if (stepIndex !== undefined && turn.text && turn.textStep !== undefined && turn.textStep !== stepIndex)
               turn.text += SEGMENT_SEPARATOR;
             if (stepIndex !== undefined) turn.textStep = stepIndex;
@@ -553,7 +554,7 @@ function createCliRunner({
           emit("cli-stream-chunk", {
             sessionId,
             responseMessageId: live.responseMessageId,
-            activity: "IA respondendo…",
+            activity: t("activity.aiReplying"),
             chunk: text,
             fullText: live.fullText,
             pid: child.pid,
@@ -589,7 +590,7 @@ function createCliRunner({
               error: result.error,
               events,
               model,
-              // Sem texto nem erro não há o que mostrar (ex.: só ferramentas): descarta a mensagem.
+              // No text and no error means nothing to show (e.g. only tools): discard the message.
               discard: !text.trim() && !result.error,
               context: current.context.hasData() ? current.context.snapshot() : undefined,
             };
@@ -613,8 +614,8 @@ function createCliRunner({
               ev.result?.session_id ||
               ev.result?.conversation_id,
           );
-          // Turno espontâneo do Claude Code: conteúdo do agente principal sem nenhuma mensagem sua em
-          // andamento. Etapas internas de subagentes (parent_tool_use_id) não começam turno.
+          // Claude Code's spontaneous turn: main-agent content without any message of yours in
+          // progress. Internal subagent steps (parent_tool_use_id) don't start a turn.
           if (
             !current.turn &&
             providerId === "claude" &&
@@ -629,9 +630,9 @@ function createCliRunner({
             if (ev.event === "step_update") {
               const step = ev.step_update || {};
               setNativeId(step.conversation_id);
-              // O AGY informa o uso de cada chamada ao modelo (verificado com a CLI real, 1.4.12):
-              // a entrada de uma chamada já inclui todo o histórico, então é o contexto ocupado.
-              // A janela do modelo não é informada pela CLI.
+              // AGY reports the usage of each model call (verified with the real CLI, 1.4.12):
+              // a call's input already includes the whole history, so it's the context in use.
+              // The model's window isn't reported by the CLI.
               if (
                 step.step_type === "agent_response" &&
                 step.state === "DONE" &&
@@ -647,7 +648,7 @@ function createCliRunner({
                 typeof step.text_delta === "string"
               )
                 stream(step.text_delta, true, step.step_index);
-              // user_input e system_message são ruído para a pessoa (o pedido e o prompt de sistema).
+              // user_input and system_message are noise for the person (the request and the system prompt).
               if (
                 step.step_type &&
                 !["agent_response", "user_input", "system_message"].includes(
@@ -704,12 +705,12 @@ function createCliRunner({
                   current.events.upsert(id, {
                     detail: oneLine(spawned[0].initial_prompt),
                   });
-                // invoke_subagent retorna DONE ao criar o agente em segundo plano; ele continua ativo
-                // até entregar a mensagem de conclusão ou encerrar o turno.
+                // invoke_subagent returns DONE when creating the background agent; it stays active
+                // until it delivers the completion message or ends the turn.
                 if (step.state === "DONE" && (!isSubagent || info.error || !spawned.length))
                   current.events.finish(id, info.error ? "error" : "done", {
                     ...(info.error
-                      ? { detail: oneLine(info.error.message || "Falha.") }
+                      ? { detail: oneLine(info.error.message || t("activity.failed")) }
                       : {}),
                   });
               }
@@ -717,20 +718,20 @@ function createCliRunner({
                 current.agyTools ||= new Map();
                 const previous = current.agyTools.get(step.step_index);
                 const info = step.tool_info || {};
-                // manage_task devolve a saída de um comando assíncrono: o TaskId termina em `task-N`, em que
-                // N é o passo do run_command que o iniciou, e a saída pertence à aba desse comando.
+                // manage_task returns the output of an async command: the TaskId ends in `task-N`, where
+                // N is the step of the run_command that started it, and the output belongs to that command's tab.
                 const taskStep = /\/?task-(\d+)$/.exec(
                   String(info.parameters?.TaskId || ""),
                 )?.[1];
                 const command =
                   info.parameters?.CommandLine || info.parameters?.command;
-                // Só comandos têm shell; ler arquivo, MCP e outras ferramentas ficam só na visão geral.
+                // Only commands have a shell; reading files, MCP and other tools stay only in the overview.
                 const shellId =
                   command || taskStep
                     ? `step-${taskStep ?? step.step_index}`
                     : undefined;
                 if (command && !previous) {
-                  activity("Executando comando…", oneLine(command));
+                  activity(t("activity.commandNow"), oneLine(command));
                   output(sessionId, `$ ${command}\r\n`, child.pid, shellId);
                 }
                 const value =
@@ -753,7 +754,7 @@ function createCliRunner({
                   if (info.error)
                     output(
                       sessionId,
-                      `Erro: ${info.error.message || "Falha na ferramenta."}\r\n`,
+                      `${t("session.errorPrefix")} ${info.error.message || t("errors.toolFailed")}\r\n`,
                       child.pid,
                       shellId,
                     );
@@ -773,8 +774,8 @@ function createCliRunner({
               current.agyTools?.clear();
               turn.finish({
                 ok,
-                // O `result` do AGY junta as etapas com "\n"; o texto do turno guarda cada trecho
-                // separado (verificado com a CLI real 1.4.12), então ele vale quando há mais de um.
+                // AGY's `result` joins the steps with "\n"; the turn's text keeps each part
+                // separate (verified with the real CLI 1.4.12), so it applies when there's more than one.
                 output: turn.text.includes(SEGMENT_SEPARATOR)
                   ? turn.text
                   : typeof result.response === "string"
@@ -783,7 +784,7 @@ function createCliRunner({
                 error: ok
                   ? undefined
                   : error ||
-                    `AGY finalizou com status ${result.status || "desconhecido"}.`,
+                    t("errors.agyStatus", { status: result.status || t("common.unknown") }),
               });
             } else if (ev.event === "error" && turn) {
               turn.finish({
@@ -791,7 +792,7 @@ function createCliRunner({
                 error:
                   typeof ev.error === "string"
                     ? ev.error
-                    : ev.error?.message || "Falha no AGY.",
+                    : ev.error?.message || t("errors.agyFailed"),
               });
             }
             return;
@@ -801,13 +802,16 @@ function createCliRunner({
             const response = async () => {
               let decision = { allow: false };
               if (request.subtype === "can_use_tool" && approvals) {
-                // Opções nativas do Claude Code (permission_suggestions): "permitir sempre", pasta, modo…
+                // Claude Code's native options (permission_suggestions): "always allow", folder, mode…
                 const { options, native } = claudeApprovalOptions(request);
                 decision = await askApproval(approvals, {
                   sessionId,
                   providerId,
+                  // A plan or a question is a decision only the person makes: the UI shows it apart
+                  // from permission requests, and switching to full access never answers it.
+                  kind: approvalKind(request.tool_name),
                   tool: request.display_name || request.tool_name,
-                  // O plano em texto (o JSON escaparia as quebras de linha do Markdown).
+                  // The plan as text (JSON would escape the Markdown's line breaks).
                   input:
                     request.tool_name === "ExitPlanMode" && typeof request.input?.plan === "string"
                       ? request.input.plan
@@ -817,8 +821,8 @@ function createCliRunner({
                 });
               }
               if (child.killed || child.exitCode !== null) return;
-              // Plano aprovado: o Claude Code sai do modo plano no modo que a resposta informar
-              // (sem ele, cai no "default" e pediria cada edição). Verificado no 2.1.316.
+              // Plan approved: Claude Code leaves plan mode in the mode the answer reports
+              // (without it, it falls back to "default" and would ask for every edit). Verified in 2.1.316.
               const exitPlan = decision.allow && decision.native?.exitPlan ? planExit(current) : null;
               child.stdin.write(
                 JSON.stringify({
@@ -843,14 +847,14 @@ function createCliRunner({
                           behavior: "deny",
                           message:
                             decision.message ||
-                            "Ação não autorizada pelo usuário.",
+                            "Action not authorized by the user.",
                         },
                   },
                 }) + "\n",
               );
               if (exitPlan) {
-                // A conversa deixa de ser somente leitura: a próxima mensagem não reinicia a CLI
-                // no modo plano, e a interface troca o nível mostrado.
+                // The conversation is no longer read-only: the next message doesn't restart the CLI
+                // in plan mode, and the interface switches the level shown.
                 current.permission = exitPlan.permission;
                 current.key = current.keyFor(exitPlan.permission, undefined);
                 current.selection = JSON.stringify([current.model, current.effort, exitPlan.permission]);
@@ -859,24 +863,24 @@ function createCliRunner({
             };
             void response().catch(() => kill(sessionId));
           } else if (ev.type === "control_response") {
-            // Resposta a um comando enviado pelo app (ex.: troca do modo de permissão ao vivo).
+            // Answer to a command sent by the app (e.g. switching the permission mode live).
             const res = ev.response || {};
             const waiting = current.controls.get(res.request_id);
             if (waiting) {
               current.controls.delete(res.request_id);
               if (res.subtype === "success") waiting.resolve(res.response || {});
-              else waiting.reject(new Error(res.error || "A CLI recusou o comando."));
+              else waiting.reject(new Error(res.error || t("errors.cliRefusedCommand")));
             }
           } else if (ev.type === "system") {
             if (ev.subtype === "compact_boundary") {
               const id = `compact-${++current.eventSeq}`;
               current.events.upsert(id, {
                 kind: "compaction",
-                title: "Compactação de contexto",
+                title: t("activity.compaction"),
                 detail: oneLine(ev.compact_metadata?.trigger || ""),
               });
               current.events.finish(id);
-              activity("Contexto compactado");
+              activity(t("activity.compacted"));
               current.context.compacted({
                 pre: ev.compact_metadata?.pre_tokens,
                 post: ev.compact_metadata?.post_tokens,
@@ -889,15 +893,15 @@ function createCliRunner({
               ev.task_type !== "local_agent" &&
               !ev.subagent_type
             ) {
-              // Comando em segundo plano (Bash) também abre uma tarefa, mas não é um agente: segue
-              // como comando e não entra na contagem de agentes.
+              // A background command (Bash) also opens a task, but it isn't an agent: it goes on
+              // as a command and doesn't count as an agent.
               if (current.events.get(ev.tool_use_id))
                 current.events.upsert(ev.tool_use_id, {
                   meta: { taskId: ev.task_id },
                 });
             } else if (ev.subtype === "task_started" && ev.tool_use_id) {
-              // Ciclo de tarefa do subagente (Claude Code 2.1.316, verificado): o `Agent` lançado
-              // aparece como uma etapa de agente, e as etapas internas ficam aninhadas nela.
+              // Subagent task cycle (Claude Code 2.1.316, verified): the launched `Agent`
+              // shows as an agent step, and the internal steps are nested in it.
               current.events.upsert(ev.tool_use_id, {
                 kind: "agent",
                 title: `Agente ${ev.subagent_type || ""}`.trim(),
@@ -916,9 +920,9 @@ function createCliRunner({
               ev.subtype === "task_updated" &&
               ev.patch?.is_backgrounded === true
             ) {
-              // Comando mandado para o segundo plano no meio da execução ("Responder agora" ou a
-              // própria CLI): o tool_result volta na hora, mas o comando segue rodando até o
-              // task_notification (Claude Code 2.1.317, verificado com a CLI real).
+              // Command sent to the background mid-run ("Answer now" or the
+              // CLI itself): the tool_result comes back right away, but the command keeps running until the
+              // task_notification (Claude Code 2.1.317, verified with the real CLI).
               const command = current.events.find(
                 (e) => e.meta?.taskId === ev.task_id,
               );
@@ -950,20 +954,20 @@ function createCliRunner({
                 },
               );
             } else if (ev.subtype === "thinking_tokens") {
-              // O Claude Code não expõe o texto do raciocínio (chega vazio), mas informa a
-              // contagem estimada de tokens: é progresso real, visível na etapa e na atividade.
+              // Claude Code doesn't expose the reasoning text (it arrives empty), but it reports the
+              // estimated token count: it's real progress, visible in the step and the activity.
               const id = [...current.blocks.values()]
                 .filter((v) => v.startsWith("think-"))
                 .at(-1);
-              const detail = `~${Number(ev.estimated_tokens) || 0} tokens de raciocínio`;
+              const detail = t("activity.reasoningTokens", { count: Number(ev.estimated_tokens) || 0 });
               if (id) current.events.upsert(id, { detail });
-              activity("Raciocinando…", detail);
+              activity(t("activity.reasoningNow"), detail);
             } else if (ev.subtype === "status" && ev.status === "compacting") {
               current.events.upsert("compacting", {
                 kind: "compaction",
-                title: "Compactação de contexto",
+                title: t("activity.compaction"),
               });
-              activity("Compactando o contexto…");
+              activity(t("activity.compactionNow"));
               current.context.compacting(true);
             } else if (
               ev.subtype === "status" &&
@@ -985,7 +989,7 @@ function createCliRunner({
               current.blocks.set(ev.event.index, id);
               current.events.upsert(id, {
                 kind: "reasoning",
-                title: "Raciocínio",
+                title: t("activity.reasoning"),
               });
             }
             if (delta?.type === "thinking_delta")
@@ -1055,10 +1059,12 @@ function createCliRunner({
                   kind: label.kind,
                   title: label.title,
                   detail: label.detail,
-                  ...(label.note || block.input?.run_in_background
+                  ...(label.text ? { text: label.text } : {}),
+                  ...(label.note || label.proposal || block.input?.run_in_background
                     ? {
                         meta: {
                           ...(label.note ? { note: label.note } : {}),
+                          ...(label.proposal ? { proposal: true } : {}),
                           ...(["agent", "command"].includes(label.kind) &&
                           block.input?.run_in_background
                             ? { background: true }
@@ -1085,8 +1091,8 @@ function createCliRunner({
             if (turn) turn.hasDeltas = false;
           } else if (ev.type === "user") {
             for (const block of ev.message?.content || []) {
-              // A chamada de um agente em segundo plano volta na hora ("Async agent launched"):
-              // ele continua rodando até a notificação final da tarefa.
+              // A background agent's call comes back right away ("Async agent launched"):
+              // it keeps running until the task's final notification.
               if (
                 block.type === "tool_result" &&
                 !current.events.get(block.tool_use_id)?.meta?.background
@@ -1149,12 +1155,12 @@ function createCliRunner({
           } else if (ev.type === "error" || ev.type === "turn.failed") {
             if (turn)
               turn.error =
-                ev.error?.message || ev.message || "A CLI informou uma falha.";
+                ev.error?.message || ev.message || t("errors.cliReportedFailure");
           } else if (ev.type === "result" && turn) {
-            // "Interromper e responder": o Claude Code encerra a parte interrompida com um resultado
-            // de erro (error_during_execution, aborted_tools) e responde a mensagem entregue logo em
-            // seguida, num resultado próprio (verificado com a CLI real, 2.1.317). O turno continua
-            // aberto até esse segundo resultado.
+            // "Interrupt and answer": Claude Code closes the interrupted part with an error
+            // result (error_during_execution, aborted_tools) and answers the delivered message right
+            // after, in its own result (verified with the real CLI, 2.1.317). The turn stays
+            // open until that second result.
             if (
               providerId === "claude" &&
               turn.answering &&
@@ -1162,8 +1168,8 @@ function createCliRunner({
               ev.subtype === "error_during_execution"
             ) {
               turn.answering = false;
-              // A etapa interrompida não volta a avisar o fim: fecha como cancelada (os comandos
-              // mandados para o segundo plano seguem rodando).
+              // The interrupted step won't report its end again: close it as cancelled (commands
+              // sent to the background keep running).
               current.events.finishRunning("error");
               return;
             }
@@ -1179,15 +1185,15 @@ function createCliRunner({
               typeof ev.result === "string" ? ev.result : ev.result?.text;
             turn.finish({
               ok: !ev.is_error && !turn.error,
-              // O `result` do Claude traz só o último trecho (ou a mensagem de erro): o que a IA já
-              // escreveu durante o turno não pode ser substituído por ele.
+              // Claude's `result` carries only the last part (or the error message): what the AI already
+              // wrote during the turn can't be replaced by it.
               output: ev.is_error
                 ? turn.text
                 : providerId === "claude"
                   ? turn.text || resultText
                   : resultText || turn.text,
               error: ev.is_error
-                ? (ev.errors || []).join("\n") || resultText || "Falha na CLI."
+                ? (ev.errors || []).join("\n") || resultText || t("errors.cliFailed")
                 : turn.error,
             });
           }
@@ -1195,7 +1201,7 @@ function createCliRunner({
         const consume = (text) => {
           current.buffer += text;
           if (current.buffer.length > 16 * 1024 * 1024) {
-            current.persistenceError = "Resposta da CLI excedeu o limite.";
+            current.persistenceError = t("errors.cliReplyLimit");
             child.kill();
             return;
           }
@@ -1239,14 +1245,14 @@ function createCliRunner({
                   (code === 0
                     ? undefined
                     : current.stderr.trim() ||
-                      `CLI encerrou com código ${code}.`),
+                      t("errors.cliExited", { code })),
               })
             : undefined;
-          // Tarefas em segundo plano que ainda constavam como rodando acabaram junto com a CLI.
+          // Background tasks still listed as running ended together with the CLI.
           void Promise.resolve(finishing).then(() => current.events.finishAll());
         });
       }
-      // Um turno espontâneo em andamento termina antes de a mensagem nova usar a CLI.
+      // A spontaneous turn in progress ends before the new message uses the CLI.
       if (entry.turn?.auto) await entry.turn.done;
       return await new Promise((resolve) => {
         const current = entry;
@@ -1257,7 +1263,7 @@ function createCliRunner({
                 current.turn?.finish({
                   ok: false,
                   error:
-                    "Tempo limite da execução. A conversa permanece salva.",
+                    t("errors.runTimeout"),
                 });
                 kill(sessionId);
               }, turnTimeout)
@@ -1273,8 +1279,8 @@ function createCliRunner({
             clearTimeout(timer);
             const turn = current.turn;
             current.turn = null;
-            // Falha sem saída própria (erro de processo, timeout, evento de erro): o que a IA já
-            // escreveu no turno continua na mensagem.
+            // A failure without its own output (process error, timeout, error event): what the AI already
+            // wrote in the turn stays in the message.
             if (result.output === undefined && turn?.text)
               result = { ...result, output: turn.text };
             await current.liveFiles?.poll();
@@ -1285,14 +1291,14 @@ function createCliRunner({
               result = {
                 ok: false,
                 error:
-                  "A CLI não informou o ID da conversa. Atualize a ferramenta antes de continuar.",
+                  t("errors.cliNoThreadId"),
                 output: result.output || turn?.text,
               };
               kill(sessionId);
             }
             if (!current.nativeId) kill(sessionId);
             current.events.finishRunning(result.ok ? "done" : "error");
-            // Com mensagens entregues no meio, cada resposta leva as próprias etapas.
+            // With messages delivered midway, each reply carries its own steps.
             const rotated = turn?.rotations?.length;
             const turnEvents = rotated
               ? current.events.snapshotFor(turn.responseMessageId)
@@ -1316,7 +1322,7 @@ function createCliRunner({
           },
         };
         try {
-          current.activity?.("Aguardando a CLI…");
+          current.activity?.(t("session.waitingCli"));
           if (providerId === "codex") current.child.stdin.end(built.text);
           else
             current.child.stdin.write(
@@ -1342,9 +1348,9 @@ function createCliRunner({
       Promise.resolve(onComplete()).catch(() => {});
     }
   }
-  // Claude Code: uma mensagem escrita durante a execução entra na próxima etapa do turno em andamento
-  // (testado com a CLI real: uma única resposta final cobre as duas mensagens). Devolve false quando
-  // não há turno em andamento da mesma configuração; aí a mensagem espera na fila.
+  // Claude Code: a message written during the run goes into the next step of the turn in progress
+  // (tested with the real CLI: a single final reply covers both messages). Returns false when
+  // there's no turn in progress with the same configuration; then the message waits in the queue.
   async function inject(payload) {
     const { sessionId, providerId, prompt, permission = "edits" } = payload || {};
     if (providerId === "codex") {
@@ -1358,7 +1364,7 @@ function createCliRunner({
         });
         const cwd = checkCwd(payload.cwd);
         const selection = JSON.stringify([model, effort, permission]);
-        // Confere antes de gravar os anexos: se a injeção não é possível, `execute` os grava depois.
+        // Checks before saving the attachments: if injection isn't possible, `execute` saves them later.
         if (!codex.canInject({ sessionId, cwd, selection })) return false;
         const built = buildInput(providerId, {
           prompt,
@@ -1421,39 +1427,39 @@ function createCliRunner({
           message: { role: "user", content: built.content },
         }) + "\n",
       );
-      // A resposta que estava recebendo o texto (a original ou a de uma entrega anterior) fecha aqui.
+      // The reply that was receiving the text (the original or that of an earlier delivery) closes here.
       const from = liveReply(entry.turn, entry.turn.text).responseMessageId;
       const rotation = addRotation(entry.turn, {
         responseMessageId: payload.responseMessageId,
         text: entry.turn.text,
       });
       entry.events?.rotate(payload.responseMessageId);
-      entry.activity?.("Entregue · a IA lê quando a etapa atual terminar");
+      entry.activity?.(t("session.deliveredActivity"));
       return { from, at: rotation.at };
     } catch {
       return false;
     }
   }
-  // "Responder agora" para uma mensagem já entregue à CLI que ela ainda não leu (a CLI lê na
-  // próxima etapa, então espera o comando em execução terminar).
-  // - `background` (Claude Code): manda os comandos em execução para o segundo plano; eles
-  //   continuam rodando e a IA responde já. Sem comando rodando, cai no `interrupt`.
-  // - `interrupt`: interrompe a etapa atual (o comando é cancelado) e a IA responde em seguida.
-  // Codex: interrompe o turno e reenvia a mensagem entregue num turno novo.
+  // "Answer now" for a message already delivered to the CLI that it hasn't read yet (the CLI reads it on the
+  // next step, so it waits for the running command to finish).
+  // - `background` (Claude Code): sends the running commands to the background; they
+  //   keep running and the AI answers right away. With no command running, it falls back to `interrupt`.
+  // - `interrupt`: interrupts the current step (the command is cancelled) and the AI answers next.
+  // Codex: interrupts the turn and resends the delivered message in a new turn.
   async function answerNow({ sessionId, providerId, mode = "background" } = {}) {
-    if (typeof sessionId !== "string") return { ok: false, error: "Conversa inválida." };
+    if (typeof sessionId !== "string") return { ok: false, error: t("errors.invalidConversation") };
     if (providerId === "codex") return codex.answerNow(sessionId);
     if (providerId !== "claude")
-      return { ok: false, error: "Esta CLI só recebe a mensagem ao fim da resposta." };
+      return { ok: false, error: t("errors.cliReadsAtEnd") };
     const entry = processes.get(sessionId);
     if (!entry?.turn || entry.turn.auto || entry.providerId !== "claude" || !entry.child.stdin?.writable)
-      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+      return { ok: false, error: t("errors.noReplyRunning") };
     if (!entry.turn.rotations?.length)
-      return { ok: false, error: "Nenhuma mensagem entregue esperando a IA ler." };
+      return { ok: false, error: t("errors.noDeliveredMessage") };
     try {
       if (mode === "background") {
-        // Só comandos que o Claude Code acompanha como tarefa (task_started) podem ir para o
-        // segundo plano; os que já estão lá ficam como estão.
+        // Only commands Claude Code tracks as a task (task_started) can go to the
+        // background; the ones already there stay as they are.
         const running = entry.events.filter(
           (e) =>
             e.kind === "command" &&
@@ -1467,27 +1473,27 @@ function createCliRunner({
           if (response?.backgrounded) moved++;
         }
         if (moved) {
-          entry.activity?.("Comando no segundo plano; a IA responde a sua mensagem agora");
+          entry.activity?.(t("activity.backgroundAnswering"));
           return { ok: true, mode: "background", moved };
         }
       }
       entry.turn.answering = true;
       await control(entry, { subtype: "interrupt" });
-      entry.activity?.("Etapa interrompida; a IA responde a sua mensagem agora");
+      entry.activity?.(t("activity.interruptedAnswering"));
       return { ok: true, mode: "interrupt" };
     } catch (error) {
       if (entry.turn) entry.turn.answering = false;
       return { ok: false, error: error.message };
     }
   }
-  // Comando de controle do Claude Code pelo stdin (stream-json), com resposta casada pelo request_id.
+  // Claude Code control command over stdin (stream-json), with the answer matched by request_id.
   function control(entry, request, timeout = 5000) {
-    if (!entry.child.stdin?.writable) return Promise.reject(new Error("CLI sem entrada."));
+    if (!entry.child.stdin?.writable) return Promise.reject(new Error(t("errors.cliNoInput")));
     const id = `beagledock-${++entry.controlSeq}`;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         entry.controls.delete(id);
-        reject(new Error("A CLI não respondeu ao comando."));
+        reject(new Error(t("errors.cliNoCommandAnswer")));
       }, timeout);
       timer.unref?.();
       entry.controls.set(id, {
@@ -1497,20 +1503,20 @@ function createCliRunner({
       entry.child.stdin.write(JSON.stringify({ type: "control_request", request_id: id, request }) + "\n");
     });
   }
-  // Troca do nível de permissão com a conversa aberta (inclusive no meio de uma resposta).
-  // `applied: "now"` = a CLI em execução já usa o novo nível; `"next"` = vale a partir da próxima
-  // mensagem (a CLI é reiniciada com a nova política e retoma a mesma conversa).
-  // Passar para "Acesso total" também libera as aprovações que estavam esperando nesta conversa.
+  // Changing the permission level with the conversation open (even in the middle of a reply).
+  // `applied: "now"` = the running CLI already uses the new level; `"next"` = applies from the next
+  // message (the CLI restarts with the new policy and resumes the same conversation).
+  // Switching to "Full access" also releases the approvals that were waiting in this conversation.
   async function setPermission(payload) {
     const { sessionId, permission } = payload || {};
     if (typeof sessionId !== "string" || !PERMISSIONS.has(permission))
-      return { ok: false, error: "Sessão ou permissão inválida." };
+      return { ok: false, error: t("errors.invalidPermissionChange") };
     const entry = processes.get(sessionId);
     let applied = "next";
     if (entry && entry.child.exitCode === null && !entry.child.killed) {
       const readonly = (level) => level === "plan" || level === "ask";
       if (entry.providerId === "claude") {
-        // "Global da CLI" não tem modo equivalente para enviar: volta a ele reiniciando na próxima.
+        // "CLI global" has no equivalent mode to send: it goes back to it by restarting on the next message.
         if (permission !== "inherit" && entry.effort !== "plan") {
           const mode = readonly(permission) ? "plan" : permission === "full" ? "bypassPermissions" : "acceptEdits";
           try {
@@ -1522,12 +1528,12 @@ function createCliRunner({
               applied = "now";
             }
           } catch {
-            // Sem a troca ao vivo, a chave antiga faz a próxima mensagem reiniciar com o novo nível.
+            // Without the live switch, the old key makes the next message restart with the new level.
           }
         }
       } else if (entry.providerId === "antigravity" && entry.approvalBridge) {
-        // A ponte de aprovação decide cada ferramenta na hora; o que o AGY fixa na partida (modo
-        // plano, regras de negação, sandbox) só muda quando ele reinicia na próxima mensagem.
+        // The approval bridge decides each tool on the spot; what AGY fixes at startup (plan
+        // mode, deny rules, sandbox) only changes when it restarts on the next message.
         entry.approvalBridge.setPermission(permission);
         if (entry.permission === "edits" && permission !== "inherit") applied = "now";
       }
@@ -1543,19 +1549,19 @@ function createCliRunner({
     setPermission,
     isBusy: (id) => (id === undefined ? busy.size > 0 : busy.has(id)),
     busyCount: () => busy.size,
-    // Compactação nativa: só o Codex tem comando próprio fora da conversa; no Claude Code e no AGY
-    // (1.4.12, verificado) ela é a mensagem /compact, enviada pelo app como um turno normal.
+    // Native compaction: only Codex has its own command outside the conversation; in Claude Code and AGY
+    // (1.4.12, verified) it's the /compact message, sent by the app as a normal turn.
     compact: (id, providerId) =>
       providerId === "codex"
         ? codex.compact(id)
         : Promise.resolve({
             ok: false,
-            error: "No Claude Code e no AGY a compactação é a mensagem /compact.",
+            error: t("errors.compactIsMessage"),
           }),
     async prepareUpdate() {
       await codex.prepareUpdate();
       if (busy.size)
-        throw new Error("Aguarde as respostas terminarem antes de atualizar.");
+        throw new Error(t("errors.waitRepliesBeforeUpdate"));
       await Promise.all(
         [...processes.entries()].map(
           ([id, entry]) =>
@@ -1568,7 +1574,7 @@ function createCliRunner({
               const timer = setTimeout(
                 () =>
                   reject(
-                    new Error("A CLI ainda está encerrando. Tente novamente."),
+                    new Error(t("errors.cliStillClosing")),
                   ),
                 3000,
               );

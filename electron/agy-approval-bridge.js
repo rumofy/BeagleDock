@@ -5,6 +5,7 @@ const fs = require("fs"),
   crypto = require("crypto");
 const { removeLegacyHooks } = require("./migration");
 const { settingsPath } = require("./agy-permissions");
+const { t } = require("./i18n");
 const READ_TOOLS = new Set([
   "read_file",
   "view_file",
@@ -81,7 +82,7 @@ function ensureHook({
     if (!hooks || typeof hooks !== "object" || Array.isArray(hooks))
       throw new Error();
   } catch {
-    throw new Error("hooks.json do AGY é inválido. Não foi alterado.");
+    throw new Error(t("errors.agyHooksInvalid"));
   }
   const quote = (value) =>
     process.platform === "win32"
@@ -124,7 +125,7 @@ function ensureHook({
   }
   if (current !== text) {
     fs.unlinkSync(temp);
-    throw new Error("Hooks alterados por outro processo. Tente novamente.");
+    throw new Error(t("errors.agyHooksChanged"));
   }
   fs.renameSync(temp, file);
 }
@@ -140,7 +141,7 @@ async function createAgyApprovalBridge({
   script,
 }) {
   ensureHook({ home, env, node, script });
-  // Nível escolhido agora na conversa; `permission` continua sendo o da partida do AGY.
+  // Level chosen now in the conversation; `permission` is still the one AGY started with.
   let livePermission = permission;
   const token = crypto.randomBytes(32).toString("hex");
   const socket =
@@ -186,14 +187,14 @@ async function createAgyApprovalBridge({
         client.end(
           JSON.stringify({
             decision: "deny",
-            reason: "Sessão não corresponde ao pedido.",
+            reason: "The session doesn't match the request.",
           }) + "\n",
         );
         return;
       }
-      // O segredo é exclusivo desta árvore de processos e é herdado pelos subagentes.
-      // Eles têm IDs nativos próprios; exigir o ID do pai negava suas ferramentas sem perguntar.
-      // Outro processo/sessão continua sem acesso: precisa autenticar com o token desta ponte.
+      // The secret is exclusive to this process tree and is inherited by the subagents.
+      // They have their own native IDs; requiring the parent's ID denied their tools without asking.
+      // Another process/session still has no access: it must authenticate with this bridge's token.
       onConversation(request.conversationId);
       const name = request.toolCall.name;
       const args = request.toolCall.args || {};
@@ -212,11 +213,11 @@ async function createAgyApprovalBridge({
         ["plan", "ask"].includes(activePermission) &&
         !launchedReadonly
       )
-        // Trocado para somente leitura durante a execução: o AGY partiu podendo escrever, então a
-        // ponte nega o que não é leitura até ele reiniciar com o modo plano na próxima mensagem.
+        // Switched to read-only during the run: AGY started able to write, so the
+        // bridge denies anything that isn't a read until it restarts in plan mode on the next message.
         result = {
           decision: "deny",
-          reason: "O modo da conversa foi trocado para somente leitura no BeagleDock.",
+          reason: "The conversation's mode was switched to read-only in BeagleDock.",
         };
       else if (
         !["full", "plan", "ask"].includes(activePermission) &&
@@ -234,8 +235,8 @@ async function createAgyApprovalBridge({
         result = {
           decision: allow ? "auto_approve" : "deny",
           reason: allow
-            ? "Autorizado uma vez pelo usuário no BeagleDock."
-            : "Negado pelo usuário no BeagleDock.",
+            ? "Allowed once by the user in BeagleDock."
+            : "Denied by the user in BeagleDock.",
         };
       }
       if (!closed && !client.destroyed)

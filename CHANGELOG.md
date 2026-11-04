@@ -1,8 +1,26 @@
 # Changelog
 
-As mudanças de cada versão são registradas aqui. O projeto segue versionamento semântico.
+All notable changes to BeagleDock are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.14.0] - 2026-11-04
+
+### Added
+
+- The interface is now available in English, Spanish and Brazilian Portuguese, chosen in Settings → Appearance. Notifications, the tray menu and the prompts the app sends to the CLIs on your behalf (handoff, continuation in another CLI, plan approval, assisted memory maintenance) follow the chosen language.
+
+### Changed
+
+- English is now the default interface language. If you used the app in Portuguese, switch back in Settings → Appearance.
+- The conversation list in the sidebar is now ordered by last update: the conversation with the most recent message or reply comes first, and a new or reopened conversation goes to the top.
+
+### Fixed
+
+- Voice dictation in English no longer swaps short words that sound like a registered name (for example, “checks” turning into “Codex”) or drops the word right after a correctly spelled name (“BeagleDock is” turning into “BeagleDock”).
+- When Claude Code or Codex CLI keeps working on its own (for example, the main agent continuing after a background agent finishes), the conversation no longer looks finished: the sidebar, the header and the Stop button now show that the AI is still running.
+- A plan waiting for approval no longer looks like a permission request. It has its own card in the conversation, the popup for other conversations only opens the conversation for review (it can't approve the plan), and switching the conversation to “Full access” no longer approves a pending plan or answers a pending question on your behalf.
+- The plan proposed by Claude Code or Codex CLI now appears in full inside the reply in the chat and stays in the history after approval, instead of only showing up in a small box of the approval request.
 
 ## [0.13.1] - 2026-11-04
 
@@ -315,7 +333,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/rumofy/BeagleDock/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...v0.12.0

@@ -1,3 +1,4 @@
+const { t } = require("./i18n");
 const validId = (value) =>
   typeof value === "string" && /^[a-z0-9][a-z0-9._:/-]*$/i.test(value);
 const validEffort = (value) =>
@@ -123,7 +124,7 @@ function resolveModelSelection(options, model, effort = "") {
   if (!model) {
     if (effort)
       throw new Error(
-        "Escolha um modelo do catálogo antes de definir o nível.",
+        t("errors.modelFirst"),
       );
     return { model: "", effort: "" };
   }
@@ -139,11 +140,11 @@ function resolveModelSelection(options, model, effort = "") {
   if (!option) {
     if (options.length)
       throw new Error(
-        "O modelo salvo não está no catálogo atual. Selecione um modelo disponível.",
+        t("errors.modelNotInCatalog"),
       );
     if (effort)
       throw new Error(
-        "A CLI ainda não informou os níveis deste modelo. Use o padrão da CLI.",
+        t("errors.levelsUnknown"),
       );
     return { model, effort: "" };
   }
@@ -158,7 +159,7 @@ function resolveModelSelection(options, model, effort = "") {
     legacy?.id || effort || (option.requiresEffort ? option.defaultEffort : "");
   if (chosen && !option.efforts.some((e) => e.id === chosen))
     throw new Error(
-      "O nível selecionado não está disponível para este modelo no catálogo atual.",
+      t("errors.levelUnavailable"),
     );
   const level = option.efforts.find((e) => e.id === chosen);
   return {

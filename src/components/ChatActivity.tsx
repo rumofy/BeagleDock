@@ -1,6 +1,7 @@
 import { useNow } from "../hooks/useNow";
 import { formatDuration } from "../lib/duration";
 
+import { t } from "../i18n";
 const WARN_AFTER_MS = 30000;
 
 export function ChatActivity({
@@ -24,13 +25,13 @@ export function ChatActivity({
   const eventAge = Math.max(0, now - (lastEventAt || startedAt || now));
   const progressAge = Math.max(0, now - (lastProgressAt || startedAt || now));
   const stalled = progressAge >= WARN_AFTER_MS;
-  // Apenas informa: o app não interrompe nem reenvia nada sozinho.
+  // Informational only: the app never interrupts or resends anything on its own.
   const liveness =
     eventAge >= WARN_AFTER_MS
-      ? `sem eventos há ${formatDuration(eventAge)}`
+      ? t("activity.noEvents", { duration: formatDuration(eventAge) })
       : stalled
-        ? `recebendo eventos, sem progresso há ${formatDuration(progressAge)}`
-        : `último evento há ${formatDuration(eventAge)}`;
+        ? t("activity.noProgress", { duration: formatDuration(progressAge) })
+        : t("activity.lastEvent", { duration: formatDuration(eventAge) });
   return (
     <div
       role="status"
@@ -43,14 +44,14 @@ export function ChatActivity({
         />
         <span
           className="font-medium truncate min-w-0 flex-1"
-          title={text || "Aguardando a CLI…"}
+          title={text || t("activity.waitingCli")}
         >
-          {text || "Aguardando a CLI…"}
+          {text || t("activity.waitingCli")}
         </span>
         <span
           className={`font-mono tabular-nums shrink-0 text-[#938b7a] ${text && inActivity >= 2000 ? "" : "invisible"}`}
         >
-          há {formatDuration(inActivity)}
+          {t("activity.since", { duration: formatDuration(inActivity) })}
         </span>
         <span className="font-mono tabular-nums shrink-0">
           {Math.floor(total / 60000)}:

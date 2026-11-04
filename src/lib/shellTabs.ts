@@ -2,12 +2,12 @@ import type { ChatEvent } from "../types";
 
 export interface ShellTab {
   id: string;
-  /** Comando ou ferramenta que produziu a saída. */
+  /** Command or tool that produced the output. */
   label: string;
-  /** Agente que lançou o comando, quando houver. */
+  /** Agent that started the command, if any. */
   agent?: string;
   status: "running" | "done" | "error";
-  /** Tamanho do texto já recebido, para marcar saída nova em abas não vistas. */
+  /** Length of text already received, to flag new output in unseen tabs. */
   size: number;
 }
 
@@ -19,8 +19,8 @@ const clip = (text: string, max: number) =>
   text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
 /**
- * Abas de shell a partir do texto recebido por origem e dos eventos da linha do tempo, que dão
- * título, estado e agente. Origem sem evento (não identificada) ainda assim vira aba.
+ * Shell tabs built from the text received per source and from the timeline events, which provide
+ * title, state and agent. A source without an event (unidentified) still becomes a tab.
  */
 export function buildShellTabs(
   shellRaw: Record<string, string> | undefined,
@@ -29,8 +29,8 @@ export function buildShellTabs(
   const byId = new Map(events.map((event) => [event.id, event]));
   return Object.entries(shellRaw ?? {}).flatMap(([id, text]) => {
     const event = byId.get(id);
-    // Só comandos são shells: leitura de arquivo, MCP e afins não ganham aba, e uma origem cujo
-    // evento ainda não chegou espera por ele em vez de aparecer com o id no lugar do comando.
+    // Only commands are shells: file reads, MCP and the like get no tab, and a source whose event
+    // hasn't arrived yet waits for it instead of showing its id in place of the command.
     if (event?.kind !== "command") return [];
     const parent = event?.parentId ? byId.get(event.parentId) : undefined;
     const label = event.detail || event.title;
@@ -47,8 +47,8 @@ export function buildShellTabs(
 }
 
 /**
- * Abas visíveis: as em execução, as concluídas mais recentes e a selecionada, em ordem de chegada;
- * o resto vai para o menu "mais", para centenas de comandos não lotarem a barra.
+ * Visible tabs: running ones, the most recent finished ones and the selected one, in arrival order;
+ * the rest go to the "more" menu, so hundreds of commands don't crowd the bar.
  */
 export function splitVisibleTabs(
   tabs: ShellTab[],
@@ -66,7 +66,7 @@ export function splitVisibleTabs(
   };
 }
 
-/** Acrescenta saída a uma origem respeitando os limites de texto por aba e de abas por sessão. */
+/** Appends output to a source, within the text-per-tab and tabs-per-session limits. */
 export function appendShellOutput(
   shellRaw: Record<string, string> | undefined,
   additions: Map<string, string>,
@@ -83,16 +83,16 @@ export const DEFAULT_AUTO_CLOSE_SECONDS = 120;
 export const AUTO_CLOSE_CHOICES = [30, 60, 120, 300, 600];
 
 export interface TabClock {
-  /** Quando a aba passou a ser vista como concluída. */
+  /** When the tab was first seen as finished. */
   finishedAt?: number;
-  /** Última vez em que a aba esteve aberta na tela. */
+  /** Last time the tab was open on screen. */
   viewedAt?: number;
 }
 
 /**
- * Abas que podem fechar sozinhas: só comando concluído com sucesso, que não está aberto, sem saída que
- * você ainda não viu, e depois do prazo contado da última vez que ele esteve na tela. Erro nunca fecha.
- * Fechar só esconde a aba; a saída continua em "Tudo".
+ * Tabs that may close on their own: only a command that finished successfully, isn't open, has no
+ * output you haven't seen, and after the delay counted from the last time it was on screen. Errors never close.
+ * Closing only hides the tab; the output stays under "All".
  */
 export function tabsToAutoClose(
   tabs: ShellTab[],

@@ -1,11 +1,12 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { t } = require("./i18n");
 
-// Informações da pasta escolhida no seletor nativo; o caminho vem do sistema, não do usuário digitando.
+// Info about the folder chosen in the native picker; the path comes from the system, not from typing.
 function describeDirectory(dir, fsApi = fs) {
   const stat = fsApi.statSync(dir);
-  if (!stat.isDirectory()) throw new Error("Escolha uma pasta, não um arquivo.");
+  if (!stat.isDirectory()) throw new Error(t("errors.pickFolder"));
   fsApi.accessSync(dir, fs.constants.R_OK);
   return {
     path: dir,
@@ -25,7 +26,7 @@ function startDirectory(candidate, fsApi = fs, home = os.homedir()) {
 
 async function pickDirectory({ dialog, window, defaultPath, title }, fsApi = fs) {
   const result = await dialog.showOpenDialog(window, {
-    title: title || "Escolher a pasta do projeto",
+    title: title || t("dialogs.chooseProjectFolder"),
     defaultPath: startDirectory(defaultPath, fsApi),
     properties: ["openDirectory", "createDirectory"],
   });

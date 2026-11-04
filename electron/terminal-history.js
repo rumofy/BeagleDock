@@ -1,23 +1,24 @@
-// Modo terminal: o que acontece na interface da CLI também vai para o histórico do BeagleDock. A
-// tela do terminal não serve de fonte (cores, cursor, redesenhos); a fonte é o arquivo da conversa
-// que a própria CLI grava (o mesmo que o histórico Ctrl+H já importa). Ao fim de cada resposta, ao
-// fechar o terminal e quando a CLI sai, as mensagens novas desse arquivo viram mensagens da conversa.
+const { t } = require("./i18n");
+// Terminal mode: what happens in the CLI's interface also goes into BeagleDock's history. The
+// terminal screen isn't the source (colors, cursor, redraws); the source is the conversation file
+// the CLI itself saves (the same one Ctrl+H history already imports). At the end of each reply, when
+// the terminal closes and when the CLI exits, the new messages in that file become conversation messages.
 //
-// Só entra o que surgiu depois de o terminal abrir: o que já estava no arquivo veio do chat e já
-// está no banco. Conversa nova aberta direto no terminal ainda não tem ID nativo: o Claude Code
-// recebe um (`--session-id`); no Codex e no AGY, a conversa criada é achada pela pasta e pela hora.
+// Only what came after the terminal opened counts: what was already in the file came from the chat and is
+// already in the database. A new conversation opened straight in the terminal has no native ID yet: Claude Code
+// gets one (`--session-id`); in Codex and AGY, the created conversation is found by folder and time.
 
 const dbTime = (ms) => new Date(ms).toISOString().replace("T", " ").replace("Z", "");
 const PROVIDER_NAMES = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
-// Folga entre abrir o terminal e a CLI gravar o começo da conversa (relógios, arredondamento).
+// Slack between opening the terminal and the CLI saving the start of the conversation (clocks, rounding).
 const DISCOVERY_SLACK_MS = 5000;
 
 function createTerminalHistory({
   // (providerId, nativeId, cwd) => { messages: [{ id, sender, text, modelBadge, timestamp }] }
   readConversation,
-  // ({ exclude }) => [{ provider, sessionId, project, timestampMs }] (conversas só da CLI)
+  // ({ exclude }) => [{ provider, sessionId, project, timestampMs }] (CLI-only conversations)
   listNative,
-  // () => ["provider:nativeId", ...] (já ligadas a conversas do BeagleDock)
+  // () => ["provider:nativeId", ...] (already linked to BeagleDock conversations)
   linkedIds = async () => [],
   store,
   emit = () => {},
@@ -34,22 +35,22 @@ function createTerminalHistory({
     }
   }
 
-  /** O terminal da conversa abriu: guarda o que já existia para não importar de novo. */
+  /** The conversation's terminal opened: keep what already existed so it isn't imported again. */
   async function begin({ sessionId, providerId, cwd, nativeId, newNativeId }) {
     const entry = {
       providerId,
       cwd,
       openedAt: now(),
       nativeId: nativeId || null,
-      // Claude Code: o ID escolhido na abertura só vale quando a CLI gravar a conversa.
+      // Claude Code: the ID chosen at opening only applies once the CLI saves the conversation.
       newNativeId: nativeId ? null : newNativeId || null,
       baseline: new Set(),
       saved: new Set(),
       chain: Promise.resolve(),
     };
     entries.set(sessionId, entry);
-    // Uma sincronização pedida antes de o retrato inicial ficar pronto espera por ele: sem isso, o
-    // que veio do chat seria importado de novo.
+    // A sync requested before the initial snapshot is ready waits for it: without that, what
+    // came from the chat would be imported again.
     entry.chain = (async () => {
       if (!entry.nativeId) return;
       const messages = await read(providerId, entry.nativeId, cwd);
@@ -79,7 +80,7 @@ function createTerminalHistory({
           .sort((a, b) => b.timestampMs - a.timestampMs)[0]?.sessionId || null;
     }
     if (!found) return null;
-    // Liga a conversa nativa à do BeagleDock: o chat continua a mesma conversa depois.
+    // Links the native conversation to BeagleDock's: the chat continues the same conversation afterwards.
     await store.setNativeSession(sessionId, entry.providerId, found, entry.cwd);
     entry.nativeId = found;
     return found;
@@ -103,7 +104,7 @@ function createTerminalHistory({
         sessionId,
         provider: entry.providerId,
         sender: user ? "user" : entry.providerId,
-        senderName: user ? "Você" : PROVIDER_NAMES[entry.providerId] || entry.providerId,
+        senderName: user ? t("profile.you") : PROVIDER_NAMES[entry.providerId] || entry.providerId,
         text: String(m.text || ""),
         modelBadge: user ? undefined : m.modelBadge || undefined,
         timestamp: new Date(at).toISOString(),
@@ -116,7 +117,7 @@ function createTerminalHistory({
     return { added: fresh.length, lastReply, nativeId };
   }
 
-  /** Grava as mensagens novas da conversa nativa; uma sincronização por vez em cada conversa. */
+  /** Saves the new messages of the native conversation; one sync at a time per conversation. */
   function sync(sessionId) {
     const entry = entries.get(sessionId);
     if (!entry) return Promise.resolve({ added: 0 });
@@ -125,11 +126,11 @@ function createTerminalHistory({
     return next.catch(() => ({ added: 0 }));
   }
 
-  /** O terminal fechou ou a CLI saiu: a última sincronização e o fim do acompanhamento. */
+  /** The terminal closed or the CLI exited: the last sync and the end of tracking. */
   async function end(sessionId) {
     const entry = entries.get(sessionId);
     const result = await sync(sessionId);
-    // Reaberto enquanto sincronizava: o acompanhamento novo continua.
+    // Reopened while syncing: the new tracking continues.
     if (entries.get(sessionId) === entry) entries.delete(sessionId);
     return result;
   }

@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t } from "../../i18n";
 export function MemoryHeader() {
   const {
     setActiveTab,
@@ -18,10 +19,10 @@ export function MemoryHeader() {
                 </div>
                 <div>
                   <div className="text-sm font-bold text-[#1c1b18]">
-                    Wiki do ai-memory
+                    {t("memoryHeader.title")}
                   </div>
                   <div className="text-[11px] text-[#7e7565]">
-                    Projetos, páginas e manutenção assistida
+                    {t("memoryHeader.subtitle")}
                   </div>
                 </div>
               </div>
@@ -35,13 +36,13 @@ export function MemoryHeader() {
                     size={13}
                     className={isLoadingMemory ? "animate-spin" : ""}
                   />
-                  <span>Sincronizar</span>
+                  <span>{t("memoryHeader.sync")}</span>
                 </button>
                 <button
                   onClick={() => setActiveTab("chat")}
                   className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] text-[#36322b] transition"
                 >
-                  Voltar ao Chat
+                  {t("settingsHeader.back")}
                 </button>
               </div>
             </div>

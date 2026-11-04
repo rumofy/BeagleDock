@@ -100,7 +100,7 @@ function tokenizeDiff(code: string): Token[] {
   return tokens;
 }
 
-/** Destaque leve por famílias de linguagem (sem dependências): comentários, textos, números e palavras-chave. */
+/** Light highlighting by language family (no dependencies): comments, strings, numbers and keywords. */
 export function tokenize(code: string, language: string): Token[] {
   const lang = (language || "").toLowerCase();
   if (lang === "diff" || lang === "patch") return tokenizeDiff(code);
@@ -125,7 +125,7 @@ export function tokenize(code: string, language: string): Token[] {
   while (i < n) {
     const ch = code[i];
     const rest2 = code.slice(i, i + 2);
-    // Comentários
+    // Comments
     if (
       !json &&
       (code.startsWith(lineComment, i) || (family === "c" && rest2 === "/*"))
@@ -158,7 +158,7 @@ export function tokenize(code: string, language: string): Token[] {
       i = end;
       continue;
     }
-    // Números
+    // Numbers
     if (/[0-9]/.test(ch) && !/[\w$]/.test(code[i - 1] || "")) {
       const m = /^(0x[0-9a-fA-F_]+|\d[\d_]*(\.\d+)?([eE][+-]?\d+)?)/.exec(
         code.slice(i),

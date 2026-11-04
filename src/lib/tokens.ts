@@ -1,10 +1,11 @@
-/** "850", "15,4k", "1,0M". */
+import { decimal, t } from "../i18n";
+/** "850", "15.4k", "1.0M" (with a decimal comma in Spanish and Portuguese). */
 export function formatTokens(value: number | null | undefined): string {
-  if (!Number.isFinite(value as number) || (value as number) < 0) return "N/D";
+  if (!Number.isFinite(value as number) || (value as number) < 0) return t("common.na");
   const n = value as number;
   if (n < 1000) return String(Math.round(n));
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0).replace(".", ",")}k`;
-  return `${(n / 1_000_000).toFixed(1).replace(".", ",")}M`;
+  if (n < 1_000_000) return `${decimal(n / 1000, n < 10_000 ? 1 : 0)}k`;
+  return `${decimal(n / 1_000_000, 1)}M`;
 }
 
 export type ContextLevel = "ok" | "warn" | "danger";

@@ -1,12 +1,12 @@
-// Correção de nomes próprios no ditado por voz (sem I/O).
+// Fixing proper names in voice dictation (no I/O).
 //
-// O Parakeet local não aceita dica de vocabulário: quando a pessoa fala "BeagleDock" ele
-// escreve o que ouviu ("Bigodok", "Bigaloc"). Aqui o texto é comparado pelo som com os nomes
-// conhecidos (projeto aberto e termos cadastrados no vocabulário) e o trecho é trocado pela grafia certa.
-// As regras são conservadoras: só nomes com grafia própria, sem acento (português fica
-// intacto), sem começar ou terminar em artigo/preposição e com o primeiro som igual.
+// The local Parakeet doesn't accept vocabulary hints: when the person says "BeagleDock" it
+// writes what it heard ("Bigodok", "Bigaloc"). Here the text is compared by sound with the known
+// names (open project and terms registered in the vocabulary) and the fragment is replaced by the right spelling.
+// The rules are conservative: only names with their own spelling, without accents (Portuguese stays
+// intact), not starting or ending in an article/preposition and with the same first sound.
 
-// Chave fonética para nomes em inglês escritos por um modelo treinado em português.
+// Phonetic key for English names written by a model trained in Portuguese.
 function soundKey(value) {
   return String(value || "")
     .normalize("NFD")
@@ -48,7 +48,7 @@ function distance(a, b) {
 }
 const similarity = (a, b) => 1 - distance(a, b) / Math.max(a.length, b.length, 1);
 
-/** Semelhança de som (0 a 1) entre o que foi transcrito e o nome. */
+/** Sound similarity (0 to 1) between what was transcribed and the name. */
 function soundScore(phrase, name) {
   const a = soundKey(phrase);
   const b = soundKey(name);
@@ -68,15 +68,15 @@ const EDGE_WORDS = new Set(
   ).split(" "),
 );
 
-/** Nome com grafia própria (maiúscula no meio, hífen ou mais de uma palavra com maiúscula). */
+/** Name with its own spelling (capital in the middle, hyphen or more than one capitalized word). */
 function hasOwnSpelling(name) {
   const s = String(name || "");
   return /\p{Lu}/u.test(s.slice(1)) || /-/.test(s) || (/\s/.test(s) && /\p{Lu}/u.test(s));
 }
 
 /**
- * Nomes que podem ser corrigidos pelo som: grafia própria e chave longa o bastante.
- * `trusted` são os termos cadastrados pela pessoa: basta começarem com maiúscula ("Rumofy").
+ * Names that can be fixed by sound: their own spelling and a long enough key.
+ * `trusted` are the terms the person registered: starting with a capital is enough ("Rumofy").
  */
 function soundNames(names, trusted = []) {
   const out = [];
@@ -94,13 +94,13 @@ function soundNames(names, trusted = []) {
   return out;
 }
 
-/** Troca, no texto, trechos que soam como um dos nomes pela grafia certa do nome. */
+/** Replaces, in the text, fragments that sound like one of the names with the name's right spelling. */
 function fixNamesBySound(text, names, trusted = []) {
   const candidates = soundNames(names, trusted);
   if (!candidates.length) return String(text || "");
   const source = String(text || "");
   const known = new Set([...names, ...trusted].map((n) => String(n || "").trim().toLowerCase()));
-  // Palavras grudadas em caminho, arquivo ou variável (`~/.app`, `a_b`, `x.json`) ficam de fora.
+  // Words glued to a path, file or variable (`~/.app`, `a_b`, `x.json`) are left out.
   const tokens = [...source.matchAll(/[\p{L}\p{N}][\p{L}\p{N}']*/gu)].map((m) => ({
     word: m[0],
     start: m.index,
@@ -118,19 +118,24 @@ function fixNamesBySound(text, names, trusted = []) {
       if (EDGE_WORDS.has(lower[0]) || EDGE_WORDS.has(lower[n - 1])) continue;
       if (win.some((t) => t.glued)) continue;
       if (words.some((w) => ACCENT.test(w) || w.length < 2 || /\d/.test(w))) continue;
-      // Só palavras separadas por espaço (sem pontuação no meio).
+      // Only words separated by spaces (no punctuation in between).
       const end = win[n - 1].start + win[n - 1].word.length;
       if (n > 1 && /[^\p{L}\p{N}\s']/u.test(source.slice(win[0].start, end))) continue;
       const phrase = words.join(" ");
-      // O que já está escrito como um nome conhecido fica como está.
+      // What's already written as a known name stays as it is, and a name already spelled right
+      // doesn't swallow the words around it ("BeagleDock is", "Codex's").
       if (known.has(phrase.toLowerCase())) continue;
+      if (lower.some((w) => known.has(w.replace(/'s$/, "")))) continue;
       const key = soundKey(phrase);
       for (const c of candidates) {
-        // Trecho que já contém outro nome conhecido (ex.: "Claude Codex") não é mexido.
+        // A fragment that already contains another known name (e.g. "Claude Codex") isn't touched.
         if (lower.some((w) => known.has(w) && !c.words.includes(w))) continue;
-        if (Math.abs(key.length - c.key.length) > Math.max(1, Math.round(c.key.length * 0.3))) continue;
+        // A single word must be almost the name's length: English dictation is full of short
+        // words that sound close to a name ("checks" isn't "Codex").
+        const slack = n === 1 && c.words.length === 1 ? 1 : Math.max(1, Math.round(c.key.length * 0.3));
+        if (Math.abs(key.length - c.key.length) > slack) continue;
         if (!sameStart(key, c.key)) continue;
-        // Mesmo número de palavras: cada uma precisa soar como a do nome ("Clod Code").
+        // Same number of words: each one must sound like the name's ("Clod Code").
         if (n > 1 && n === c.words.length && !lower.every((w, k) => wordMatches(w, c.words[k]))) continue;
         const score = soundScore(phrase, c.name);
         if (score >= MIN_SCORE && (!best || score > best.score))

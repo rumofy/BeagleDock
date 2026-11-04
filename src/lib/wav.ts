@@ -1,9 +1,9 @@
-/** Taxa usada no ditado: é a que os modelos de transcrição usam internamente. */
+/** Sample rate used for dictation: the one transcription models use internally. */
 export const DICTATION_SAMPLE_RATE = 16000;
 
 /**
- * Normaliza o volume (pico em ~0,9) sem amplificar silêncio puro: voz baixa no
- * microfone vira um sinal que o modelo entende melhor.
+ * Normalizes the volume (peak at ~0.9) without amplifying pure silence: a quiet voice on the
+ * microphone becomes a signal the model understands better.
  */
 export function normalizePeak(samples: Float32Array, target = 0.9, maxGain = 8): Float32Array {
   let peak = 0;
@@ -16,7 +16,7 @@ export function normalizePeak(samples: Float32Array, target = 0.9, maxGain = 8):
   return out;
 }
 
-/** Indica se a gravação tem algo além de silêncio (RMS acima do piso de ruído). */
+/** Whether the recording has anything besides silence (RMS above the noise floor). */
 export function hasSpeech(samples: Float32Array, floor = 0.003): boolean {
   if (samples.length === 0) return false;
   let sum = 0;
@@ -24,7 +24,7 @@ export function hasSpeech(samples: Float32Array, floor = 0.003): boolean {
   return Math.sqrt(sum / samples.length) > floor;
 }
 
-/** WAV PCM 16 bits mono. */
+/** 16-bit mono PCM WAV. */
 export function encodeWav(samples: Float32Array, sampleRate: number): Uint8Array {
   const bytes = new Uint8Array(44 + samples.length * 2);
   const view = new DataView(bytes.buffer);
@@ -59,7 +59,7 @@ export function toBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Junta o texto ditado ao que já está no campo, com um espaço quando precisa. */
+/** Joins the dictated text to what is already in the field, with a space when needed. */
 export function insertDictation(current: string, caret: number, dictated: string) {
   const text = dictated.trim();
   if (!text) return { text: current, caret };
@@ -73,8 +73,8 @@ export function insertDictation(current: string, caret: number, dictated: string
 }
 
 /**
- * Ditado em sequência: cada trecho continua no fim do que já foi escrito (não onde o
- * cursor ficou), e o cursor vai para o fim, pronto para o próximo.
+ * Continuous dictation: each part continues at the end of what was already written (not where the
+ * caret was), and the caret moves to the end, ready for the next one.
  */
 export function appendDictation(current: string, dictated: string) {
   return insertDictation(current, current.length, dictated);

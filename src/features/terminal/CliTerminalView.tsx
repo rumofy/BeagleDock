@@ -7,13 +7,14 @@ import { useApp } from "../../hooks/AppStateProvider";
 import type { ChatSession } from "../../types";
 import { DICTATION_TOGGLE_EVENT } from "./TerminalDictationButton";
 
-// Caminho arrastado para o terminal: entre aspas simples quando tem espaço ou símbolo do shell.
+import { t } from "../../i18n";
+// Path dragged into the terminal: single-quoted when it has a space or a shell symbol.
 export const quotePath = (p: string) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.replace(/'/g, `'\\''`)}'`);
 
 /**
- * A interface própria da CLI da conversa. Teclas, colagem e arquivos arrastados vão direto
- * para ela: anexar imagem, plano e aprovações ficam por conta da CLI (o histórico é lido do arquivo
- * da conversa nativa, ver electron/terminal-history.js).
+ * The conversation's own CLI interface. Keys, pastes and dragged files go straight to it:
+ * attaching images, plan mode and approvals are up to the CLI (the history is read from the native
+ * conversation file, see electron/terminal-history.js).
  */
 export function CliTerminalView({ session, compact = false }: { session: ChatSession; compact?: boolean }) {
   const { cliTerminals, setAppError } = useApp();
@@ -21,7 +22,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [error, setError] = useState("");
-  // Muda para forçar a reabertura depois que a CLI encerrou.
+  // Changes to force reopening after the CLI exited.
   const [attempt, setAttempt] = useState(0);
   const state = terminals[session.id];
 
@@ -58,10 +59,10 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
     term.onData(write);
     term.onBinary(write);
     term.onResize(({ cols, rows }) => void beagleApi.cliTerminalResize({ sessionId: id, cols, rows }));
-    // Ctrl+V: com imagem, a CLI lê a área de transferência sozinha (é assim que ela anexa); com
-    // texto, cola. Ctrl+Shift+C/V e Ctrl+C com seleção copiam/colam como num terminal comum.
+    // Ctrl+V: with an image, the CLI reads the clipboard itself (that's how it attaches); with text,
+    // it pastes. Ctrl+Shift+C/V and Ctrl+C with a selection copy/paste like a regular terminal.
     term.attachCustomKeyEventHandler((event) => {
-      // Os atalhos globais do BeagleDock (Ctrl+K, Ctrl+H, Alt+P…) não roubam teclas da CLI.
+      // BeagleDock's global shortcuts (Ctrl+K, Ctrl+H, Alt+P…) don't steal keys from the CLI.
       event.stopPropagation();
       if (event.type !== "keydown") return true;
       const key = event.key.toLowerCase();
@@ -78,7 +79,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
             if (image && !event.shiftKey) write("\x16");
             else if (text) term.paste(text);
           })
-          .catch((e: Error) => setAppError(`Não foi possível ler a área de transferência: ${e.message}`));
+          .catch((e: Error) => setAppError(t("terminal.clipboardFailed", { error: e.message })));
         return false;
       }
       if (event.ctrlKey && !event.altKey && key === "c" && (event.shiftKey || term.hasSelection())) {
@@ -115,7 +116,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
           term.write(item.data);
           end = item.end;
         }
-        // A CLI redesenha a tela no tamanho desta visão (outra visão pode ter mudado o tamanho).
+        // The CLI redraws the screen at this view's size (another view may have changed it).
         void beagleApi.cliTerminalResize({ sessionId: id, cols: term.cols, rows: term.rows });
         term.focus();
       })
@@ -133,8 +134,8 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
       unsubscribe();
       registerPaster(id, null);
       termRef.current = null;
-      // O xterm agenda um ajuste da rolagem logo depois de abrir; descartado antes disso, ele lê o
-      // renderizador já destruído ("reading 'dimensions'"). Trocar de conversa rápido causava isso.
+      // xterm schedules a scroll adjustment right after opening; disposed before that, it reads the
+      // already destroyed renderer ("reading 'dimensions'"). Switching conversations quickly caused it.
       window.setTimeout(() => term.dispose(), 100);
     };
   }, [session.id, session.providerId, session.cwd, compact, attempt, markStarted, registerPaster]);
@@ -162,7 +163,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
           <div className="max-w-md rounded-xl border border-[#3f3f46] bg-[#232326] p-4 text-sm text-[#e4e4e7] space-y-3">
             <p>
               {error ||
-                `A CLI encerrou${state?.exitCode !== null && state?.exitCode !== undefined ? ` (código ${state.exitCode})` : ""}.`}
+                (state?.exitCode !== null && state?.exitCode !== undefined ? t("terminal.exitedCode", { code: state.exitCode }) : t("terminal.exited"))}
             </p>
             <div className="flex gap-2">
               <button
@@ -176,7 +177,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
                 }}
                 className="px-3 py-1.5 rounded-lg bg-white text-[#1c1b18] text-xs font-bold"
               >
-                Reabrir
+                {t("terminal.reopen")}
               </button>
             </div>
           </div>

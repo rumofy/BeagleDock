@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-// Compila o motor de ditado local (parakeet-cli do whisper.cpp) otimizado para esta CPU.
-// A distribuição é local: o binário vai para vendor/speech e entra no pacote como recurso.
-// Downloads com SHA-256 fixo; o CMake oficial é baixado só se não houver um no PATH.
+// Builds the local dictation engine (whisper.cpp's parakeet-cli) optimized for this CPU.
+// Distribution is local: the binary goes to vendor/speech and enters the package as a resource.
+// Downloads with a fixed SHA-256; the official CMake is downloaded only if there's none on the PATH.
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -42,7 +42,7 @@ async function fetchVerified({ url, sha256 }, file) {
   if (!response.ok) throw new Error(`Download falhou (HTTP ${response.status}): ${url}`);
   const data = Buffer.from(await response.arrayBuffer());
   const actual = createHash("sha256").update(data).digest("hex");
-  if (actual !== sha256) throw new Error(`SHA-256 inesperado para ${url}: ${actual}`);
+  if (actual !== sha256) throw new Error(`Unexpected SHA-256 for ${url}: ${actual}`);
   fs.writeFileSync(file, data);
   return file;
 }
@@ -61,17 +61,17 @@ async function cmakeBinary() {
 
 async function main() {
   if (process.platform !== "linux" || process.arch !== "x64") {
-    console.log("Ditado local: build disponível só para Linux x64; pulando.");
+    console.log("Local dictation: build available only for Linux x64; skipping.");
     return;
   }
   const target = path.join(OUT_DIR, "parakeet-cli");
   const stampFile = path.join(OUT_DIR, "BUILD");
   if (!process.argv.includes("--force") && fs.existsSync(target) && fs.readFileSync(stampFile, "utf8").trim() === STAMP) {
-    console.log(`Motor de ditado já compilado (${STAMP}).`);
+    console.log(`Dictation engine already built (${STAMP}).`);
     return;
   }
   for (const tool of ["g++", "make", "tar"])
-    if (!has(tool)) throw new Error(`Ferramenta ausente para compilar o ditado local: ${tool}`);
+    if (!has(tool)) throw new Error(`Missing tool to build local dictation: ${tool}`);
   fs.mkdirSync(CACHE, { recursive: true });
   const cmake = await cmakeBinary();
   const tarball = await fetchVerified(WHISPER, path.join(CACHE, `whisper.cpp-${WHISPER.version}.tar.gz`));
@@ -83,7 +83,7 @@ async function main() {
     "-S", src, "-B", build,
     "-DCMAKE_BUILD_TYPE=Release",
     "-DBUILD_SHARED_LIBS=OFF",
-    "-DGGML_NATIVE=ON", // AVX2/FMA/VNNI desta máquina: sem isso o modelo roda dezenas de vezes mais devagar
+    "-DGGML_NATIVE=ON", // this machine's AVX2/FMA/VNNI: without it the model runs dozens of times slower
     "-DWHISPER_BUILD_TESTS=OFF",
     "-DWHISPER_BUILD_SERVER=OFF",
     "-DWHISPER_SDL2=OFF",
@@ -94,7 +94,7 @@ async function main() {
   fs.chmodSync(target, 0o755);
   fs.copyFileSync(path.join(src, "LICENSE"), path.join(OUT_DIR, "LICENSE.whisper.cpp"));
   fs.writeFileSync(stampFile, `${STAMP}\n`);
-  console.log(`Motor de ditado compilado em ${path.relative(ROOT, target)}.`);
+  console.log(`Dictation engine built at ${path.relative(ROOT, target)}.`);
 }
 
 main().catch((error) => {

@@ -4,6 +4,7 @@ import { recordChoice, type SessionChoice } from "../lib/sessionDefaults";
 import type { AIProviderId, AppSettings } from "../types";
 import type { GlobalPolicy } from "../types/api";
 
+import { t } from "../i18n";
 export function useSettings(setAppError: (message: string) => void) {
   const [settingsSavedBanner, setSettingsSavedBanner] =
     useState<boolean>(false);
@@ -22,8 +23,8 @@ export function useSettings(setAppError: (message: string) => void) {
   });
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
-  // Última escolha de modelo, nível e permissão da CLI; vale para os próximos chats se a opção
-  // estiver ligada. Grava o mapa inteiro porque o servidor só mescla o primeiro nível.
+  // Last model, level and permission chosen for the CLI; applies to the next chats if the option
+  // is on. Saves the whole map because the server only merges the first level.
   const recordSessionChoice = (providerId: AIProviderId, choice: SessionChoice) => {
     const lastSessionChoices = recordChoice(
       settingsRef.current.lastSessionChoices,
@@ -37,7 +38,7 @@ export function useSettings(setAppError: (message: string) => void) {
       .saveAppSettings({ lastSessionChoices } as Partial<AppSettings> as AppSettings)
       .then((result) => {
         if (!result?.success)
-          throw new Error(result?.error || "Falha ao guardar a escolha da conversa.");
+          throw new Error(result?.error || t("settings.choiceSaveFailed"));
       })
       .catch((error: Error) => setAppError(error.message));
   };
@@ -50,12 +51,12 @@ export function useSettings(setAppError: (message: string) => void) {
   }, []);
   const handleSaveSettings = async () => {
     try {
-      // O zoom é gravado por Ctrl +/−; o valor guardado no estado pode estar velho.
+      // Zoom is saved by Ctrl +/−; the value held in state may be stale.
       const { zoomFactor: _stale, ...toSave } = settings;
       void _stale;
       const result = await beagleApi.saveAppSettings(toSave as typeof settings);
       if (!result?.success)
-        throw new Error(result?.error || "Falha ao salvar configurações.");
+        throw new Error(result?.error || t("settings.saveFailed"));
       setSettings(result.settings);
       setAppError("");
       setSettingsSavedBanner(true);

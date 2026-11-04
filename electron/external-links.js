@@ -1,15 +1,16 @@
-// O endereço vem de texto da IA: só abre http(s) simples no navegador padrão do sistema.
+const { t } = require("./i18n");
+// The address comes from AI text: only plain http(s) opens, in the system's default browser.
 function parseExternalUrl(value) {
   let url;
   try {
     url = new URL(String(value || "").trim());
   } catch {
-    throw new Error("Endereço inválido.");
+    throw new Error(t("errors.invalidAddress"));
   }
   if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new Error("Só é possível abrir endereços http ou https.");
+    throw new Error(t("errors.httpOnly"));
   if (url.username || url.password)
-    throw new Error("Endereços com usuário ou senha não são abertos.");
+    throw new Error(t("errors.credentialsInUrl"));
   return url.href;
 }
 

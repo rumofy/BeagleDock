@@ -4,7 +4,7 @@ const { redact, MASK } = require("../electron/redact");
 const { createEventTracker } = require("../electron/stream-events");
 const { oneLine, claudeToolActivity, codexItemActivity } = require("../electron/activity-labels");
 
-test("mascara cabeçalhos, chaves e variáveis sensíveis em comandos", () => {
+test("masks sensitive headers, keys and variables in commands", () => {
   const cases = [
     ['curl -H "Authorization: Bearer abc123def456ghi789" https://api.x.com', "abc123def456ghi789"],
     ["export GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz0123456789", "ghp_abcdefghijklmnopqrstuvwxyz0123456789"],
@@ -17,18 +17,18 @@ test("mascara cabeçalhos, chaves e variáveis sensíveis em comandos", () => {
   ];
   for (const [input, secret] of cases) {
     const out = redact(input);
-    assert.ok(!out.includes(secret), `vazou em: ${input} -> ${out}`);
+    assert.ok(!out.includes(secret), `leaked in: ${input} -> ${out}`);
     assert.ok(out.includes(MASK));
   }
 });
 
-test("não altera texto comum nem comandos sem segredo", () => {
+test("doesn't change ordinary text or commands without a secret", () => {
   for (const text of ["npm test -- --watch=false", "git commit -m 'corrige token de paginação'", "ls -la src/hooks", "Analisando os testes e o arquivo package.json", "", undefined]) {
     assert.equal(redact(text), text);
   }
 });
 
-test("a linha do tempo (ao vivo e gravada) nunca carrega o segredo", () => {
+test("the timeline (live and saved) never carries the secret", () => {
   const sent = [];
   const tracker = createEventTracker({ emit: (_c, d) => sent.push(d.event), sessionId: "s" });
   tracker.start("r");
@@ -41,13 +41,13 @@ test("a linha do tempo (ao vivo e gravada) nunca carrega o segredo", () => {
   assert.ok(!everything.includes("hunter2hunter2"));
 });
 
-test("rótulos de atividade dos três provedores mascaram comandos e argumentos", () => {
+test("activity labels of the three providers mask commands and arguments", () => {
   assert.ok(!oneLine("TOKEN=abcdefghijklmnop123 run").includes("abcdefghijklmnop123"));
   assert.ok(!claudeToolActivity({ name: "Bash", input: { command: "export API_KEY=zzzzzzzzzzzz9999" } }).detail.includes("zzzzzzzzzzzz9999"));
   assert.ok(!codexItemActivity({ type: "mcpToolCall", server: "s", tool: "t", arguments: { api_key: "kkkkkkkkkkkk8888" } }).detail.includes("kkkkkkkkkkkk8888"));
 });
 
-test("formatos que escapavam: flag com valor separado, esquema no Authorization e chave PEM", () => {
+test("formats that slipped through: a flag with a separate value, the scheme in Authorization and a PEM key", () => {
   const cases = [
     ["mysql --password hunter2secret -u root", "hunter2secret"],
     ["curl -H 'Authorization: token ghx_abcdefghij123456' x", "ghx_abcdefghij123456"],
@@ -59,7 +59,7 @@ test("formatos que escapavam: flag com valor separado, esquema no Authorization 
   assert.equal(redact("use --force e --verbose sem segredo"), "use --force e --verbose sem segredo");
 });
 
-test("um segredo cortado entre dois trechos do raciocínio não vaza o resto", () => {
+test("a secret split between two reasoning chunks doesn't leak the rest", () => {
   const sent = [];
   const tracker = createEventTracker({ emit: (_c, d) => sent.push(d.event), sessionId: "s", now: (() => { let t = 0; return () => (t += 500); })() });
   tracker.start("r");
@@ -68,7 +68,17 @@ test("um segredo cortado entre dois trechos do raciocínio não vaza o resto", (
   tracker.appendText("t", "qrstuvwxyz123456 e eu a usei");
   tracker.finishRunning();
   const everything = JSON.stringify([...sent, ...tracker.snapshot()]);
-  assert.ok(!everything.includes("qrstuvwxyz123456"), "o resto da chave vazou");
+  assert.ok(!everything.includes("qrstuvwxyz123456"), "the rest of the key leaked");
   assert.ok(!everything.includes("abcdefghijklmnop"));
   assert.ok(tracker.get("t").text.includes("eu a usei"), "o texto comum continua");
+});
+
+test("Claude Code's proposed plan becomes a full-text plan step shown in the conversation", () => {
+  const plan = "# Plan\n\n1. Create the table\n2. Write the tests";
+  const label = claudeToolActivity({ name: "ExitPlanMode", input: { plan } });
+  assert.equal(label.kind, "plan");
+  assert.equal(label.text, plan);
+  assert.equal(label.proposal, true);
+  // Without a plan text it stays an ordinary tool step.
+  assert.equal(claudeToolActivity({ name: "ExitPlanMode", input: {} }).kind, "tool");
 });

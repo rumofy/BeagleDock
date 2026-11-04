@@ -1,14 +1,15 @@
-// Comandos nativos de cada CLI, lidos da própria CLI a cada consulta (nada é copiado para cá):
-// assim, comandos novos ou removidos numa atualização aparecem sem mudar o BeagleDock.
-//  - Claude Code: evento `init` de um comando local (`/context`: não chama o modelo, custo zero).
-//  - Antigravity: evento `command_result` de `/help` no modo programático (também sem modelo).
-//  - Codex: `skills/list` do app-server; o protocolo não lista os comandos internos do terminal.
+// Native commands of each CLI, read from the CLI itself on every query (nothing is copied here):
+// so commands added or removed in an update show up without changing BeagleDock.
+//  - Claude Code: `init` event of a local command (`/context`: doesn't call the model, zero cost).
+//  - Antigravity: `command_result` event of `/help` in programmatic mode (also without the model).
+//  - Codex: the app-server's `skills/list`; the protocol doesn't list the terminal's built-in commands.
 const { findBinary, spawnCli } = require("./platform");
+const { t } = require("./i18n");
 
 const PROBE_TIMEOUT_MS = 20000;
 const CACHE_TTL_MS = 60000;
 
-// Executa um processo curto e entrega cada linha JSON a `onEvent`; encerra quando ela devolve um valor.
+// Runs a short process and hands each JSON line to `onEvent`; stops when it returns a value.
 function probe({ spawn, bin, args, cwd, send, onEvent, timeoutMs = PROBE_TIMEOUT_MS }) {
   return new Promise((resolve, reject) => {
     const child = spawn(bin, args, { cwd, stdio: ["pipe", "pipe", "pipe"] });
@@ -28,7 +29,7 @@ function probe({ spawn, bin, args, cwd, send, onEvent, timeoutMs = PROBE_TIMEOUT
       error ? reject(error) : resolve(value);
     };
     const timer = setTimeout(
-      () => finish(new Error("A CLI não respondeu a tempo.")),
+      () => finish(new Error(t("errors.cliTimeout"))),
       timeoutMs,
     );
     const handle = (line) => {
@@ -59,7 +60,7 @@ function probe({ spawn, bin, args, cwd, send, onEvent, timeoutMs = PROBE_TIMEOUT
     child.stderr?.on("data", (chunk) => (stderr += chunk));
     child.on("error", (error) => finish(error));
     child.on("close", (code) =>
-      finish(new Error(stderr.trim() || `A CLI encerrou (${code}) sem responder.`)),
+      finish(new Error(stderr.trim() || t("errors.cliExitedSilent", { code }))),
     );
     if (send) send((message) => child.stdin.write(JSON.stringify(message) + "\n"));
     else child.stdin.end();
@@ -125,7 +126,7 @@ function codexSkills(response) {
 
 const LIMITATIONS = {
   codex:
-    "O Codex não informa a lista dos comandos internos do terminal (como /status); aparecem só as skills.",
+    t("commands.codexNoBuiltins"),
 };
 
 function createNativeCommands({
@@ -141,7 +142,7 @@ function createNativeCommands({
     const base = { cwd, spawn, timeoutMs };
     if (providerId === "claude") {
       const bin = find("claude");
-      if (!bin) throw new Error("Claude Code não está instalado.");
+      if (!bin) throw new Error(t("errors.notInstalled", { name: "Claude Code" }));
       return claudeCommands(
         await probe({
           ...base,
@@ -153,7 +154,7 @@ function createNativeCommands({
     }
     if (providerId === "antigravity") {
       const bin = find("agy");
-      if (!bin) throw new Error("Antigravity não está instalado.");
+      if (!bin) throw new Error(t("errors.notInstalled", { name: "Antigravity" }));
       return agyCommands(
         await probe({
           ...base,
@@ -166,7 +167,7 @@ function createNativeCommands({
     }
     if (providerId === "codex") {
       const bin = find("codex");
-      if (!bin) throw new Error("Codex CLI não está instalado.");
+      if (!bin) throw new Error(t("errors.notInstalled", { name: "Codex CLI" }));
       return codexSkills(
         await probe({
           ...base,
@@ -183,7 +184,7 @@ function createNativeCommands({
               write({ method: "initialized" });
               write({ id: "skills", method: "skills/list", params: { cwds: [cwd], forceReload: true } });
             } else if (e.id === "skills") {
-              if (e.error) throw new Error(e.error.message || "Falha ao listar skills.");
+              if (e.error) throw new Error(e.error.message || t("errors.listSkills"));
               return e.result || {};
             }
             return undefined;
@@ -191,11 +192,11 @@ function createNativeCommands({
         }),
       );
     }
-    throw new Error("Provedor desconhecido.");
+    throw new Error(t("errors.unknownProvider"));
   }
 
   return {
-    /** Lista os comandos nativos; `refresh` ignora o cache curto. Falha vira `{ ok: false }`. */
+    /** Lists the native commands; `refresh` skips the short cache. A failure becomes `{ ok: false }`. */
     async list(providerId, cwd, { refresh = false } = {}) {
       const key = `${providerId}\0${cwd}`;
       const hit = cache.get(key);

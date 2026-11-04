@@ -1,19 +1,20 @@
 import type { BeagleAPI } from "../types/api";
 
-/** Indica se o backend (preload do Electron ou bridge de desenvolvimento) está disponível. */
+import { t } from "../i18n";
+/** Whether the backend (Electron preload or development bridge) is available. */
 export const backendAvailable = (): boolean => !!window.beagleAPI;
 
-/** O modo terminal só existe no aplicativo desktop (a bridge do navegador não expõe o pty). */
+/** Terminal mode only exists in the desktop app (the browser bridge doesn't expose the pty). */
 export const terminalAvailable = (): boolean =>
   typeof window.beagleAPI?.cliTerminalOpen === "function";
 
 function backend(): BeagleAPI {
   const api = window.beagleAPI;
-  if (!api) throw new Error("Backend indisponível.");
+  if (!api) throw new Error(t("errors.backendUnavailable"));
   return api;
 }
 
-/** Cliente tipado: uma função por método IPC exposto em `window.beagleAPI`. */
+/** Typed client: one function per IPC method exposed on `window.beagleAPI`. */
 export const beagleApi: BeagleAPI = {
   getGlobalPermissions: () => backend().getGlobalPermissions(),
   saveGlobalPermissions: (id, changes) => backend().saveGlobalPermissions(id, changes),

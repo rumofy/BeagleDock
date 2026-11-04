@@ -1,14 +1,14 @@
-// Limite de contexto a partir do qual a conversa é compactada sozinha, enquanto o cache de prompt
-// ainda está quente. Sem isso, uma conversa que cresce até centenas de milhares de tokens e fica
-// parada paga o contexto inteiro de novo ao ser retomada (cache expirado), consumindo muita cota.
-// Verificado com as CLIs reais: Claude Code 2.1.316 (CLAUDE_CODE_AUTO_COMPACT_WINDOW) e
-// Codex CLI 0.166.0 (model_auto_compact_token_limit). O AGY não tem limite configurável.
+// Context limit above which the conversation compacts itself, while the prompt cache
+// is still warm. Without it, a conversation that grows to hundreds of thousands of tokens and sits
+// idle pays for the whole context again when resumed (expired cache), burning a lot of quota.
+// Verified with the real CLIs: Claude Code 2.1.316 (CLAUDE_CODE_AUTO_COMPACT_WINDOW) and
+// Codex CLI 0.166.0 (model_auto_compact_token_limit). AGY has no configurable limit.
 const DEFAULT_AUTO_COMPACT_TOKENS = 200_000;
-// O Claude Code só aceita de 100 mil a 1 milhão de tokens.
+// Claude Code only accepts 100 thousand to 1 million tokens.
 const MIN_AUTO_COMPACT_TOKENS = 100_000;
 const MAX_AUTO_COMPACT_TOKENS = 1_000_000;
 
-// undefined → padrão; 0 → desligado; qualquer outro valor é limitado ao intervalo aceito pelas CLIs.
+// undefined → default; 0 → off; any other value is clamped to the range the CLIs accept.
 function resolveAutoCompactTokens(value) {
   if (value === undefined || value === null || value === "") return DEFAULT_AUTO_COMPACT_TOKENS;
   const n = Number(value);
@@ -17,9 +17,9 @@ function resolveAutoCompactTokens(value) {
   return Math.min(MAX_AUTO_COMPACT_TOKENS, Math.max(MIN_AUTO_COMPACT_TOKENS, Math.round(n)));
 }
 
-// Sem valor escolhido pelo usuário (undefined/null) o limite acompanha a janela do modelo: 40% dela,
-// de 100 mil a 1 milhão. Janela de até 200 mil ou ainda desconhecida mantém o padrão de 200 mil.
-// Um valor escolhido (ou 0, que desliga) sempre vale como está.
+// With no value chosen by the user (undefined/null) the limit follows the model's window: 40% of it,
+// from 100 thousand to 1 million. A window up to 200 thousand, or still unknown, keeps the 200 thousand default.
+// A chosen value (or 0, which turns it off) always applies as is.
 const AUTO_COMPACT_FRACTION = 0.4;
 function resolveAutoCompactForWindow(value, window) {
   const chosen = value !== undefined && value !== null && value !== "" && Number.isFinite(Number(value));

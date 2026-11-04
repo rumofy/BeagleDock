@@ -2,7 +2,7 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { createAgyChildOutput } = require("../electron/agy-child-output");
 
-test("AGY: transcript do filho mostra só comandos e saída, com JSON parcial e snapshots repetidos", () => {
+test("AGY: the child's transcript shows only commands and output, with partial JSON and repeated snapshots", () => {
   const commands = [], output = [], started = [], ended = [];
   let finished = null;
   const read = createAgyChildOutput({
@@ -34,7 +34,7 @@ test("AGY: transcript do filho mostra só comandos e saída, com JSON parcial e 
   assert.equal(finished, "Concluído.");
 });
 
-test("AGY: transcript não duplica saída já recebida pelo log incremental", () => {
+test("AGY: the transcript doesn't duplicate output already received through the incremental log", () => {
   const output = [];
   const read = createAgyChildOutput({ onCommand() {}, onOutput: (s) => output.push(s), hasLiveOutput: (step) => step === 3 });
   read(JSON.stringify({ step_index: 2, type: "PLANNER_RESPONSE", tool_calls: [{ name: "run_command", args: { CommandLine: "npm test" } }] }) + "\n");

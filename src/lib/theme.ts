@@ -3,7 +3,7 @@ import type { AppSettings } from "../types";
 export type ThemeSetting = AppSettings["theme"];
 export type ResolvedTheme = "light" | "dark";
 
-/** "cream" é o tema claro original; "system" segue a preferência do sistema operacional. */
+/** "cream" is the original light theme; "system" follows the operating system preference. */
 export function resolveTheme(setting: ThemeSetting | undefined, prefersDark: boolean): ResolvedTheme {
   if (setting === "dark") return "dark";
   if (setting === "system") return prefersDark ? "dark" : "light";

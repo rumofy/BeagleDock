@@ -10,7 +10,7 @@ export function useMemoryStatus() {
     activeDaemonId: "",
     availableDaemons: [],
   });
-  // Função para sincronizar status e páginas reais do ai-memory
+  // Syncs ai-memory's real status and pages
   const refreshAIMemoryExplorer = async () => {
     if (!backendAvailable()) return;
     setIsLoadingMemory(true);
@@ -38,7 +38,7 @@ export function useMemoryStatus() {
     setIsLoadingMemory(false);
   };
 
-  // Status real do ai-memory
+  // ai-memory's real status
   useEffect(() => {
     if (!backendAvailable()) return;
     void refreshAIMemoryExplorer();

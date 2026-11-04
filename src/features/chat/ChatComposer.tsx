@@ -26,6 +26,7 @@ import { dictationAvailable, useVoiceDictation } from "./useVoiceDictation";
 import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
 import { canApprovePlan } from "../../lib/permissionModes";
 
+import { t } from "../../i18n";
 const clock = (total: number) =>
   `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 
@@ -59,7 +60,7 @@ export function ChatComposer() {
     currentSession?.cwd,
     inputMessage,
   );
-  // @arquivo: arquivos do projeto sugeridos junto do cursor.
+  // @file: project files suggested next to the caret.
   const inputRef = useRef<HTMLInputElement>(null);
   const [caret, setCaret] = useState(0);
   const [mentionPicked, setMentionPicked] = useState(0);
@@ -80,11 +81,11 @@ export function ChatComposer() {
       inputRef.current?.setSelectionRange(next.caret, next.caret);
     });
   };
-  // Ditado por voz: cada gravação continua no fim do texto, para juntar várias antes de enviar.
+  // Voice dictation: each recording continues at the end of the text, to combine several before sending.
   const latest = useRef({ inputMessage, caret });
   latest.current = { inputMessage, caret };
   const canDictate = dictationAvailable();
-  // Ditado local: o modelo de voz é baixado uma vez, quando o microfone é usado pela primeira vez.
+  // Local dictation: the voice model is downloaded once, the first time the microphone is used.
   const speechModel = useDictationModel(setAppError);
   const [offerModel, setOfferModel] = useState(false);
   const dictation = useVoiceDictation({
@@ -115,7 +116,7 @@ export function ChatComposer() {
   const toggleDictation = async () => {
     if (dictation.state === "recording") return dictation.stop();
     if (dictation.state !== "idle" || speechModel.download) return;
-    // Confere na hora: o motor ou o modelo podem ter mudado nas configurações.
+    // Check right now: the engine or the model may have changed in the settings.
     const status = await speechModel.refresh();
     if (status?.engine === "local" && !status.model.installed) setOfferModel(true);
     else void dictation.start();
@@ -124,7 +125,7 @@ export function ChatComposer() {
     setOfferModel(false);
     if (await speechModel.start()) inputRef.current?.focus();
   };
-  // Ctrl+Shift+M liga e desliga o ditado; Esc durante a gravação descarta o áudio.
+  // Ctrl+Shift+M toggles dictation; Esc while recording discards the audio.
   const toggleRef = useRef(toggleDictation);
   toggleRef.current = toggleDictation;
   useEffect(() => {
@@ -154,7 +155,7 @@ export function ChatComposer() {
   const open = suggestions.active && dismissed !== inputMessage;
   const selected = Math.min(picked, Math.max(0, suggestions.items.length - 1));
   const complete = (name: string) => {
-    // Comando que muda o contexto da sessão: abre o seletor do app, que é quem guarda o estado.
+    // A command that changes the session context: opens the app's picker, which holds the state.
     if (controlForCommand(`/${name}`) && openSessionControl(controlForCommand(`/${name}`)!)) {
       setInputMessage("");
       setPicked(0);
@@ -233,7 +234,7 @@ export function ChatComposer() {
                         data-testid="drop-hint"
                         className="absolute inset-0 z-10 rounded-2xl bg-amber-50/90 flex items-center justify-center text-xs font-semibold text-[#8a4b0f] pointer-events-none"
                       >
-                        Solte para anexar imagens e arquivos
+                        {t("composer.dropHint")}
                       </div>
                     )}
                     {mentionOpen && (
@@ -269,7 +270,7 @@ export function ChatComposer() {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       className="p-2 rounded-xl text-[#7d7565] hover:text-[#221f1a] hover:bg-[#ede9de] transition"
-                      title="Anexar arquivos ou prints"
+                      title={t("composer.attach")}
                     >
                       <Paperclip size={17} />
                     </button>
@@ -278,7 +279,7 @@ export function ChatComposer() {
                       type="button"
                       onClick={() => setShowSkillsModal(true)}
                       className="p-2 rounded-xl text-[#7d7565] hover:text-[#1c1b18] hover:bg-[#ede9de] transition"
-                      title="Chamar Skills / Revisor (Ctrl+K)"
+                      title={t("composer.skills")}
                     >
                       <Wand2 size={16} />
                     </button>
@@ -287,7 +288,7 @@ export function ChatComposer() {
                       type="button"
                       onClick={() => setShowHistoryModal(true)}
                       className="p-2 rounded-xl text-[#7d7565] hover:text-[#1c1b18] hover:bg-[#ede9de] transition"
-                      title="Histórico de conversas passadas (Ctrl+H)"
+                      title={t("composer.history")}
                     >
                       <Clock size={16} />
                     </button>
@@ -300,7 +301,7 @@ export function ChatComposer() {
                       >
                         <Loader2 size={13} className="animate-spin" />
                         <span>
-                          Baixando modelo de voz{" "}
+                          {t("composer.downloadingVoiceModel")}{" "}
                           {speechModel.download.total
                             ? `${Math.floor((speechModel.download.received / speechModel.download.total) * 100)}%`
                             : "…"}
@@ -308,7 +309,7 @@ export function ChatComposer() {
                         <button
                           type="button"
                           onClick={() => void speechModel.cancel()}
-                          aria-label="Cancelar download do modelo de voz"
+                          aria-label={t("composer.cancelDownload")}
                           className="p-1 rounded-lg hover:bg-[#eae4d5]"
                         >
                           <X size={13} />
@@ -320,8 +321,8 @@ export function ChatComposer() {
                         data-testid="dictation-model-offer"
                         className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#443e33]"
                       >
-                        <span title="O ditado roda no seu computador: nada de conta, chave ou internet depois do download.">
-                          Ditado local precisa do modelo de voz ({formatMegabytes(speechModel.status.model.size)})
+                        <span title={t("composer.localDictationHint")}>
+                          {t("composer.localDictationNeedsModel", { size: formatMegabytes(speechModel.status.model.size) })}
                         </span>
                         <button
                           type="button"
@@ -329,12 +330,12 @@ export function ChatComposer() {
                           className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1b18] text-white hover:bg-[#32302b]"
                         >
                           <Download size={12} />
-                          Baixar
+                          {t("composer.download")}
                         </button>
                         <button
                           type="button"
                           onClick={() => setOfferModel(false)}
-                          aria-label="Agora não"
+                          aria-label={t("composer.notNow")}
                           className="p-1 rounded-lg hover:bg-[#eae4d5]"
                         >
                           <X size={13} />
@@ -345,9 +346,9 @@ export function ChatComposer() {
                       <button
                         type="button"
                         onClick={() => void toggleDictation()}
-                        aria-label="Ditar mensagem por voz"
+                        aria-label={t("composer.dictateLabel")}
                         className="p-2 rounded-xl text-[#7d7565] hover:text-[#1c1b18] hover:bg-[#ede9de] transition"
-                        title="Ditar por voz (Ctrl+Shift+M)"
+                        title={t("composer.dictateHint")}
                       >
                         <Mic size={16} />
                       </button>
@@ -376,8 +377,8 @@ export function ChatComposer() {
                         <button
                           type="button"
                           onClick={dictation.stop}
-                          aria-label="Concluir ditado e transcrever"
-                          title="Concluir e transcrever (Ctrl+Shift+M)"
+                          aria-label={t("composer.finishDictationLabel")}
+                          title={t("composer.finishDictationHint")}
                           className="p-1 rounded-lg hover:bg-rose-100"
                         >
                           <Check size={14} />
@@ -385,8 +386,8 @@ export function ChatComposer() {
                         <button
                           type="button"
                           onClick={dictation.cancel}
-                          aria-label="Descartar ditado"
-                          title="Descartar (Esc)"
+                          aria-label={t("composer.discardDictationLabel")}
+                          title={t("composer.discardDictationHint")}
                           className="p-1 rounded-lg hover:bg-rose-100"
                         >
                           <X size={14} />
@@ -399,7 +400,7 @@ export function ChatComposer() {
                         className="flex items-center gap-1.5 px-2 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#665e4f]"
                       >
                         <Loader2 size={13} className="animate-spin" />
-                        Transcrevendo…
+                        {t("composer.transcribing")}
                       </span>
                     )}
 
@@ -453,13 +454,13 @@ export function ChatComposer() {
                               inputMessage.slice(1).toLowerCase() !==
                                 suggestions.items[selected].name.toLowerCase()))
                         ) {
-                          // Enter completa o nome; com o nome já completo, envia o comando.
+                          // Enter completes the name; with the name already complete, it sends the command.
                           e.preventDefault();
                           complete(suggestions.items[selected].name);
                         }
                       }}
                       onPaste={handlePaste}
-                      placeholder={`Mensagem para ${currentSession?.currentModel || currentProvider?.name}... (Ctrl+K skills, Ctrl+H histórico)`}
+                      placeholder={t("composer.placeholder", { target: currentSession?.currentModel || currentProvider?.name || "" })}
                       className="flex-1 px-2 py-2 text-sm bg-transparent outline-none text-[#1c1b18] placeholder-[#9c9381]"
                     />
 
@@ -473,10 +474,10 @@ export function ChatComposer() {
                         data-testid="approve-plan"
                         onClick={() => void handleApprovePlan()}
                         className="px-2 py-1 rounded-lg text-[11px] font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition flex items-center gap-1 whitespace-nowrap"
-                        title="Sai do modo plano (Aceitar edições) e pede para a IA implementar o plano"
+                        title={t("composer.approvePlanHint")}
                       >
                         <Check size={13} />
-                        <span>Aprovar plano e executar</span>
+                        <span>{t("composer.approvePlan")}</span>
                       </button>
                     )}
 
@@ -485,7 +486,7 @@ export function ChatComposer() {
                         type="button"
                         onClick={() => handlePermissionChange("plan")}
                         className="px-2 py-1 rounded-lg text-[11px] font-semibold text-[#665e4f] bg-[#f4f1e8] hover:bg-[#eae4d5] transition flex items-center gap-1"
-                        title="Ativar modo planejamento"
+                        title={t("composer.planOnHint")}
                       >
                         <Compass size={13} className="text-emerald-600" />
                         <span>/plan</span>
@@ -495,10 +496,10 @@ export function ChatComposer() {
                         type="button"
                         onClick={() => handlePermissionChange("edits")}
                         className="px-2 py-1 rounded-lg text-[11px] font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition flex items-center gap-1"
-                        title="Voltar para modo de execução normal"
+                        title={t("composer.planOffHint")}
                       >
                         <Zap size={13} className="text-emerald-700" />
-                        <span>Plan Ativo</span>
+                        <span>{t("composer.planActive")}</span>
                       </button>
                     )}
 
@@ -507,7 +508,7 @@ export function ChatComposer() {
                         type="button"
                         onClick={handleTriggerHandoff}
                         className="px-2 py-1 rounded-lg text-[11px] font-semibold text-[#665e4f] bg-[#f4f1e8] hover:bg-[#eae4d5] transition flex items-center gap-1"
-                        title="Salvar handoff agora"
+                        title={t("composer.handoffNow")}
                       >
                         <ArrowRightLeft size={13} className="text-indigo-600" />
                         <span>/handoff</span>
@@ -517,7 +518,7 @@ export function ChatComposer() {
                     {currentSession && isExecutingPrompt && (
                       <button
                         type="button"
-                        aria-label="Parar execução e cancelar fila"
+                        aria-label={t("composer.stopLabel")}
                         disabled={!!stoppingSessions[currentSession.id]}
                         onClick={() =>
                           void handleStopSession(currentSession.id)
@@ -526,8 +527,8 @@ export function ChatComposer() {
                       >
                         <Square size={12} />
                         {stoppingSessions[currentSession.id]
-                          ? "Parando…"
-                          : "Parar"}
+                          ? t("composer.stopping")
+                          : t("composer.stop")}
                       </button>
                     )}
                     <button

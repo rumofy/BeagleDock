@@ -7,7 +7,8 @@ import {
   togglePlan,
 } from "../../lib/permissionModes";
 
-/** Atalhos do modo de permissão da conversa: Alt+P liga/desliga o plano e Alt+M percorre os modos. */
+import { t } from "../../i18n";
+/** Permission-mode shortcuts: Alt+P toggles plan mode and Alt+M cycles through the modes. */
 export function PermissionShortcuts() {
   const { activeTab, currentSession, handlePermissionChange, setAppError } = useApp();
   useEffect(() => {
@@ -20,10 +21,10 @@ export function PermissionShortcuts() {
         action === "plan" ? togglePlan(currentSession.permission) : nextPermission(currentSession.permission);
       handlePermissionChange(next);
       setAppError("");
-      // Confirmação discreta no seletor do cabeçalho, que sempre mostra o modo atual.
+      // Discreet confirmation in the header picker, which always shows the current mode.
       document.querySelector<HTMLSelectElement>('select[data-control="permission"]')?.setAttribute(
         "title",
-        `Modo: ${PERMISSION_LABELS[next]} (Alt+P plano · Alt+M troca de modo)`,
+        t("permission.shortcutNotice", { mode: PERMISSION_LABELS[next] }),
       );
     };
     window.addEventListener("keydown", onKeyDown);

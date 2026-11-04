@@ -1,12 +1,12 @@
 name: Release
 
-# Publica a release no GitHub com as notas do CHANGELOG.md; o BeagleDock é distribuído apenas
-# localmente, então não há pacotes anexados.
+# Publishes the GitHub release with the notes from CHANGELOG.md; BeagleDock is distributed only
+# locally, so no packages are attached.
 #
-# - Push na main (merge da release/X.Y.Z): se a versão do package.json ainda não tem tag, cria a
-#   tag vX.Y.Z no commit integrado e a release no mesmo passo. Tag criada com o token do Actions não
-#   dispara outro workflow, por isso a release sai daqui e não do gatilho de tag.
-# - Push de tag vX.Y.Z feito à mão: publica a release dessa tag (continua valendo).
+# - Push to main (merge of release/X.Y.Z): if package.json's version has no tag yet, creates the
+#   vX.Y.Z tag on the merged commit and the release in the same step. A tag created with the Actions
+#   token doesn't trigger another workflow, so the release comes from here and not from the tag trigger.
+# - Push of a vX.Y.Z tag made by hand: publishes that tag's release (still supported).
 on:
   push:
     branches: [main]
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Definir a versão e se há release a publicar
+      - name: Resolve the version and whether there's a release to publish
         run: |
           version="$(node -p "require('./package.json').version")"
           tag="v${version}"
@@ -35,28 +35,28 @@ jobs:
           echo "TAG=${tag}" >> "$GITHUB_ENV"
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
             if [ "${GITHUB_REF_NAME}" != "${tag}" ]; then
-              echo "A tag ${GITHUB_REF_NAME} não bate com a versão ${version} do package.json." >&2
+              echo "Tag ${GITHUB_REF_NAME} doesn't match version ${version} in package.json." >&2
               exit 1
             fi
             echo "MODE=tag" >> "$GITHUB_ENV"
           elif git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-            echo "A versão ${version} já tem a tag ${tag}; nada a publicar."
+            echo "Version ${version} already has tag ${tag}; nothing to publish."
             echo "MODE=skip" >> "$GITHUB_ENV"
           else
             echo "MODE=main" >> "$GITHUB_ENV"
           fi
-      - name: Extrair as notas do CHANGELOG.md
+      - name: Extract the notes from CHANGELOG.md
         if: env.MODE != 'skip'
         run: |
           awk -v v="${VERSION}" '$0 ~ "^## \\["v"\\]"{f=1;next} /^## \[/{f=0} f' CHANGELOG.md | sed '1{/^$/d}' > notes.md
-          test -s notes.md || { echo "CHANGELOG.md não tem a seção ${VERSION}." >&2; exit 1; }
-      - name: Criar a tag e a release
+          test -s notes.md || { echo "CHANGELOG.md has no ${VERSION} section." >&2; exit 1; }
+      - name: Create the tag and the release
         if: env.MODE != 'skip'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "A release ${TAG} já existe; nada a fazer."
+            echo "Release ${TAG} already exists; nothing to do."
           elif [ "${MODE}" = "tag" ]; then
             gh release create "${TAG}" --title "BeagleDock ${VERSION}" --notes-file notes.md --verify-tag
           else

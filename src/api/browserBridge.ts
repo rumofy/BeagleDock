@@ -1,4 +1,4 @@
-// Quando rodando no navegador (sem Electron), conecta ao backend real via bridge HTTP do Vite.
+// When running in the browser (without Electron), connects to the real backend through Vite's HTTP bridge.
 const w = window as unknown as { beagleAPI?: unknown };
 const token = document.querySelector<HTMLMetaElement>(
   'meta[name="beagledock-bridge-token"]',
@@ -14,7 +14,7 @@ if (!w.beagleAPI && import.meta.env.DEV && token) {
       body: JSON.stringify({ method, args }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha na bridge");
+    if (!res.ok) throw new Error(data.error || "Bridge request failed");
     return data.result;
   };
   const methods = [

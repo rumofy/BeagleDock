@@ -1,14 +1,15 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { t } = require("./i18n");
 
-// Iniciar com o sistema no Linux: um .desktop em ~/.config/autostart (o setLoginItemSettings do Electron
-// não funciona no Linux). O app abre já na bandeja, sem mostrar a janela (`--hidden`).
+// Start with the system on Linux: a .desktop in ~/.config/autostart (Electron's setLoginItemSettings
+// doesn't work on Linux). The app opens straight into the tray, without showing the window (`--hidden`).
 const FILE = "beagledock.desktop";
 
 const dir = (home, env) => path.join(env.XDG_CONFIG_HOME || path.join(home, ".config"), "autostart");
 
-// AppImage: o executável de verdade é o próprio arquivo; empacotado (.deb) é o binário do app.
+// AppImage: the real executable is the file itself; packaged (.deb) it's the app binary.
 function launchCommand({ env = process.env, execPath = process.execPath } = {}) {
   const target = env.APPIMAGE || execPath;
   return `"${String(target).replace(/(["\\$`])/g, "\\$1")}" --hidden`;
@@ -19,7 +20,7 @@ function desktopEntry(command) {
     "[Desktop Entry]",
     "Type=Application",
     "Name=BeagleDock",
-    "Comment=Cockpit para CLIs de IA",
+    "Comment=Cockpit for AI CLIs",
     `Exec=${command}`,
     "X-GNOME-Autostart-enabled=true",
     "Terminal=false",
@@ -31,7 +32,7 @@ function setAutostart(
   enabled,
   { fsApi = fs, home = os.homedir(), env = process.env, execPath = process.execPath, platform = process.platform } = {},
 ) {
-  if (platform !== "linux") return { ok: false, error: "Iniciar com o sistema só está disponível no Linux." };
+  if (platform !== "linux") return { ok: false, error: t("errors.autostartLinuxOnly") };
   const file = path.join(dir(home, env), FILE);
   try {
     if (enabled) {
@@ -42,7 +43,7 @@ function setAutostart(
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: `Não foi possível ${enabled ? "ativar" : "desativar"} o início com o sistema: ${error.message}` };
+    return { ok: false, error: t(enabled ? "errors.autostartEnable" : "errors.autostartDisable", { error: error.message }) };
   }
 }
 

@@ -15,6 +15,7 @@ import { useUi } from "./useUi";
 import { useCliTerminals } from "./useCliTerminals";
 import { useUserProfile } from "./useUserProfile";
 import { useWorkspaces } from "./useWorkspaces";
+import { resolveLocale, setLocale, t } from "../i18n";
 
 function useAppStateValue() {
   const ui = useUi();
@@ -30,6 +31,9 @@ function useAppStateValue() {
   const { userProfile } = useUserProfile();
   const { workspaces, setWorkspaces } = useWorkspaces();
   const settings = useSettings(setAppError);
+  // Applied during render so every string drawn in this pass already uses the chosen language.
+  const locale = resolveLocale(settings.settings.language);
+  setLocale(locale);
   const cliTerminals = useCliTerminals(setAppError, settings.settings.conversationMode === "terminal");
   const approvals = useApprovals(setAppError);
   const library = useInstalledSkills();
@@ -74,13 +78,13 @@ function useAppStateValue() {
     setActiveTab,
   });
 
-  // Estado salvo no SQLite (workspaces, configurações, sessões e mensagens)
+  // State saved in SQLite (workspaces, settings, sessions and messages)
   const { setSettings } = settings;
   const { hydrateSessions } = sessions;
   useEffect(() => {
     if (!backendAvailable()) {
       setAppError(
-        "Backend indisponível. Abra o aplicativo desktop ou ative o modo de navegador local conforme o README.",
+        t("app.backendUnavailable"),
       );
       return;
     }
@@ -101,7 +105,7 @@ function useAppStateValue() {
       .catch((error: Error) => setAppError(error.message));
   }, []);
 
-  // Conversa apagada com o terminal aberto: encerra a CLI dela.
+  // Conversation deleted with its terminal open: stop its CLI.
   const { terminals, closeTerminal } = cliTerminals;
   const sessionIds = sessions.allSessions.map((s) => s.id).join("|");
   useEffect(() => {
@@ -110,7 +114,7 @@ function useAppStateValue() {
     for (const id of Object.keys(terminals)) if (!known.has(id)) void closeTerminal(id);
   }, [sessionIds, terminals, closeTerminal]);
 
-  // Auto-scroll nos terminais quando novos logs entram
+  // Auto-scroll the terminals when new logs come in
   const ptyScrollRef = useRef<HTMLDivElement>(null);
   const fullPtyScrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -140,6 +144,7 @@ function useAppStateValue() {
     ...historyActions,
     ...maintenance,
     cliTerminals,
+    locale,
     ptyScrollRef,
     fullPtyScrollRef,
   };
@@ -159,6 +164,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
 export function useApp(): AppState {
   const value = useContext(AppStateContext);
-  if (!value) throw new Error("useApp precisa de AppStateProvider.");
+  if (!value) throw new Error("useApp must be used inside AppStateProvider.");
   return value;
 }

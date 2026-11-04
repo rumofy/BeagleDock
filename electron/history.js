@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { roots, jsonLines, walkFiles } = require("./telemetry");
+const { t } = require("./i18n");
 const PROVIDER_NAMES = {
   claude: "Claude Code",
   codex: "Codex CLI",
@@ -10,7 +11,7 @@ const PROVIDER_NAMES = {
 const HEAD_BYTES = 512 * 1024;
 const NATIVE_LIMIT = 300;
 const CLAUDE_ID = /^[a-zA-Z0-9_-]{8,160}$/;
-// Texto digitado pela pessoa; comandos, saídas de comando e avisos internos da CLI não contam.
+// Text typed by the person; commands, command output and the CLI's internal notices don't count.
 function promptText(content) {
   const text =
     typeof content === "string"
@@ -32,16 +33,16 @@ function promptText(content) {
     return "";
   return clean;
 }
-// AGY: a mensagem digitada vem embrulhada com metadados (<USER_REQUEST>…</USER_REQUEST>, hora local,
-// troca de modelo). Fica só o que a pessoa escreveu (AGY 1.4.12).
+// AGY: the typed message comes wrapped in metadata (<USER_REQUEST>…</USER_REQUEST>, local time,
+// model switch). Only what the person wrote is kept (AGY 1.4.12).
 function agyUserText(content) {
   const text = typeof content === "string" ? content : "";
   const request = /<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/.exec(text);
   return request ? request[1].trim() : text;
 }
-// Folga entre a hora do history.jsonl do AGY e a da primeira etapa da conversa.
+// Slack between the time in AGY's history.jsonl and the conversation's first step.
 const AGY_MATCH_MS = 2 * 60 * 1000;
-// Reescreve um índice .jsonl sem as linhas da conversa apagada (troca atômica do arquivo).
+// Rewrites a .jsonl index without the deleted conversation's lines (atomic file swap).
 function dropLines(file, matches) {
   let text;
   try {
@@ -68,7 +69,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
   const dirs = roots(home, env);
   function nativeFile(provider, id) {
     if (!/^[a-zA-Z0-9_-]{8,160}$/.test(id || ""))
-      throw new Error("ID de conversa inválido.");
+      throw new Error(t("errors.invalidConversationId"));
     if (provider === "antigravity")
       return path.join(
         dirs.agy,
@@ -79,7 +80,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         "transcript.jsonl",
       );
     if (!["claude", "codex"].includes(provider))
-      throw new Error("Provedor inválido.");
+      throw new Error(t("errors.invalidProvider"));
     const root =
       provider === "claude"
         ? path.join(dirs.claude, "projects")
@@ -90,8 +91,8 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         : path.basename(f.full).endsWith(`-${id}.jsonl`),
     )?.full;
   }
-  // Lê só o começo do arquivo: o título e o diretório estão nas primeiras linhas, e os logs nativos
-  // passam de centenas de MB somados.
+  // Reads only the start of the file: the title and directory are in the first lines, and the native logs
+  // add up to hundreds of MB.
   function headEvents(file, maxBytes = HEAD_BYTES) {
     let fd;
     try {
@@ -115,7 +116,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
       if (fd !== undefined) fs.closeSync(fd);
     }
   }
-  // Primeira mensagem de cada conversa do AGY em brain/<id> criada a partir de `since` (ms).
+  // First message of each AGY conversation in brain/<id> created since `since` (ms).
   function agyBrainIndex(since) {
     const root = path.join(dirs.agy, "brain");
     let names = [];
@@ -144,7 +145,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
     const items = new Map();
     const add = (provider, id, title, cwd, ts, model = "") => {
       const prompt = typeof title === "string" ? title.trim() : "";
-      // Sessão sem nenhuma mensagem de verdade (sondagens, comandos internos) não é conversa.
+      // A session without any real message (probes, internal commands) isn't a conversation.
       if (!id || !cwd || !prompt || !Number.isFinite(ts)) return;
       const key = `${provider}:${id}`;
       if (skip.has(key)) return;
@@ -163,8 +164,8 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         model,
       });
     };
-    // Claude Code: cada conversa é um arquivo em projects/<pasta>/<id>.jsonl, inclusive as abertas
-    // sem terminal (o history.jsonl só recebe o que foi digitado no modo interativo).
+    // Claude Code: each conversation is a file in projects/<folder>/<id>.jsonl, including the ones opened
+    // without a terminal (history.jsonl only gets what was typed in interactive mode).
     const claudeRoot = path.join(dirs.claude, "projects");
     const claudeFiles = walkFiles(claudeRoot)
       .filter(
@@ -219,9 +220,9 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
       );
     }
     const agyLines = jsonLines(path.join(dirs.agy, "history.jsonl")).slice(-1000);
-    // Conversa nova aberta na interface do AGY: a linha do history.jsonl vem sem o ID da conversa
-    // (só texto, hora e pasta; AGY 1.4.12). O ID sai da pasta brain/<id>, pela primeira mensagem e
-    // pela hora.
+    // New conversation opened in AGY's interface: the history.jsonl line comes without the conversation ID
+    // (just text, time and folder; AGY 1.4.12). The ID comes from the brain/<id> folder, by the first message and
+    // by the time.
     const loose = agyLines.filter((ev) => !ev.conversationId && ev.display && ev.workspace);
     const brain = loose.length ? agyBrainIndex(Math.min(...loose.map((ev) => Number(ev.timestamp) || 0))) : [];
     const used = new Set();
@@ -252,12 +253,12 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
       .slice(0, NATIVE_LIMIT);
   }
   /**
-   * Apaga a conversa nativa do disco: o arquivo da conversa, a pasta auxiliar (subagentes, saídas
-   * longas) e as linhas dela nos índices da CLI. Só mexe dentro das pastas de dados de cada CLI.
+   * Deletes the native conversation from disk: the conversation file, the helper folder (subagents, long
+   * outputs) and its lines in the CLI's indexes. Only touches each CLI's data folders.
    */
   function remove(provider, id) {
     if (!/^[a-zA-Z0-9_-]{8,160}$/.test(id || ""))
-      throw new Error("ID de conversa inválido.");
+      throw new Error(t("errors.invalidConversationId"));
     const removed = [];
     const rm = (target) => {
       if (!fs.existsSync(target)) return;
@@ -286,14 +287,14 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
       dropLines(path.join(dirs.codex, "session_index.jsonl"), (e) => e.id === id);
       return removed;
     }
-    throw new Error("Provedor inválido.");
+    throw new Error(t("errors.invalidProvider"));
   }
-  // `fallbackCwd`: a pasta já conhecida (modo terminal), para conversas que a CLI não registra no
-  // índice dela (ex.: AGY sem linha no history.jsonl).
+  // `fallbackCwd`: the already known folder (terminal mode), for conversations the CLI doesn't record in
+  // its index (e.g. AGY without a line in history.jsonl).
   function conversation(provider, id, { cwd: fallbackCwd } = {}) {
     const file = nativeFile(provider, id);
     if (!file || !fs.existsSync(file))
-      throw new Error("Conversa não encontrada no disco.");
+      throw new Error(t("errors.conversationNotOnDisk"));
     const events = jsonLines(file);
     const item = history().find(
       (h) => h.provider === provider && h.sessionId === id,
@@ -305,7 +306,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
     cwd ||= item?.project || fallbackCwd;
     if (!cwd)
       throw new Error(
-        "O diretório original desta conversa não pôde ser identificado.",
+        t("errors.conversationCwdUnknown"),
       );
     const messages = [];
     let model = item?.model || "";
@@ -353,7 +354,7 @@ function createHistory({ home = os.homedir(), env = process.env } = {}) {
         id: `import-${provider}-${id}-${index}`,
         sessionId: `history-${provider}-${id}`,
         sender: role === "user" ? "user" : provider,
-        senderName: role === "user" ? "Você" : item?.providerName || provider,
+        senderName: role === "user" ? t("profile.you") : item?.providerName || provider,
         text,
         modelBadge: role === "assistant" ? model : undefined,
         timestamp: ev.timestamp || ev.created_at || "",

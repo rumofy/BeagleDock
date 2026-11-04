@@ -11,13 +11,15 @@ import {
 import { CompanyIcon } from "../../components/CompanyIcon";
 import { SessionRow } from "./SessionRow";
 import { useNow } from "../../hooks/useNow";
+import { sortByLastUpdate } from "../../lib/sessionOrder";
 
+import { getLocale, t } from "../../i18n";
 export function ProviderList() {
   const { providers, handleCreateSession } = useApp();
-  // Um relógio só para a lista: o selo "fria" das conversas muda na escala de minutos.
+  // A single clock for the list: the conversations' "cold" badge changes on a scale of minutes.
   const now = useNow(true, 60_000);
-  // Detalhes da cota (leitura, reinício, tokens, grupos): recolhidos por padrão para sobrar espaço
-  // à lista de conversas; os percentuais de 5h e semana continuam no cabeçalho do provedor.
+  // Quota details (reading, reset, tokens, groups): collapsed by default to leave room for the
+  // conversation list; the 5h and weekly percentages stay in the provider header.
   const [showDetails, setShowDetails] = useState<Record<string, boolean>>({});
   const [expandedProviders, setExpandedProviders] = useState<
     Record<string, boolean>
@@ -37,19 +39,19 @@ export function ProviderList() {
   return (
     <>
       <div className="px-4 py-2 flex items-center justify-between text-[11px] font-bold text-[#8c8270] uppercase tracking-wider">
-        <span>CLIs & Cotas Reais</span>
+        <span>{t("sidebar.clisAndQuotas")}</span>
         <span className="text-[10px] text-[#9c9381] font-normal">
-          Uso: 5h | Sem
+          {t("sidebar.usageLegend")}
         </span>
       </div>
 
-      {/* ÁRVORE DINÂMICA DE MODELOS */}
+      {/* PROVIDERS AND THEIR CONVERSATIONS */}
       <div className="flex-1 overflow-y-auto px-3 space-y-2.5 pb-4">
         {providers.map((provider) => {
           const quota = providerQuota(provider);
           const isExpanded = expandedProviders[provider.id] ?? true;
-          // Fechadas ficam só no histórico (Ctrl+H).
-          const active = provider.sessions.filter((s) => !s.archived);
+          // Closed conversations live only in the history (Ctrl+H); most recently updated first.
+          const active = sortByLastUpdate(provider.sessions.filter((s) => !s.archived));
 
           return (
             <div
@@ -86,16 +88,16 @@ export function ProviderList() {
                   <div className="flex items-center gap-1">
                     <span
                       className={`text-[10px] font-mono px-1.5 py-0.5 rounded border font-bold ${getQuotaColor(quota.window5hPercent)}`}
-                      title={`${quota.sourceLabel || "Sem leitura"} · ${quota.updatedAt || "Sem data"}${quota.stale ? " · Desatualizado" : ""}`}
+                      title={`${quota.sourceLabel || t("quota.noReading")} · ${quota.updatedAt || t("quota.noDate")}${quota.stale ? ` · ${t("quota.outdated")}` : ""}`}
                     >
-                      5h: {formatQuota(quota.window5hPercent)}
+                      {t("quota.badge5h", { value: formatQuota(quota.window5hPercent) })}
                     </span>
 
                     <span
                       className={`text-[10px] font-mono px-1.5 py-0.5 rounded border font-bold ${getQuotaColor(quota.weeklyPercent)}`}
-                      title={quota.sourceLabel || "Cota indisponível"}
+                      title={quota.sourceLabel || t("quota.unavailable")}
                     >
-                      S: {formatQuota(quota.weeklyPercent)}
+                      {t("quota.badgeWeek", { value: formatQuota(quota.weeklyPercent) })}
                     </span>
                   </div>
 
@@ -105,8 +107,8 @@ export function ProviderList() {
                     disabled={!provider.installed}
                     title={
                       provider.installed
-                        ? "Abrir nova conversa"
-                        : "CLI não encontrada nesta máquina"
+                        ? t("sidebar.newConversation")
+                        : t("sidebar.cliNotFoundHere")
                     }
                   >
                     <Plus size={14} />
@@ -123,10 +125,10 @@ export function ProviderList() {
                   }))
                 }
                 aria-expanded={!!showDetails[provider.id]}
-                aria-label={`Detalhes da cota de ${provider.name}`}
+                aria-label={t("quota.detailsOf", { name: provider.name })}
                 className="w-full text-left px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-[#8c8270] hover:text-[#443e33]"
               >
-                {showDetails[provider.id] ? "▾" : "▸"} Detalhes da cota
+                {showDetails[provider.id] ? "▾" : "▸"} {t("quota.details")}
               </button>
               {showDetails[provider.id] && (
                 <div data-testid="quota-details">
@@ -140,20 +142,22 @@ export function ProviderList() {
                       <span className="block">{quota.groupLabel}</span>
                     )}
                     {!provider.installed
-                      ? "CLI não encontrada"
+                      ? t("sidebar.cliNotFound")
                       : quota.updatedAt
-                        ? `${quota.stale ? "Leitura desatualizada" : "Última leitura"}: ${new Date(quota.updatedAt).toLocaleTimeString()}`
-                        : "Cota indisponível"}
+                        ? `${quota.stale ? t("quota.outdatedReading") : t("quota.lastReading")}: ${new Date(quota.updatedAt).toLocaleTimeString(getLocale())}`
+                        : t("quota.unavailable")}
                   </div>
                   {provider.installed &&
                     (quota.window5hResetAt || quota.weeklyResetAt) && (
                       <div
                         className="px-3 pb-2 text-[10px] text-[#7d7565]"
-                        title={`Horários de reinício informados pela própria CLI, no seu fuso (${localUtcLabel()})`}
+                        title={t("quota.resetHint", { zone: localUtcLabel() })}
                       >
-                        Reinicia · 5h: {formatReset(quota.window5hResetAt)} ·
-                        Semana: {formatReset(quota.weeklyResetAt)} (
-                        {localUtcLabel()})
+                        {t("quota.resets", {
+                          five: formatReset(quota.window5hResetAt),
+                          week: formatReset(quota.weeklyResetAt),
+                          zone: localUtcLabel(),
+                        })}
                       </div>
                     )}
                   <div
@@ -163,30 +167,30 @@ export function ProviderList() {
                       .join(" · ")}
                   >
                     {quota.totalTokens == null
-                      ? "Tokens indisponíveis"
-                      : `Tokens (7d): ${quota.totalTokens.toLocaleString()}`}
+                      ? t("quota.tokensUnavailable")
+                      : t("quota.tokens7d", { tokens: quota.totalTokens.toLocaleString(getLocale()) })}
                     {provider.id === "antigravity" &&
                     quota.prompts5h !== undefined
-                      ? ` · ${quota.prompts5h} prompts (5h)`
+                      ? ` · ${t("quota.prompts5h", { count: quota.prompts5h })}`
                       : ""}
                   </div>
                   {quota.groups && quota.groups.length > 0 && (
                     <div
                       className="px-3 pb-2 space-y-1"
-                      aria-label="Cotas por grupo do AGY"
+                      aria-label={t("quota.agyGroups")}
                     >
                       {quota.groups.map((group) => (
                         <div
                           key={group.name}
                           className="text-[10px] flex justify-between gap-1"
-                          title={`Reinício 5h: ${group.window5hResetAt || "Não informado"} · Semanal: ${group.weeklyResetAt || "Não informado"}`}
+                          title={t("quota.groupResets", { five: group.window5hResetAt || t("quota.notReported"), week: group.weeklyResetAt || t("quota.notReported") })}
                         >
                           <span className="text-[#7d7565] truncate">
                             {group.name}
                           </span>
                           <span className="font-mono whitespace-nowrap">
-                            5h: {formatQuota(group.window5hPercent)} · S:{" "}
-                            {formatQuota(group.weeklyPercent)}
+                            {t("quota.badge5h", { value: formatQuota(group.window5hPercent) })} ·{" "}
+                            {t("quota.badgeWeek", { value: formatQuota(group.weeklyPercent) })}
                           </span>
                         </div>
                       ))}
@@ -203,7 +207,7 @@ export function ProviderList() {
                 <div className="py-1 px-1.5 space-y-0.5 border-t border-[#dfdacd]/40">
                   {active.length === 0 ? (
                     <div className="px-3 py-2 text-[11px] text-[#938b7a] italic">
-                      Nenhum chat ativo. Clique em + para iniciar.
+                      {t("sidebar.noChats")}
                     </div>
                   ) : (
                     active.map((session) => (

@@ -5,6 +5,7 @@ import { ChatMessageList } from "../../components/ChatMessageList";
 import type { ChatMessage, ChatSession, UserProfile } from "../../types";
 import type { CliApproval } from "../../types/api";
 
+import { t } from "../../i18n";
 export interface MaintenanceChat {
   session: ChatSession;
   messages: ChatMessage[];
@@ -49,19 +50,19 @@ export function MaintenanceChatPane({
             {chat.session.title}
           </div>
           <div className="text-[10px] text-[#8c8270]">
-            {chat.executing ? "Em execução…" : "Aguardando você"} ·{" "}
-            {chat.session.currentModel || "padrão da CLI"}
+            {chat.executing ? t("maintenance.running") : t("maintenance.waitingYou")} ·{" "}
+            {chat.session.currentModel || t("stale.cliDefault")}
           </div>
         </div>
         <button
           onClick={chat.onOpenInChat}
           className="text-[11px] font-semibold px-2 py-1 rounded-lg bg-[#f4f1e8] hover:bg-[#eae4d5] border border-[#dfdacd] flex items-center gap-1"
         >
-          <ExternalLink size={12} /> Abrir no chat
+          <ExternalLink size={12} /> {t("maintenance.openInChat")}
         </button>
         <button
           onClick={chat.onClose}
-          title="Fechar painel (a conversa continua no chat)"
+          title={t("maintenance.closePane")}
           className="p-1 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
         >
           <X size={14} />
@@ -94,7 +95,7 @@ export function MaintenanceChatPane({
           type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Responda (ex.: aprovar o plano)…"
+          placeholder={t("maintenance.replyPlaceholder")}
           className="flex-1 min-w-0 px-2 py-1.5 text-sm bg-transparent outline-none placeholder-[#9c9381]"
         />
         {chat.executing && (
@@ -104,7 +105,7 @@ export function MaintenanceChatPane({
             onClick={chat.onStop}
             className="px-2.5 py-1.5 rounded-xl bg-rose-700 hover:bg-rose-800 disabled:opacity-50 text-white text-xs font-bold flex gap-1 items-center"
           >
-            <Square size={11} /> {chat.stopping ? "Parando…" : "Parar"}
+            <Square size={11} /> {chat.stopping ? t("composer.stopping") : t("composer.stop")}
           </button>
         )}
         <button

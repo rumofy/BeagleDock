@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { t } from "../i18n";
 export function Modal({
   title,
   onClose,
@@ -22,7 +23,7 @@ export function Modal({
           <h3 className="font-bold text-base text-[#1c1b18]">{title}</h3>
           <button
             onClick={onClose}
-            aria-label="Fechar"
+            aria-label={t("common.close")}
             className="p-1 hover:bg-[#ede9de] rounded-lg text-[#6d6657]"
           >
             <X size={16} />

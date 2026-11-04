@@ -1,5 +1,5 @@
-// Orçamento de atraso do streaming: o custo de aplicar um quadro de eventos e preparar o texto
-// (blocos de código + destaque) numa conversa pesada precisa caber folgadamente em um quadro (16 ms).
+// Streaming delay budget: the cost of applying a frame of events and preparing the text
+// (code blocks + highlighting) in a heavy conversation must fit comfortably in one frame (16 ms).
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
@@ -35,7 +35,7 @@ function heavyConversation() {
   return { s1: messages };
 }
 
-test("quadros de streaming numa conversa pesada cabem no orçamento de um quadro", () => {
+test("streaming frames in a heavy conversation fit in one frame's budget", () => {
   let state = heavyConversation();
   const flushDurations = [];
   const flushes = [];
@@ -51,24 +51,24 @@ test("quadros de streaming numa conversa pesada cabem no orçamento de um quadro
   for (let i = 0; i < CHUNKS; i++) {
     text += i % 40 === 39 ? "palavra de teste com um pouco mais de texto\n" : "token e mais um trecho de texto ".repeat(2);
     batcher.push({ kind: "chunk", payload: { sessionId: "s1", responseMessageId: "live", fullText: text, activity: "IA respondendo…" }, receivedAt: 0 });
-    if (i % 25 === 24) run(); // ~25 eventos por quadro: um stream bem rápido
+    if (i % 25 === 24) run(); // ~25 events per frame: a very fast stream
   }
   if (run) run();
-  assert.ok(text.length > 150_000, "a resposta cresceu até centenas de KB");
+  assert.ok(text.length > 150_000, "the reply grew to hundreds of KB");
   assert.equal(state.s1.at(-1).text, text);
   const p95 = percentile(flushDurations, 95);
   const max = Math.max(...flushDurations);
-  console.log(`aplicação por quadro (${flushDurations.length} quadros, ${(text.length / 1024).toFixed(0)} KB): p95=${p95.toFixed(2)} ms, máx=${max.toFixed(2)} ms`);
-  // O custo da cópia da lista e da mensagem em streaming é pequeno; o limite tem margem de máquina lenta.
-  assert.ok(p95 < FRAME_BUDGET_MS / 4, `p95 ${p95.toFixed(2)} ms passou de um quarto de quadro`);
-  assert.ok(max < FRAME_BUDGET_MS, `pior quadro ${max.toFixed(2)} ms passou de um quadro`);
+  console.log(`apply per frame (${flushDurations.length} frames, ${(text.length / 1024).toFixed(0)} KB): p95=${p95.toFixed(2)} ms, max=${max.toFixed(2)} ms`);
+  // The cost of copying the list and the streaming message is small; the limit has slow-machine headroom.
+  assert.ok(p95 < FRAME_BUDGET_MS / 4, `p95 ${p95.toFixed(2)} ms went past a quarter frame`);
+  assert.ok(max < FRAME_BUDGET_MS, `worst frame ${max.toFixed(2)} ms went past one frame`);
 });
 
-test("preparar o texto de uma resposta com bloco de código aberto cabe no quadro (texto e código reais)", () => {
+test("preparing the text of a reply with an open code block fits in the frame (real text and code)", () => {
   const prose = "Explicação do que foi feito, com detalhes do porquê. ".repeat(20) + "\n";
   const code = (n) => Array.from({ length: n }, (_, i) => `function f${i}(a, b) { return a + b * ${i}; } // linha ${i}`).join("\n");
   const durations = [];
-  // Resposta típica: texto, um bloco fechado de ~8 KB e um bloco aberto que cresce até ~20 KB.
+  // Typical reply: text, a closed ~8 KB block and an open block growing to ~20 KB.
   const closed = "```ts\n" + code(100) + "\n```\n";
   let open = "";
   for (let step = 0; step < 60; step++) {
@@ -81,11 +81,11 @@ test("preparar o texto de uma resposta com bloco de código aberto cabe no quadr
   }
   const max = Math.max(...durations);
   const p95 = percentile(durations, 95);
-  console.log(`texto+destaque por quadro (bloco aberto até ${(open.length / 1024).toFixed(0)} KB): p95=${p95.toFixed(2)} ms, máx=${max.toFixed(2)} ms`);
-  assert.ok(p95 < FRAME_BUDGET_MS, `p95 ${p95.toFixed(2)} ms passou de um quadro`);
+  console.log(`text+highlight per frame (open block up to ${(open.length / 1024).toFixed(0)} KB): p95=${p95.toFixed(2)} ms, max=${max.toFixed(2)} ms`);
+  assert.ok(p95 < FRAME_BUDGET_MS, `p95 ${p95.toFixed(2)} ms went past one frame`);
 });
 
-test("montar a árvore de etapas de uma resposta com muitos agentes e etapas é barato", () => {
+test("building the step tree of a reply with many agents and steps is cheap", () => {
   const events = [];
   for (let a = 0; a < 40; a++) {
     events.push({ id: `a${a}`, kind: "agent", title: "Agente", status: "done" });
@@ -94,11 +94,11 @@ test("montar a árvore de etapas de uma resposta com muitos agentes e etapas é 
   const t0 = performance.now();
   for (let i = 0; i < 50; i++) buildEventTree(events);
   const each = (performance.now() - t0) / 50;
-  console.log(`árvore de ${events.length} etapas: ${each.toFixed(3)} ms`);
+  console.log(`tree of ${events.length} steps: ${each.toFixed(3)} ms`);
   assert.ok(each < FRAME_BUDGET_MS / 2);
 });
 
-test("texto patológico não trava os detectores de bloco e de link (sem backtracking catastrófico)", () => {
+test("pathological text doesn't hang the block and link detectors (no catastrophic backtracking)", () => {
   const { splitFileLinks } = load("src/lib/fileLinks.ts");
   for (const hostile of ["a/".repeat(20000), "a.".repeat(20000) + "x", "/".repeat(50000), "`".repeat(30000), "```\n".repeat(5000), ("src/" + "b".repeat(100) + "/").repeat(500) + "!"]) {
     const t0 = performance.now();

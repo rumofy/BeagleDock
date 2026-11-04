@@ -1,11 +1,12 @@
 import { memo, useState } from "react";
-import { ShieldAlert } from "lucide-react";
+import { ListChecks, ShieldAlert } from "lucide-react";
 import { approvalTitle, PROVIDER_NAMES } from "../lib/approvalLabels";
 import type { ApprovalOption, CliApproval } from "../types/api";
 
+import { t } from "../i18n";
 /**
- * Pedido de permissão com as opções nativas da própria CLI (permitir uma vez, sempre, nesta
- * sessão, negar com instrução…). A escolha volta à CLI no formato dela.
+ * Permission request with the CLI's own native options (allow once, always, for this session,
+ * deny with an instruction…). The choice goes back to the CLI in its own format.
  */
 export const ApprovalCard = memo(function ApprovalCard({
   approval,
@@ -18,11 +19,13 @@ export const ApprovalCard = memo(function ApprovalCard({
 }) {
   const [note, setNote] = useState("");
   const [asking, setAsking] = useState(false);
-  // Opções perigosas (ignorar permissões, regras para todos os projetos) pedem um segundo clique.
+  // Dangerous options (skip permissions, rules for all projects) need a second click.
   const [armed, setArmed] = useState<string | null>(null);
   const allow = approval.options.filter((o) => o.kind === "allow");
   const deny = approval.options.filter((o) => o.kind === "deny");
   const noteOption = deny.find((o) => o.allowsMessage);
+  // A plan is a decision, not a permission: it gets its own look so it is never approved by habit.
+  const isPlan = approval.kind === "plan";
 
   const button = (option: ApprovalOption, primary: boolean) => (
     <button
@@ -37,7 +40,7 @@ export const ApprovalCard = memo(function ApprovalCard({
       }}
       title={
         option.persistent
-          ? "Grava uma regra que continua valendo depois desta ação"
+          ? t("approval.persistentHint")
           : option.description
       }
       className={`text-left px-3 py-2 rounded-lg text-xs font-bold border transition ${
@@ -50,11 +53,11 @@ export const ApprovalCard = memo(function ApprovalCard({
               : "bg-white border-emerald-300 text-emerald-900 hover:bg-emerald-50"
       }`}
     >
-      {option.danger && armed === option.id ? "Confirmar: " : ""}
+      {option.danger && armed === option.id ? t("approval.confirmPrefix") : ""}
       {option.label}
       {option.persistent && (
         <span className="ml-2 text-[9px] uppercase tracking-wider font-bold px-1 py-0.5 rounded bg-amber-100 text-amber-800 align-middle">
-          regra permanente
+          {t("approval.persistent")}
         </span>
       )}
     </button>
@@ -63,25 +66,47 @@ export const ApprovalCard = memo(function ApprovalCard({
   return (
     <div
       role="group"
-      aria-label="Autorizar ação da CLI"
-      data-testid="approval-card"
-      className="rounded-2xl border-2 border-amber-400 bg-amber-50 shadow-md p-3.5 space-y-2.5"
+      aria-label={isPlan ? t("approval.planLabel") : t("approval.label")}
+      data-testid={isPlan ? "plan-approval-card" : "approval-card"}
+      className={`rounded-2xl border-2 shadow-md p-3.5 space-y-2.5 ${isPlan ? "border-emerald-500 bg-emerald-50" : "border-amber-400 bg-amber-50"}`}
     >
-      <div className="flex items-center gap-2 text-sm font-bold text-amber-900">
-        <ShieldAlert size={16} className="shrink-0" />
-        <span>Aguardando permissão</span>
-        <span className="text-[11px] font-semibold text-amber-800/80">
+      <div
+        className={`flex items-center gap-2 text-sm font-bold ${isPlan ? "text-emerald-900" : "text-amber-900"}`}
+      >
+        {isPlan ? (
+          <ListChecks size={16} className="shrink-0" />
+        ) : (
+          <ShieldAlert size={16} className="shrink-0" />
+        )}
+        <span>{isPlan ? t("approval.planWaiting") : t("approval.waiting")}</span>
+        <span className={`text-[11px] font-semibold ${isPlan ? "text-emerald-800/80" : "text-amber-800/80"}`}>
           · {PROVIDER_NAMES[approval.providerId] || approval.providerId}
         </span>
       </div>
-      <div className="text-xs font-semibold text-[#2c2822]">
-        {approvalTitle(approval.tool)}
-      </div>
-      <pre
-        className={`text-[11px] whitespace-pre-wrap break-all overflow-auto bg-white/70 border border-amber-200 p-2 rounded-lg ${compact ? "max-h-24" : "max-h-48"}`}
-      >
-        {approval.input}
-      </pre>
+      {isPlan ? (
+        <>
+          <p className="text-xs text-[#2c2822]">
+            {t("approval.planAbove")}
+          </p>
+          <details className="text-[11px]">
+            <summary className="cursor-pointer text-emerald-900 underline">{t("approval.planShowHere")}</summary>
+            <pre className="mt-1 whitespace-pre-wrap break-words overflow-auto max-h-64 bg-white/70 border border-emerald-200 p-2 rounded-lg font-sans">
+              {approval.input}
+            </pre>
+          </details>
+        </>
+      ) : (
+        <>
+          <div className="text-xs font-semibold text-[#2c2822]">
+            {approvalTitle(approval.tool)}
+          </div>
+          <pre
+            className={`text-[11px] whitespace-pre-wrap break-all overflow-auto bg-white/70 border border-amber-200 p-2 rounded-lg ${compact ? "max-h-24" : "max-h-48"}`}
+          >
+            {approval.input}
+          </pre>
+        </>
+      )}
       <div className="flex flex-col gap-1.5">
         {allow.map((o, i) => button(o, i === 0))}
         {deny.map((o) => button(o, false))}
@@ -94,7 +119,7 @@ export const ApprovalCard = memo(function ApprovalCard({
               onClick={() => setAsking(true)}
               className="text-[11px] underline text-amber-900"
             >
-              Negar e dizer à IA o que fazer
+              {t("approval.denyWithNote")}
             </button>
           ) : (
             <form
@@ -108,22 +133,24 @@ export const ApprovalCard = memo(function ApprovalCard({
                 autoFocus
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
-                placeholder="Ex.: use o diretório de testes, não o home"
+                placeholder={t("approval.notePlaceholder")}
                 className="flex-1 min-w-0 px-2 py-1.5 text-xs rounded-lg border border-amber-300 bg-white outline-none"
               />
               <button
                 type="submit"
                 className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#2c2822] text-white"
               >
-                Negar e enviar
+                {t("approval.denyAndSend")}
               </button>
             </form>
           )}
         </div>
       )}
-      <p className="text-[10px] text-amber-900/70">
-        Regras explícitas de bloqueio continuam valendo, mesmo ao permitir.
-      </p>
+      {!isPlan && (
+        <p className="text-[10px] text-amber-900/70">
+          {t("approval.denyRulesStillApply")}
+        </p>
+      )}
     </div>
   );
 });

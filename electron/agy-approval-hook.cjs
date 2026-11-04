@@ -18,14 +18,14 @@ process.stdin.setEncoding("utf8");
 process.stdin.on("data", (chunk) => {
   input += chunk;
   if (input.length > 1024 * 1024)
-    finish({ decision: "deny", reason: "Pedido excedeu o limite." });
+    finish({ decision: "deny", reason: "The request exceeded the size limit." });
 });
 process.stdin.on("end", () => {
   let request;
   try {
     request = JSON.parse(input);
   } catch {
-    return finish({ decision: "deny", reason: "Pedido inválido." });
+    return finish({ decision: "deny", reason: "Invalid request." });
   }
   const client = net.createConnection(socket);
   let buffer = "";
@@ -43,14 +43,14 @@ process.stdin.on("end", () => {
   client.on("error", () =>
     finish({
       decision: "deny",
-      reason: "A interface de aprovação não está disponível.",
+      reason: "The approval interface isn't available.",
     }),
   );
   client.on("close", () =>
-    finish({ decision: "deny", reason: "A aprovação foi encerrada." }),
+    finish({ decision: "deny", reason: "The approval was closed." }),
   );
 });
 setTimeout(
-  () => finish({ decision: "deny", reason: "Tempo limite da aprovação." }),
+  () => finish({ decision: "deny", reason: "The approval timed out." }),
   125000,
 ).unref();

@@ -22,16 +22,16 @@ import type {
 } from "./index";
 
 export interface TranscribeAudioRequest {
-  /** WAV mono em base64. */
+  /** Mono WAV in base64. */
   audio: string;
-  /** Termos da sessão atual (projeto, arquivos) que ajudam o modelo a acertar a grafia. */
+  /** Terms from the current session (project, files) that help the model spell things right. */
   context?: string[];
 }
 
 export interface TranscribeAudioResult {
   success: boolean;
   error?: string;
-  /** "SPEECH_MODEL_MISSING" quando o modelo local ainda não foi baixado. */
+  /** "SPEECH_MODEL_MISSING" when the local model hasn't been downloaded yet. */
   code?: string;
   text?: string;
   engine?: "api" | "local";
@@ -41,7 +41,7 @@ export interface TranscribeAudioResult {
 export interface DictationModelStatus {
   id: string;
   label: string;
-  /** Tamanho do download em bytes. */
+  /** Download size in bytes. */
   size: number;
   installed: boolean;
   downloading: boolean;
@@ -51,7 +51,7 @@ export interface DictationModelStatus {
 export interface DictationStatus {
   engine: "api" | "local";
   model: DictationModelStatus;
-  /** O motor local (parakeet-cli) foi compilado e está no pacote. */
+  /** The local engine (parakeet-cli) was built and is in the package. */
   engineAvailable: boolean;
 }
 
@@ -63,16 +63,16 @@ export interface DictationModelProgress {
   error?: string;
 }
 
-/** Uma escolha oferecida pela própria CLI para um pedido de permissão. */
+/** A choice offered by the CLI itself for a permission request. */
 export interface ApprovalOption {
   id: string;
   label: string;
   kind: "allow" | "deny";
   description?: string;
-  /** A escolha grava uma regra que vale além desta ação (projeto, sessão…). */
+  /** The choice saves a rule that applies beyond this action (project, session…). */
   persistent?: boolean;
   danger?: boolean;
-  /** Aceita uma instrução para a IA junto da negação. */
+  /** Accepts an instruction for the AI along with the denial. */
   allowsMessage?: boolean;
 }
 
@@ -87,6 +87,8 @@ export interface CliApproval {
   id: string;
   sessionId: string;
   providerId: AIProviderId;
+  /** Absent = a tool permission. A plan or question is a decision, never auto-approved. */
+  kind?: "plan" | "question";
   tool: string;
   input: string;
   options: ApprovalOption[];
@@ -163,7 +165,7 @@ export interface ExecutePromptPayload {
   sessionId: string;
   providerId: AIProviderId;
   responseMessageId: string;
-  /** Mensagem do usuário que originou este envio; reposiciona o histórico se ela for entregue no meio de uma resposta. */
+  /** User message that originated this send; moves the history if it is delivered in the middle of a reply. */
   userMessageId?: string;
   prompt: string;
   cwd: string;
@@ -171,32 +173,32 @@ export interface ExecutePromptPayload {
   effort: string;
   permission: string;
   cancelled: boolean;
-  /** Imagens e arquivos anexados, como data URL; o backend os grava e normaliza para cada CLI. */
+  /** Attached images and files, as data URLs; the backend stores and normalizes them for each CLI. */
   attachments?: ChatAttachment[];
 }
 export interface NativeCommand {
   name: string;
-  /** `app`: controle do próprio BeagleDock, mostrado quando a CLI não lista os comandos dela. */
+  /** `app`: a BeagleDock control, shown when the CLI doesn't list its commands. */
   kind: "command" | "skill" | "app";
   description?: string;
   aliases?: string[];
-  /** Só existe no terminal interativo da CLI. */
+  /** Only exists in the CLI's interactive terminal. */
   terminalOnly?: boolean;
 }
 export interface NativeCommandList {
   ok: boolean;
   providerId: string;
   commands: NativeCommand[];
-  /** Estado informado pela própria CLI (modelo e modo de permissão atuais). */
+  /** State reported by the CLI itself (current model and permission mode). */
   state?: { model?: string; permissionMode?: string };
-  /** O que a CLI não expõe, para a interface avisar em vez de simular. */
+  /** What the CLI doesn't expose, so the interface warns instead of faking it. */
   limitation?: string;
   error?: string;
 }
 export interface OpenInEditorRequest {
-  /** Pasta do projeto da conversa. */
+  /** Project folder of the conversation. */
   cwd: string;
-  /** Arquivo ou pasta, relativo ao projeto; sem alvo abre o projeto inteiro. */
+  /** File or folder relative to the project; without a target the whole project opens. */
   target?: string;
   line?: number;
   column?: number;
@@ -215,11 +217,11 @@ export interface ExecutePromptResult {
   ok?: boolean;
   cancelled?: boolean;
   stopped?: boolean;
-  /** A CLI recebeu a mensagem no meio da execução em andamento (não gerou resposta própria). */
+  /** The CLI received the message during the running execution (no reply of its own). */
   injected?: boolean;
-  /** Resposta que estava sendo escrita quando a mensagem foi entregue. */
+  /** Reply that was being written when the message was delivered. */
   rotatedFrom?: string;
-  /** Respostas às mensagens entregues no meio da execução, na ordem (texto vazio = sem resposta). */
+  /** Replies to the messages delivered during the execution, in order (empty text = no reply). */
   followUps?: { responseMessageId: string; text: string; events?: ChatEvent[] }[];
   output?: string;
   error?: string;
@@ -258,11 +260,11 @@ export interface CliTerminalInfo {
   providerId: AIProviderId;
   cwd: string;
   pid: number;
-  /** Abriu retomando a conversa nativa (e não uma conversa nova da CLI). */
+  /** Opened by resuming the native conversation (not a new CLI conversation). */
   resumed: boolean;
   exited: boolean;
   exitCode: number | null;
-  /** Total de caracteres já emitidos pelo terminal. */
+  /** Total characters already emitted by the terminal. */
   end: number;
 }
 export type CliTerminalOpenResult =
@@ -273,15 +275,15 @@ export interface StreamEvents {
   "tools-update": ToolsUpdate;
   "pty-data": { sessionId: string; data: string; pid?: number; shellId?: string };
   "pty-exit": { sessionId: string; [key: string]: unknown };
-  /** Tela da CLI aberta no modo terminal (saída crua do pty). */
+  /** CLI screen open in terminal mode (raw pty output). */
   "cli-terminal-data": { sessionId: string; data: string; end: number };
   "cli-terminal-exit": { sessionId: string; exitCode: number | null };
   "cli-terminal-history": { sessionId: string; added: number };
-  /** Pedido do backend (bandeja, notificação) para abrir uma conversa. */
+  /** Backend request (tray, notification) to open a conversation. */
   "open-session": { sessionId: string };
-  /** Aviso do backend sobre o envio (ex.: a CLI não tem campo nativo para o anexo). */
+  /** Backend notice about the send (e.g. the CLI has no native field for the attachment). */
   "cli-notice": { sessionId: string; responseMessageId?: string; message: string };
-  /** A própria CLI mudou o nível da conversa (ex.: o plano foi aprovado e ela saiu do modo plano). */
+  /** The CLI itself changed the conversation's level (e.g. the plan was approved and it left plan mode). */
   "cli-permission-changed": { sessionId: string; permission: PermissionLevel; reason?: string };
   "cli-stream-chunk": {
     sessionId: string;
@@ -321,7 +323,7 @@ export interface StreamEvents {
   "dictation-model-progress": DictationModelProgress;
 }
 
-/** Superfície exposta pelo preload (`window.beagleAPI`). */
+/** Surface exposed by the preload (`window.beagleAPI`). */
 export interface BeagleAPI {
   getGlobalPermissions(): Promise<GlobalPolicy[]>;
   saveGlobalPermissions(id: string, changes: Record<string, string>): Promise<GlobalPolicy>;
@@ -329,12 +331,12 @@ export interface BeagleAPI {
   readNotifications(): Promise<UpdateInfo>;
   updateCli(id: string): Promise<{ ok: boolean; version?: string | null; error?: string }>;
   getCliApprovals(): Promise<CliApproval[]>;
-  /** `decision`: "allow" | "deny" ou o id de uma opção oferecida; `message` acompanha uma negação. */
+  /** `decision`: "allow" | "deny" or the id of an offered option; `message` goes with a denial. */
   resolveCliApproval(id: string, decision: string, message?: string): Promise<unknown>;
   /**
-   * Troca o nível de permissão da conversa com a CLI aberta. `applied`: "now" (a CLI em execução já
-   * usa o novo nível) ou "next" (vale a partir da próxima mensagem); `approved` = aprovações
-   * pendentes liberadas ao passar para "Acesso total".
+   * Changes the conversation's permission level with the CLI open. `applied`: "now" (the running CLI
+   * already uses the new level) or "next" (applies from the next message); `approved` = pending
+   * approvals released when switching to "Full access" (plans and questions are never released).
    */
   setLivePermission(sessionId: string, permission: PermissionLevel): Promise<LivePermissionResult>;
   detectTools(): Promise<ToolsUpdate>;
@@ -377,17 +379,17 @@ export interface BeagleAPI {
   listWorkspaceStatus(): Promise<{ success: boolean; error?: string; workspaces: WorkspaceStatus[] }>;
   updateWorkspace(request: { id: string; name: string; path: string }): Promise<{ success: boolean; error?: string; workspace?: WorkspaceItem }>;
   deleteWorkspace(id: string): Promise<{ success: boolean; error?: string; removed?: boolean }>;
-  /** Abre um endereço http(s) no navegador padrão do sistema. */
+  /** Opens an http(s) address in the system's default browser. */
   openExternalUrl(url: string): Promise<OkResult>;
-  /** Comandos e skills lidos da própria CLI (`refresh` ignora o cache curto). */
+  /** Commands and skills read from the CLI itself (`refresh` skips the short cache). */
   listNativeCommands(request: { providerId: string; cwd: string; refresh?: boolean }): Promise<NativeCommandList>;
   getZoom(): Promise<number>;
   setZoom(factor: number): Promise<number>;
   saveAppSettings(settings: AppSettings): Promise<SaveSettingsResult>;
-  /** Transcreve uma gravação do microfone (WAV em base64) com o motor configurado. */
+  /** Transcribes a microphone recording (base64 WAV) with the configured engine. */
   transcribeAudio(request: TranscribeAudioRequest): Promise<TranscribeAudioResult>;
   getDictationStatus(): Promise<DictationStatus>;
-  /** Baixa o modelo de voz local (progresso em `dictation-model-progress`). */
+  /** Downloads the local voice model (progress in `dictation-model-progress`). */
   downloadDictationModel(): Promise<{ success: boolean; error?: string; model?: DictationModelStatus }>;
   cancelDictationModelDownload(): Promise<OkResult>;
   removeDictationModel(): Promise<{ success: boolean; error?: string; model?: DictationModelStatus }>;
@@ -397,7 +399,7 @@ export interface BeagleAPI {
   ptySpawn(payload: PtyPayload): Promise<unknown>;
   ptyWrite(payload: PtyPayload): Promise<unknown>;
   ptyResize(payload: PtyPayload): Promise<unknown>;
-  /** Abre (ou reconecta) a interface própria da CLI desta conversa num terminal. */
+  /** Opens (or reconnects) this conversation's own CLI interface in a terminal. */
   cliTerminalOpen(request: {
     sessionId: string;
     providerId: AIProviderId;
@@ -409,18 +411,18 @@ export interface BeagleAPI {
   cliTerminalResize(request: { sessionId: string; cols: number; rows: number }): Promise<{ ok: boolean }>;
   cliTerminalClose(sessionId: string): Promise<{ ok: boolean }>;
   cliTerminalList(): Promise<CliTerminalInfo[]>;
-  /** Conteúdo da área de transferência para o Ctrl+V do terminal. */
+  /** Clipboard content for the terminal's Ctrl+V. */
   cliTerminalClipboard(): Promise<{ image: boolean; text: string }>;
-  /** Caminho no disco de um arquivo arrastado (só no Electron). */
+  /** Disk path of a dragged file (Electron only). */
   pathForFile?(file: File): string;
   interruptCliSession(id: string): Promise<OkResult>;
-  /** Tira da fila uma mensagem que a CLI ainda não recebeu (apaga também a mensagem salva). */
+  /** Removes from the queue a message the CLI hasn't received yet (also deletes the saved message). */
   cancelQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
-  /** Interrompe a execução atual para a mensagem da fila ser enviada em seguida. */
+  /** Interrupts the current execution so the queued message is sent next. */
   forceQueuedPrompt(request: QueuedPromptRequest): Promise<OkResult>;
   /**
-   * Mensagem já entregue que a CLI ainda não leu: `background` manda o comando em execução para o
-   * segundo plano (Claude Code); `interrupt` interrompe a etapa atual. Codex: interrompe e reenvia.
+   * A delivered message the CLI hasn't read yet: `background` sends the running command to the
+   * background (Claude Code); `interrupt` stops the current step. Codex: interrupts and resends.
    */
   answerNowPrompt(
     request: QueuedPromptRequest & { providerId: AIProviderId; mode: "background" | "interrupt" },
@@ -435,21 +437,21 @@ declare global {
   }
 }
 
-/** Projeto do ai-memory em que todas as sessões vieram de uma pasta temporária. */
+/** ai-memory project whose sessions all came from a temporary folder. */
 export interface AIMemoryTempProject {
   workspace: string;
   project: string;
   sessionCount: number;
   pageCount: number;
   lastSeen: string | null;
-  /** Parado há mais dias do que o prazo configurado: será apagado na próxima limpeza. */
+  /** Idle for more days than the configured limit: it will be deleted in the next cleanup. */
   stale: boolean;
   folders: string[];
 }
 export interface AIMemoryTempCleanupPreview {
   ok: boolean;
   error?: string;
-  /** Prazo em dias; 0 desliga a limpeza automática. */
+  /** Limit in days; 0 turns off the automatic cleanup. */
   days?: number;
   lastRun?: { at: string; removed: number; failed: number } | null;
   projects?: AIMemoryTempProject[];

@@ -1,4 +1,4 @@
-import { HANDOFF_PROMPT } from "../lib/handoffPrompt";
+import { handoffPrompt } from "../lib/handoffPrompt";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
@@ -8,7 +8,7 @@ import { rememberedChoice, type SessionChoice, type SessionChoices } from "../li
 import {
   livePermissionNotice,
   PERMISSION_LABELS,
-  PLAN_APPROVED_PROMPT,
+  planApprovedPrompt,
 } from "../lib/permissionModes";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
@@ -19,6 +19,7 @@ import { PROVIDER_NAMES } from "../lib/approvalLabels";
 import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
+import { hasLiveReply } from "../lib/backgroundWork";
 import { precompactDue, turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
 import type {
   AIProviderId,
@@ -35,6 +36,7 @@ import type {
 import type { SavedState } from "../types/api";
 import type { AppTab } from "./useUi";
 
+import { t } from "../i18n";
 interface Params {
   providers: AIProviderStatus[];
   setProviders: React.Dispatch<React.SetStateAction<AIProviderStatus[]>>;
@@ -43,21 +45,21 @@ interface Params {
   setAppError: (message: string) => void;
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
-  /** Contexto (tokens) a partir do qual a conversa é compactada sozinha; 0 desliga. */
+  /** Context (tokens) above which the conversation compacts itself; 0 turns it off. */
   autoCompactTokens?: number | null;
-  /** Chats novos pelo botão + repetem a última escolha da CLI. */
+  /** New chats from the + button repeat the CLI's last choice. */
   rememberSessionChoices?: boolean;
   lastSessionChoices?: SessionChoices;
-  /** Avisado quando a pessoa troca modelo, nível ou permissão numa conversa. */
+  /** Notified when the person changes model, level or permission in a conversation. */
   onSessionChoice?: (providerId: AIProviderId, choice: SessionChoice) => void;
 }
 
-/** Conversas, mensagens, turnos pendentes e eventos de streaming das CLIs. */
-/** Balão da mensagem que espera a resposta atual terminar (fila do app). */
-const QUEUED_TEXT = "Na fila · envio automático após a resposta atual…";
-const RUNNING_TEXT = "Executando na CLI local…";
-/** Mensagem entregue no meio da resposta, ainda não lida pela IA (ver `deliveredFor`). */
-const DELIVERED_ACTIVITY = "Entregue · a IA lê quando a etapa atual terminar";
+/** Conversations, messages, pending turns and streaming events of the CLIs. */
+/** Bubble of a message waiting for the current reply to finish (app queue). */
+const queuedText = () => t("session.queuedText");
+const runningText = () => t("session.runningText");
+/** Message delivered mid-reply, not yet read by the AI (see `deliveredFor`). */
+const deliveredActivity = () => t("session.deliveredActivity");
 
 export function useSessions({
   providers,
@@ -73,18 +75,18 @@ export function useSessions({
   onSessionChoice,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
-  // Referências para os ouvintes de eventos, que não são recriados a cada renderização.
+  // References for the event listeners, which aren't recreated on every render.
   const providersRef = useRef(providers);
   providersRef.current = providers;
   const activeRef = useRef("");
   activeRef.current = activeSessionId;
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
-  // Conversas com resposta nova (de um turno espontâneo) que você ainda não viu.
+  // Conversations with a new reply (from a spontaneous turn) you haven't seen yet.
   const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
   const [contextBySession, setContextBySession] = useState<
     Record<string, ContextInfo>
   >({});
-  // Contexto ao fim da última resposta de cada conversa: base para medir o crescimento da próxima.
+  // Context at the end of each conversation's last reply: the baseline to measure the next one's growth.
   const turnMarks = useRef(new Map<string, TurnMark>());
   const [executingSessions, setExecutingSessions] = useState<
     Record<string, number>
@@ -98,7 +100,10 @@ export function useSessions({
   autoCompactRef.current = autoCompactTokens;
   const pendingTurns = useRef(new Map<string, number>());
   const runGenerations = useRef(new Map<string, number>());
-  const isExecutingPrompt = (executingSessions[activeSessionId] || 0) > 0;
+  // A turn the CLI started on its own is also an execution: it shows as running and can be stopped.
+  const isExecutingPrompt =
+    (executingSessions[activeSessionId] || 0) > 0 ||
+    hasLiveReply(messages[activeSessionId]);
   const hasRunningPrompts = Object.values(executingSessions).some(
     (count) => count > 0,
   );
@@ -120,7 +125,25 @@ export function useSessions({
     currentSession?.reasoningEffort || "",
   );
 
-  // Estado salvo no SQLite (sessões e mensagens) aplicado na inicialização
+  // Marks a conversation as just updated (message sent, reply started or finished): the sidebar
+  // lists the most recently updated conversations first.
+  const touchSession = (sessionId: string) => {
+    const at = Date.now();
+    setProviders((prev) =>
+      prev.map((p) =>
+        p.sessions.some((s) => s.id === sessionId)
+          ? {
+              ...p,
+              sessions: p.sessions.map((s) =>
+                s.id === sessionId ? { ...s, lastMessageAt: at } : s,
+              ),
+            }
+          : p,
+      ),
+    );
+  };
+
+  // State saved in SQLite (sessions and messages) applied at startup
   const hydrateSessions = (saved: SavedState) => {
     const sessions: ChatSession[] = (saved.sessions || []).map(
       (session: ChatSession) => {
@@ -163,7 +186,7 @@ export function useSessions({
     );
   };
 
-  // Ao abrir a conversa, a resposta nova deixa de ser "nova".
+  // Opening the conversation makes the new reply no longer "new".
   useEffect(() => {
     if (activeSessionId)
       setUnreadSessionIds((prev) =>
@@ -173,11 +196,11 @@ export function useSessions({
       );
   }, [activeSessionId]);
 
-  // Listener de streaming do PTY e execução de CLIs
+  // Streaming listener for the PTY and CLI runs
   useEffect(() => {
     if (!backendAvailable()) return;
-    // Cada fonte de eventos é entregue à tela em, no máximo, uma renderização por quadro:
-    // sem timers que segurem dados, sempre com o estado mais recente.
+    // Each event source reaches the screen in at most one render per frame:
+    // no timers holding data back, always with the latest state.
     const ptyBatcher = createFrameBatcher<{
       sessionId: string;
       data: string;
@@ -236,7 +259,7 @@ export function useSessions({
     const streamBatcher = createFrameBatcher<StreamItem>((items) => {
       const wallStart = Date.now();
       const start = performance.now();
-      // flushSync mantém o commit dentro do quadro e permite medir o custo real da renderização.
+      // flushSync keeps the commit inside the frame and lets us measure the real render cost.
       flushSync(() =>
         setMessages((prev) => applyStreamItems(prev, items, wallStart)),
       );
@@ -255,11 +278,12 @@ export function useSessions({
       if (payload?.sessionId)
         streamBatcher.push({ kind: "chunk", payload, receivedAt: Date.now() });
     });
-    // Turno que a CLI começou sozinha (o agente principal recebeu o resultado de um agente em
-    // segundo plano e responde): aparece como uma mensagem nova, ao vivo.
+    // Turn the CLI started on its own (the main agent got the result of a background agent and
+    // replies): it shows up as a new live message.
     const unsubscribeTurnStarted = beagleApi.on(
       "cli-turn-started",
       ({ sessionId, responseMessageId, providerId, model }) => {
+        touchSession(sessionId);
         setMessages((prev) => {
           const list = prev[sessionId] || [];
           if (list.some((m) => m.id === responseMessageId)) return prev;
@@ -291,8 +315,8 @@ export function useSessions({
     const unsubscribeNotice = beagleApi.on("cli-notice", ({ message }) =>
       setAppError(message),
     );
-    // A CLI saiu do modo plano sozinha (plano aprovado no pedido do Claude Code): a conversa grava o
-    // novo nível, para a próxima mensagem não reiniciar a CLI no modo plano.
+    // The CLI left plan mode on its own (plan approved in Claude Code's request): the conversation saves
+    // the new level, so the next message doesn't restart the CLI in plan mode.
     const unsubscribePermission = beagleApi.on(
       "cli-permission-changed",
       ({ sessionId, permission, reason }) => {
@@ -305,24 +329,25 @@ export function useSessions({
           sessionId,
           text:
             reason === "plan-approved"
-              ? `Plano aprovado: a conversa saiu do modo plano e agora está em “${PERMISSION_LABELS[permission]}”.`
-              : `A CLI mudou o nível da conversa para “${PERMISSION_LABELS[permission]}”.`,
+              ? t("session.planApprovedNotice", { level: PERMISSION_LABELS[permission] })
+              : t("session.cliChangedLevel", { level: PERMISSION_LABELS[permission] }),
         });
       },
     );
-    // Menu da bandeja ou notificação: leva o chat até a conversa.
+    // Tray menu or notification: take the chat to the conversation.
     const unsubscribeOpen = beagleApi.on("open-session", ({ sessionId }) => {
       setActiveSessionId(sessionId);
       setActiveTab("chat");
     });
-    // Modo terminal: o que foi conversado na interface da CLI entrou no histórico; recarrega a
-    // conversa e dá a ela o título pela primeira mensagem, como no chat.
+    // Terminal mode: what was said in the CLI's interface reached the history; reload the
+    // conversation and title it from the first message, as in the chat.
     const unsubscribeTerminalHistory = beagleApi.on("cli-terminal-history", ({ sessionId }) => {
       void beagleApi
         .getChatMessages(sessionId)
         .then((saved) => {
           const list: ChatMessage[] = saved || [];
           setMessages((prev) => ({ ...prev, [sessionId]: list }));
+          touchSession(sessionId);
           setProviders((prev) =>
             prev.map((p) => ({
               ...p,
@@ -345,8 +370,9 @@ export function useSessions({
     const unsubscribeTurnFinished = beagleApi.on(
       "cli-turn-finished",
       ({ sessionId, responseMessageId, ok, text, error, events, discard, context }) => {
-        // Crescimento do contexto nesta resposta, comparado ao fim da anterior (sobrevive a reiniciar
-        // a CLI, porque a base vem do contexto salvo). Compactação no meio não tem comparação justa.
+        if (!discard) touchSession(sessionId);
+        // Context growth in this reply, compared to the end of the previous one (survives restarting
+        // the CLI, because the baseline comes from the saved context). A compaction midway has no fair comparison.
         const mark = turnMark(context);
         if (mark) {
           const growth = turnGrowth(turnMarks.current.get(sessionId), mark);
@@ -376,8 +402,8 @@ export function useSessions({
                     ...m,
                     text: stripAnsi(
                       ok
-                        ? text || "Execução concluída."
-                        : `Erro: ${error || "Falha na execução."}${text ? "\n\n" + text : ""}`,
+                        ? text || t("session.done")
+                        : `${t("session.errorPrefix")} ${error || t("session.runFailed")}${text ? "\n\n" + text : ""}`,
                     ),
                     isStreaming: false,
                     activity: undefined,
@@ -399,12 +425,12 @@ export function useSessions({
       ({ sessionId, ...info }) => {
         setContextBySession((prev) => ({
           ...prev,
-          // Uma atualização só da janela ou do estado "compactando" não apaga o uso já conhecido.
+          // An update of only the window or the "compacting" state doesn't erase the known usage.
           [sessionId]: {
             ...prev[sessionId],
             ...info,
             used: info.used ?? prev[sessionId]?.used ?? null,
-            // Um rastreador novo (app-server reiniciado) começa em zero: o histórico não retrocede.
+            // A new tracker (restarted app-server) starts at zero: the history doesn't go backwards.
             compactions: Math.max(
               prev[sessionId]?.compactions ?? 0,
               info.compactions ?? 0,
@@ -435,11 +461,11 @@ export function useSessions({
 
   const persistSession = async (session: ChatSession) => {
     try {
-      // A saída dos shells é só da tela: não é gravada e não precisa cruzar o IPC a cada salvamento.
+      // Shell output is screen-only: it isn't saved and doesn't need to cross IPC on every save.
       const { shellRaw: _shellRaw, ...persistable } = session;
       const result = await beagleApi.saveSession(persistable);
       if (!result?.success)
-        throw new Error(result?.error || "Não foi possível salvar a conversa.");
+        throw new Error(result?.error || t("session.saveConversationFailed"));
       setProviders((prev) =>
         prev.map((p) => ({
           ...p,
@@ -469,7 +495,7 @@ export function useSessions({
   const handleWorkspaceChange = (newPath: string) => {
     if (!currentSession) return;
     if (currentSession.nativeSessionId || isExecutingPrompt) {
-      setAppError("Crie uma nova conversa para mudar de projeto.");
+      setAppError(t("session.newForProject"));
       return;
     }
     void persistSession({ ...currentSession, cwd: newPath });
@@ -494,7 +520,7 @@ export function useSessions({
     void persistSession(next);
     noteChoice(next);
   };
-  // Aviso discreto junto ao seletor quando a troca acontece com a resposta em andamento.
+  // Discreet notice next to the picker when the change happens while a reply is running.
   const [permissionNotice, setPermissionNotice] = useState<{
     sessionId: string;
     text: string;
@@ -504,8 +530,8 @@ export function useSessions({
     const timer = setTimeout(() => setPermissionNotice(null), 8000);
     return () => clearTimeout(timer);
   }, [permissionNotice]);
-  // Pode trocar a qualquer momento: a conversa grava o nível e a CLI aberta o recebe ao vivo quando
-  // consegue (Claude Code; AGY pela ponte de aprovação). Senão vale a partir da próxima mensagem.
+  // It can change at any time: the conversation saves the level and the open CLI gets it live when it
+  // can (Claude Code; AGY through the approval bridge). Otherwise it applies from the next message.
   const handlePermissionChange = (permission: PermissionLevel) => {
     if (!currentSession || permission === (currentSession.permission || "inherit")) return;
     const session = currentSession;
@@ -538,7 +564,7 @@ export function useSessions({
     noteChoice(next);
   };
 
-  // Guarda a escolha da CLI sempre, para que ligar a opção depois já traga a última usada.
+  // Always keep the CLI's choice, so turning the option on later brings back the last one used.
   const noteChoice = (session: ChatSession) =>
     onSessionChoice?.(session.providerId, {
       model: session.currentModel || "",
@@ -546,23 +572,23 @@ export function useSessions({
       permission: session.permission || "inherit",
     });
 
-  // "Aprovar plano e executar": tira a conversa do modo plano (Aceitar edições, ao vivo quando a CLI
-  // aceita) e pede a implementação. Mesmo caminho nas três CLIs; Codex e AGY reiniciam e retomam a
-  // conversa já podendo escrever.
+  // "Approve plan and run": takes the conversation out of plan mode (Accept edits, live when the CLI
+  // accepts it) and asks for the implementation. Same path in all three CLIs; Codex and AGY restart and
+  // resume the conversation already able to write.
   const handleApprovePlan = async () => {
     if (!currentSession || isExecutingPrompt || currentSession.permission !== "plan") return;
     const session: ChatSession = { ...currentSession, permission: "edits" };
     if (!(await persistSession(session))) return;
     if (backendAvailable())
       await beagleApi.setLivePermission(session.id, "edits").catch(() => undefined);
-    await sendPrompt(session, PLAN_APPROVED_PROMPT);
+    await sendPrompt(session, planApprovedPrompt());
   };
 
-  // O atalho pede à própria CLI da conversa que rode a skill de handoff do ai-memory
-  // (antes só listava os handoffs pendentes e nunca criava um).
+  // The shortcut asks the conversation's own CLI to run ai-memory's handoff skill
+  // (it used to only list pending handoffs and never create one).
   const handleTriggerHandoff = async () => {
     if (!currentSession || isExecutingPrompt) return;
-    await sendPrompt(currentSession, HANDOFF_PROMPT);
+    await sendPrompt(currentSession, handoffPrompt());
   };
 
   const handleCreateSession = async (
@@ -581,7 +607,7 @@ export function useSessions({
       providerId,
       remembered
         ? {
-            // Modelo que saiu do catálogo: volta ao padrão da CLI, mas mantém a permissão.
+            // Model that left the catalog: back to the CLI default, but keep the permission.
             ...(remembered.model
               ? { model: remembered.model, effort: remembered.effort }
               : {}),
@@ -591,7 +617,7 @@ export function useSessions({
     );
   };
 
-  // Cria (e persiste) uma sessão de chat; usada pelo botão + e pela Manutenção Assistida.
+  // Creates (and persists) a chat session; used by the + button and by Assisted Maintenance.
   const createSession = async (
     providerId: AIProviderId,
     opts: {
@@ -606,7 +632,7 @@ export function useSessions({
     const activate = opts.activate !== false;
     const provider = providers.find((p) => p.id === providerId);
     if (!provider?.installed) {
-      setAppError("Instale e autentique a CLI antes de criar uma conversa.");
+      setAppError(t("session.installFirst"));
       return null;
     }
     const newId = `session-${providerId}-${crypto.randomUUID()}`;
@@ -629,7 +655,7 @@ export function useSessions({
       providerId,
       permission: opts.permission || "inherit",
       title:
-        opts.title || `Nova sessão #${(provider?.sessions.length || 0) + 1}`,
+        opts.title || t("session.newTitle", { n: (provider?.sessions.length || 0) + 1 }),
       currentModel: initialSelection.model,
       reasoningEffort: initialSelection.effort,
       status: "idle",
@@ -637,14 +663,15 @@ export function useSessions({
         hour: "2-digit",
         minute: "2-digit",
       }),
-      lastActive: "Agora",
+      lastActive: t("time.now"),
+      lastMessageAt: Date.now(),
       cwd: defaultCwd,
       ptyLog: [],
     };
     try {
       const saved = await beagleApi.saveSession(newSession);
       if (!saved?.success)
-        throw new Error(saved?.error || "Não foi possível salvar a sessão.");
+        throw new Error(saved?.error || t("session.saveFailed"));
     } catch (error) {
       setAppError((error as Error).message);
       return null;
@@ -662,10 +689,10 @@ export function useSessions({
       id: `init-${newId}`,
       sessionId: newId,
       sender: providerId,
-      senderName: provider?.name || "IA",
+      senderName: provider?.name || t("session.ai"),
       modelBadge: newSession.currentModel,
       reasoningBadge: newSession.reasoningEffort,
-      text: `Sessão iniciada com ${provider?.name} (${newSession.currentModel || "padrão da CLI"}) em \`${defaultCwd}\`. Digite uma mensagem para executar na CLI real ou use o terminal PTY.`,
+      text: t("session.started", { provider: provider?.name || "", model: newSession.currentModel || t("stale.cliDefault"), cwd: defaultCwd }),
       timestamp: new Date().toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
@@ -689,30 +716,30 @@ export function useSessions({
     return newSession;
   };
 
-  // Continua a tarefa em outra CLI: cria uma sessão nova com o resumo do histórico local. A conversa
-  // original e o identificador nativo dela não são tocados.
+  // Continues the task in another CLI: creates a new session with a summary of the local history. The
+  // original conversation and its native identifier aren't touched.
   const handleContinueInCli = async (targetProviderId: AIProviderId) => {
     if (!currentSession) return;
     const from = providers.find((p) => p.id === currentSession.providerId);
     const to = providers.find((p) => p.id === targetProviderId);
     if (!to || to.id === currentSession.providerId) return;
     const prompt = buildContinuation({
-      fromProviderName: from?.name || "outra CLI",
+      fromProviderName: from?.name || t("session.otherCli"),
       toProviderName: to.name,
       title: currentSession.title,
       cwd: currentSession.cwd,
       messages: currentMessages,
     });
     const session = await createSession(targetProviderId, {
-      title: `Continuação: ${currentSession.title}`,
+      title: t("session.continuationTitle", { title: currentSession.title }),
       cwd: currentSession.cwd,
       permission: currentSession.permission,
     });
     if (session) void sendPrompt(session, prompt);
   };
 
-  // Renomear grava o título escolhido: o título automático só troca títulos genéricos, então um
-  // nome dado pela pessoa nunca é sobrescrito.
+  // Renaming saves the chosen title: the automatic title only replaces generic titles, so a
+  // name the person gave is never overwritten.
   const renameSession = async (sessionId: string, title: string) => {
     const clean = title.replace(/\s+/g, " ").trim().slice(0, 120);
     const session = allSessions.find((s) => s.id === sessionId);
@@ -725,7 +752,7 @@ export function useSessions({
       });
       if (!result?.success)
         throw new Error(
-          result?.error || "Não foi possível renomear a conversa.",
+          result?.error || t("session.renameFailed"),
         );
       setProviders((prev) =>
         prev.map((p) => ({
@@ -740,18 +767,18 @@ export function useSessions({
     }
   };
 
-  // Fechar tira a conversa da barra lateral e encerra o processo da CLI; ela continua no
-  // histórico (campo `archived` no banco) e as mensagens saem da memória até ser reaberta.
+  // Closing removes the conversation from the sidebar and stops the CLI process; it stays in the
+  // history (`archived` column in the database) and its messages leave memory until it's reopened.
   const setSessionArchived = async (sessionId: string, archived: boolean) => {
     if (archived && (pendingTurns.current.get(sessionId) || 0) > 0) {
-      setAppError("Pare a execução desta conversa antes de fechá-la.");
+      setAppError(t("session.stopBeforeClose"));
       return;
     }
     try {
       const result = await beagleApi.setSessionArchived(sessionId, archived);
       if (!result?.success)
         throw new Error(
-          result?.error || "Não foi possível fechar a conversa.",
+          result?.error || t("session.closeFailed"),
         );
       setProviders((prev) =>
         prev.map((p) => ({
@@ -778,14 +805,14 @@ export function useSessions({
     }
   };
 
-  // Reabre pelo histórico uma conversa do BeagleDock: volta à barra lateral com as mensagens salvas.
+  // Reopens a BeagleDock conversation from the history: back to the sidebar with its saved messages.
   const reopenSession = async (sessionId: string) => {
     const session = allSessions.find((s) => s.id === sessionId);
-    if (!session) throw new Error("Conversa inexistente ou removida.");
+    if (!session) throw new Error(t("session.missing"));
     if (session.archived) {
       const result = await beagleApi.setSessionArchived(sessionId, false);
       if (!result?.success)
-        throw new Error(result?.error || "Não foi possível reabrir a conversa.");
+        throw new Error(result?.error || t("session.reopenFailed"));
     }
     if (!messages[sessionId]) {
       const saved = await beagleApi.getChatMessages(sessionId);
@@ -797,14 +824,14 @@ export function useSessions({
       prev.map((p) => ({
         ...p,
         sessions: p.sessions.map((s) =>
-          s.id === sessionId ? { ...s, archived: false } : s,
+          s.id === sessionId ? { ...s, archived: false, lastMessageAt: Date.now() } : s,
         ),
       })),
     );
     setActiveSessionId(sessionId);
   };
 
-  // Depois de apagar pelo histórico: some da tela sem outra ida ao backend.
+  // After deleting from the history: it leaves the screen without another backend round trip.
   const forgetSession = (sessionId: string) => {
     setProviders((prev) =>
       prev.map((p) => ({
@@ -823,10 +850,10 @@ export function useSessions({
       );
   };
 
-  // Claude Code: a compactação é a mensagem /compact (testado com a CLI real); Codex tem comando
-  // próprio; o AGY também usa /compact (verificado com a CLI real 1.4.12).
+  // Claude Code: compaction is the /compact message (tested with the real CLI); Codex has its own
+  // command; AGY also uses /compact (verified with the real CLI 1.4.12).
   const compactContext = async (session: ChatSession) => {
-    // O AGY compacta pelo comando /compact (verificado com a CLI real 1.4.12), como o Claude Code.
+    // AGY compacts with the /compact command (verified with the real CLI 1.4.12), like Claude Code.
     if (session.providerId === "claude" || session.providerId === "antigravity") {
       await sendPrompt(session, "/compact");
       return;
@@ -837,7 +864,7 @@ export function useSessions({
         session.providerId,
       );
       if (!result?.ok)
-        setAppError(result?.error || "Não foi possível compactar.");
+        setAppError(result?.error || t("session.compactFailed"));
     } catch (error) {
       setAppError((error as Error).message);
     }
@@ -850,7 +877,7 @@ export function useSessions({
     try {
       const result = await beagleApi.interruptCliSession(id);
       if (!result?.ok)
-        throw new Error(result?.error || "Não foi possível parar a execução.");
+        throw new Error(result?.error || t("session.stopFailed"));
     } catch (error) {
       setAppError((error as Error).message);
     } finally {
@@ -858,7 +885,7 @@ export function useSessions({
     }
   };
 
-  // Mensagem que ainda espera na fila: remove sem a CLI chegar a recebê-la.
+  // Message still waiting in the queue: remove it before the CLI ever gets it.
   const cancelQueuedPrompt = async (reply: ChatMessage) => {
     if (!reply.queuedFor) return;
     try {
@@ -868,7 +895,7 @@ export function useSessions({
         userMessageId: reply.queuedFor,
       });
       if (!result?.ok)
-        throw new Error(result?.error || "Não foi possível remover da fila.");
+        throw new Error(result?.error || t("session.dequeueFailed"));
       setMessages((prev) =>
         !prev[reply.sessionId]
           ? prev
@@ -884,7 +911,7 @@ export function useSessions({
     }
   };
 
-  // "Responder agora" para uma mensagem já entregue que a IA ainda não leu (Claude Code e Codex).
+  // "Answer now" for a message already delivered that the AI hasn't read yet (Claude Code and Codex).
   const answerNowPrompt = async (reply: ChatMessage, mode: "background" | "interrupt") => {
     if (!reply.deliveredFor || (reply.sender !== "claude" && reply.sender !== "codex")) return;
     try {
@@ -895,7 +922,7 @@ export function useSessions({
         providerId: reply.sender,
         mode,
       });
-      if (!result?.ok) throw new Error(result?.error || "Não foi possível responder agora.");
+      if (!result?.ok) throw new Error(result?.error || t("session.answerNowFailed"));
       setMessages((prev) =>
         !prev[reply.sessionId]
           ? prev
@@ -908,8 +935,8 @@ export function useSessions({
                       deliveredFor: undefined,
                       activity:
                         result.mode === "background"
-                          ? "Comando no segundo plano; respondendo à sua mensagem…"
-                          : "Etapa interrompida; respondendo à sua mensagem…",
+                          ? t("session.answeringBackground")
+                          : t("session.answeringInterrupted"),
                     }
                   : m,
               ),
@@ -920,7 +947,7 @@ export function useSessions({
     }
   };
 
-  // "Enviar agora": interrompe a execução atual para esta mensagem da fila ser a próxima.
+  // "Send now": interrupts the current run so this queued message is next.
   const forceQueuedPrompt = async (reply: ChatMessage) => {
     if (!reply.queuedFor) return;
     try {
@@ -930,14 +957,14 @@ export function useSessions({
         userMessageId: reply.queuedFor,
       });
       if (!result?.ok)
-        throw new Error(result?.error || "Não foi possível enviar agora.");
+        throw new Error(result?.error || t("session.sendNowFailed"));
     } catch (error) {
       setAppError((error as Error).message);
     }
   };
 
-  // Compactação preventiva: conversa parada, contexto grande e cache quase vencendo. Uma vez por
-  // última chamada; sessão ocupada ou com a compactação desligada fica de fora.
+  // Preventive compaction: idle conversation, large context and cache about to expire. Once per
+  // last call; busy sessions or ones with compaction off are skipped.
   const precompacted = useRef<Record<string, number>>({});
   const precompactRef = useRef<() => void>(() => {});
   precompactRef.current = () => {
@@ -957,7 +984,7 @@ export function useSessions({
     return () => clearInterval(timer);
   }, []);
 
-  // Envia um prompt para uma sessão (chat principal ou Manutenção Assistida).
+  // Sends a prompt to a session (main chat or Assisted Maintenance).
   const sendPrompt = async (
     session: ChatSession,
     promptText: string,
@@ -974,7 +1001,7 @@ export function useSessions({
       currentModel: selected.model,
       reasoningEffort: selected.effort,
       title:
-        session.titleLocked || promptText === HANDOFF_PROMPT
+        session.titleLocked || promptText === handoffPrompt()
           ? session.title
           : conversationTitle(session.title, promptText),
       status: "running" as const,
@@ -999,13 +1026,13 @@ export function useSessions({
       id: responseId,
       sessionId: id,
       sender: sendingSession.providerId,
-      senderName: provider?.name || "IA",
+      senderName: provider?.name || t("session.ai"),
       modelBadge: selected.model,
       reasoningBadge: selected.effort,
-      text: wasPending ? QUEUED_TEXT : RUNNING_TEXT,
+      text: wasPending ? queuedText() : runningText(),
       isStreaming: true,
       ...(wasPending ? { queuedFor: userMsg.id } : {}),
-      activity: wasPending ? "Na fila" : "Aguardando a CLI…",
+      activity: wasPending ? t("session.queued") : t("session.waitingCli"),
       startedAt: Date.now(),
       timestamp: new Date().toLocaleTimeString(),
     };
@@ -1013,6 +1040,7 @@ export function useSessions({
       ...prev,
       [id]: [...(prev[id] || []), userMsg, reply],
     }));
+    touchSession(id);
     const finishReply = (
       text: string,
       events?: ChatEvent[],
@@ -1033,7 +1061,7 @@ export function useSessions({
                       queuedFor: undefined,
                       activity: undefined,
                       detail: undefined,
-                      // A lista final vem do backend; sem ela, encerra o que ainda estava rodando.
+                      // The final list comes from the backend; without it, close what was still running.
                       events: events?.length
                         ? events
                         : m.events?.map((e) =>
@@ -1049,13 +1077,13 @@ export function useSessions({
     let autoCompact = false;
     try {
       if (!(await persistSession(sendingSession)))
-        throw new Error("Não foi possível salvar a conversa.");
+        throw new Error(t("session.saveConversationFailed"));
       const saved = await beagleApi.saveChatMessage({
         ...userMsg,
         provider: sendingSession.providerId,
       });
       if (!saved?.success)
-        throw new Error(saved?.error || "Não foi possível salvar a mensagem.");
+        throw new Error(saved?.error || t("session.saveMessageFailed"));
       const res = await beagleApi.executeCliPrompt({
         sessionId: id,
         providerId: sendingSession.providerId,
@@ -1069,11 +1097,11 @@ export function useSessions({
         permission: sendingSession.permission || "inherit",
         cancelled: (runGenerations.current.get(id) || 0) !== generation,
       });
-      // A CLI recebeu a mensagem no meio da execução (próxima etapa): a resposta sai no mesmo
-      // balão da execução em andamento, então este balão da fila deixa de existir.
+      // The CLI got the message mid-run (next step): the reply comes out in the same bubble as
+      // the run in progress, so this queue bubble goes away.
       if (res?.injected) {
-        // O balão da fila vira a resposta a esta mensagem, abaixo dela; a resposta anterior segue
-        // com o que já escreveu.
+        // The queue bubble becomes the reply to this message, below it; the previous reply keeps
+        // what it already wrote.
         setMessages((prev) =>
           !prev[id]
             ? prev
@@ -1082,10 +1110,10 @@ export function useSessions({
                 [id]: prev[id].map((m) =>
                   m.id === responseId
                     ? (() => {
-                        // A IA ainda não escreveu nada para esta mensagem: ela foi entregue, mas a CLI
-                        // só a lê quando a etapa atual (ex.: um comando demorado) terminar.
+                        // The AI hasn't written anything for this message yet: it was delivered, but the CLI
+                        // only reads it when the current step (e.g. a long command) finishes.
                         const unread =
-                          (!m.text || m.text === QUEUED_TEXT) && !m.events?.length;
+                          (!m.text || m.text === queuedText()) && !m.events?.length;
                         return {
                           ...m,
                           queuedFor: undefined,
@@ -1094,22 +1122,22 @@ export function useSessions({
                             ? {
                                 text: "",
                                 deliveredFor: userMsg.id,
-                                activity: DELIVERED_ACTIVITY,
+                                activity: deliveredActivity(),
                               }
                             : { activity: m.activity || "Respondendo…" }),
                           startedAt: m.startedAt ?? Date.now(),
                         };
                       })()
                     : m.id === res.rotatedFrom
-                      ? // A resposta anterior para aqui: o que ela tinha rodando (um comando no
-                        // segundo plano, por exemplo) ainda termina nela, mas o resto vai para a nova.
+                      ? // The previous reply stops here: what it had running (a background command,
+                        // for example) still finishes in it, but the rest goes to the new one.
                         {
                           ...m,
                           isStreaming: false,
                           activity: undefined,
                           detail: undefined,
                           deliveredFor: undefined,
-                          ...(m.text === RUNNING_TEXT || m.text === QUEUED_TEXT ? { text: "" } : {}),
+                          ...(m.text === runningText() || m.text === queuedText() ? { text: "" } : {}),
                         }
                       : m,
                 ),
@@ -1129,18 +1157,18 @@ export function useSessions({
       finishReply(
         stripAnsi(
           res?.stopped
-            ? res.output || "Execução interrompida pelo usuário."
+            ? res.output || t("session.stoppedByUser")
             : followUps.length
               ? res?.output || ""
               : res?.ok
-                ? res.output || "Execução concluída."
-                : `Erro: ${res?.error || "Falha na execução."}${res?.output ? "\n\n" + res.output : ""}`,
+                ? res.output || t("session.done")
+                : `${t("session.errorPrefix")} ${res?.error || t("session.runFailed")}${res?.output ? "\n\n" + res.output : ""}`,
         ),
         res?.events,
         !!res?.ok,
       );
-      // Respostas às mensagens entregues no meio da execução: fecham com o texto de cada uma, e as
-      // sem texto saem da tela.
+      // Replies to messages delivered mid-run: they close with their own text, and those
+      // without text leave the screen.
       if (followUps.length) {
         const empty = new Set(
           followUps
@@ -1178,6 +1206,7 @@ export function useSessions({
             session.id === id
               ? {
                   ...session,
+                  lastMessageAt: Date.now(),
                   nativeSessionId:
                     res?.nativeSessionId || session.nativeSessionId,
                   status:
@@ -1191,8 +1220,8 @@ export function useSessions({
           ),
         })),
       );
-      // O AGY não tem limite próprio configurável: ao fim da resposta (cache ainda quente), se o
-      // contexto passou do limite e não há mais nada na fila, o app envia o /compact.
+      // AGY has no configurable limit of its own: at the end of the reply (cache still warm), if the
+      // context went over the limit and nothing else is queued, the app sends /compact.
       const limit = resolveAutoCompact(
         autoCompactRef.current,
         contextRef.current[id]?.window,
@@ -1206,7 +1235,7 @@ export function useSessions({
         (pendingTurns.current.get(id) || 0) <= 1;
     } catch (error) {
       setAppError((error as Error).message);
-      finishReply(`Erro: ${(error as Error).message}`);
+      finishReply(`${t("session.errorPrefix")} ${(error as Error).message}`);
     } finally {
       const count = (pendingTurns.current.get(id) || 1) - 1;
       if (count) pendingTurns.current.set(id, count);

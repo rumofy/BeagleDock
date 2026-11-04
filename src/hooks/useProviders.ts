@@ -36,7 +36,7 @@ export function useProviders({
     provider("codex", "Codex CLI", "#059669", "bg-emerald-600"),
     provider("antigravity", "Antigravity", "#db2777", "bg-pink-600"),
   ]);
-  // Ferramentas instaladas, Modelos, MCPs e Cotas Reais (inicial + push em tempo real)
+  // Installed tools, models, MCPs and real quotas (initial load + real-time push)
   useEffect(() => {
     if (!backendAvailable()) return;
     const applyToolsUpdate = (res?: ToolsUpdate) => {

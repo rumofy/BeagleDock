@@ -12,7 +12,7 @@ const selected = process.argv
   .split(",") || ["claude", "codex", "antigravity"];
 const command = `node -e "console.log('BEAGLEDOCK_CANARY_FIRST');let n=0;const t=setInterval(()=>{console.log('BEAGLEDOCK_CANARY_TICK_'+(++n));if(n===4){clearInterval(t);console.log('BEAGLEDOCK_CANARY_LAST')}},1000)"`;
 const npmScenario = process.argv.includes("--npm-test");
-// Dois comandos ao mesmo tempo: cada saída precisa chegar com a origem (shellId) do seu comando.
+// Two commands at the same time: each output must arrive with its own command's origin (shellId).
 const parallelScenario = process.argv.includes("--parallel");
 const parallelCommand = (tag) =>
   `node -e "let n=0;console.log('PAR_${tag}_FIRST');const t=setInterval(()=>{console.log('PAR_${tag}_TICK_'+(++n));if(n===3){clearInterval(t);console.log('PAR_${tag}_LAST')}},1000)"`;
@@ -29,7 +29,7 @@ const parallelCommand = (tag) =>
       failed++;
       continue;
     }
-    // A pasta já vem com o `.ai-memory.toml` do projeto único de sondas.
+    // The folder already comes with the single probes project's `.ai-memory.toml`.
     const cwd = makeProbeDir("canary-probe"),
       links = new Map(),
       times = {},
@@ -66,9 +66,9 @@ const parallelCommand = (tag) =>
         if (parallelScenario && channel === "pty-data") {
           const tag = /PAR_(A|B)_/.exec(payload.data)?.[1];
           if (tag) {
-            (shells[tag] ||= new Set()).add(payload.shellId || "(sem origem)");
-            (shellText[payload.shellId || "(sem origem)"] ||= "");
-            shellText[payload.shellId || "(sem origem)"] += payload.data;
+            (shells[tag] ||= new Set()).add(payload.shellId || "(no origin)");
+            (shellText[payload.shellId || "(no origin)"] ||= "");
+            shellText[payload.shellId || "(no origin)"] += payload.data;
           }
         }
         if (channel !== "pty-data" || payload.data.startsWith("$")) return;
@@ -78,7 +78,7 @@ const parallelCommand = (tag) =>
           last: "BEAGLEDOCK_CANARY_LAST",
         }))
           if (payload.data.includes(marker)) {
-            origins.add(payload.shellId || "(sem origem)");
+            origins.add(payload.shellId || "(no origin)");
             if (times[key] === undefined) times[key] = Date.now() - start;
           }
       },
@@ -93,7 +93,7 @@ const parallelCommand = (tag) =>
         prompt: parallelScenario
           ? `Do not read or modify any project files. Run these two harmless commands IN PARALLEL (start both before waiting for either; use separate tool calls in the same step), then wait for both to finish and reply exactly DONE. Command A: ${parallelCommand("A")} Command B: ${parallelCommand("B")} ${providerId === "antigravity" ? "Use WaitMsBeforeAsync=1000 and manage_task to wait for completion." : ""}`
           : npmScenario
-          ? "Roda pra mim os testes unitários deste projeto com npm test e me diga o resultado."
+          ? "Run this project's unit tests with npm test and tell me the result."
           : `Do not read or modify any project files. Run exactly this harmless command once: ${command}. ${providerId === "antigravity" ? "Use WaitMsBeforeAsync=1000 and manage_task to wait for completion." : ""} Wait until the command finishes, then reply exactly DONE.`,
       });
       times.completed = Date.now() - start;
@@ -106,9 +106,9 @@ const parallelCommand = (tag) =>
       if (!live && !parallelScenario) failed++;
       let attribution;
       if (parallelScenario) {
-        const own = (tag) => [...(shells[tag] || [])].filter((id) => id !== "(sem origem)");
+        const own = (tag) => [...(shells[tag] || [])].filter((id) => id !== "(no origin)");
         const a = own("A"), b = own("B");
-        const unattributed = ["A", "B"].filter((tag) => shells[tag]?.has("(sem origem)")).length;
+        const unattributed = ["A", "B"].filter((tag) => shells[tag]?.has("(no origin)")).length;
         const distinct = a.length === 1 && b.length === 1 && a[0] !== b[0];
         const clean = distinct && !/PAR_B_/.test(shellText[a[0]] || "") && !/PAR_A_/.test(shellText[b[0]] || "");
         attribution = { A: a, B: b, distinct, clean, unattributed };

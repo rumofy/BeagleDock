@@ -8,7 +8,7 @@ const { version } = JSON.parse(readFileSync(path.join(root, "package.json"), "ut
 const rel = `release/BeagleDock-${version}-linux-amd64.deb`;
 
 if (!existsSync(path.join(root, rel))) {
-  console.error(`Pacote não encontrado: ${rel}\nRode \`npm run build\` para gerá-lo.`);
+  console.error(`Package not found: ${rel}\nRun \`npm run build\` to build it.`);
   process.exit(1);
 }
 const r = spawnSync("sudo", ["apt", "install", `./${rel}`], { cwd: root, stdio: "inherit" });

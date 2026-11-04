@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { NativeCommand } from "../../types/api";
 
-/** Lista de comandos e skills nativos da CLI, aberta acima do campo de mensagem. */
+import { t } from "../../i18n";
+/** List of the CLI's native commands and skills, shown above the message field. */
 export function CommandSuggestions({
   items,
   selected,
@@ -39,7 +40,7 @@ export function CommandSuggestions({
               aria-selected={index === selected}
               onMouseEnter={() => onHover(index)}
               onMouseDown={(event) => {
-                event.preventDefault(); // mantém o foco no campo
+                event.preventDefault(); // keeps focus in the field
                 onPick(command);
               }}
               className={`flex items-baseline gap-2 px-3 py-1.5 cursor-pointer text-sm ${index === selected ? "bg-[#f4f1e8]" : ""}`}
@@ -51,7 +52,7 @@ export function CommandSuggestions({
                 </span>
               )}
               {command.terminalOnly && (
-                <span className="text-[10px] text-[#8c8270] shrink-0" title="Só funciona no terminal da CLI">
+                <span className="text-[10px] text-[#8c8270] shrink-0" title={t("commands.terminalOnly")}>
                   terminal
                 </span>
               )}
@@ -62,8 +63,8 @@ export function CommandSuggestions({
       ) : (
         <div className="px-3 py-2 text-xs text-[#7d7565]">
           {loading
-            ? "Lendo os comandos da CLI…"
-            : error || "Nenhum comando nativo corresponde ao que foi digitado."}
+            ? t("commands.loading")
+            : error || t("commands.none")}
         </div>
       )}
       {limitation && (

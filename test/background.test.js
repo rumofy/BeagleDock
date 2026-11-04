@@ -10,21 +10,21 @@ const {
   friendlyTool,
 } = require("../electron/background");
 
-test("estado da bandeja resume sessões rodando e aprovações pendentes", () => {
+test("the tray state sums up running sessions and pending approvals", () => {
   assert.deepEqual(describeState(), {
     status: "idle",
-    summary: "Nenhuma sessão em execução",
+    summary: "No session running",
     tooltip: "BeagleDock",
     sessions: [],
   });
-  assert.equal(describeState({ running: 1 }).summary, "1 sessão rodando");
-  assert.equal(describeState({ running: 3 }).summary, "3 sessões rodando");
+  assert.equal(describeState({ running: 1 }).summary, "1 session running");
+  assert.equal(describeState({ running: 3 }).summary, "3 sessions running");
   const waiting = describeState({ running: 2, waiting: 1 });
   assert.equal(waiting.status, "waiting");
-  assert.equal(waiting.tooltip, "BeagleDock · 2 sessões rodando · 1 aguardando permissão");
+  assert.equal(waiting.tooltip, "BeagleDock · 2 sessions running · 1 waiting for permission");
 });
 
-test("fechar a janela nunca encerra o app; sem bandeja funcional minimiza", () => {
+test("closing the window never quits the app; without a working tray it minimizes", () => {
   assert.equal(closeAction({ quitting: false, trayReady: true }), "hide");
   assert.equal(closeAction({ quitting: false, trayReady: false }), "minimize");
   assert.equal(closeAction({ quitting: true, trayReady: true }), "allow");
@@ -37,7 +37,7 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
   const state = { running, approvals, quitCalls: 0, hidden: 0, minimized: 0, shown: 0, notes: [], blocker: { started: 0, stopped: 0 }, tooltip: "", menu: null, dialogs: 0, images: [], opened: [], clicks: [] };
   class Tray {
     constructor() {
-      if (trayFails) throw new Error("sem bandeja");
+      if (trayFails) throw new Error("no tray");
       state.tray = this;
     }
     on() {}
@@ -102,17 +102,17 @@ const close = (win) => {
   return prevented;
 };
 
-test("fechar a janela esconde na bandeja e mantém as sessões", () => {
+test("closing the window hides it in the tray and keeps the sessions", () => {
   const { controller, state, win } = harness({ running: 2 });
   assert.equal(controller.start(), true);
   controller.attachWindow(win);
   assert.equal(close(win), true);
   assert.equal(state.hidden, 1);
   assert.equal(state.quitCalls, 0);
-  assert.equal(state.shutdown, undefined, "nenhuma CLI foi encerrada");
+  assert.equal(state.shutdown, undefined, "no CLI was stopped");
 });
 
-test("sem bandeja disponível a janela é minimizada, não escondida", () => {
+test("without an available tray the window is minimized, not hidden", () => {
   const { controller, state, win } = harness({ trayFails: true });
   assert.equal(controller.start(), false);
   controller.attachWindow(win);
@@ -121,30 +121,30 @@ test("sem bandeja disponível a janela é minimizada, não escondida", () => {
   assert.equal(state.hidden, 0);
 });
 
-test("atalhos de sair do sistema são barrados; só a bandeja encerra", () => {
+test("system quit shortcuts are blocked; only the tray quits", () => {
   const { controller, state, win } = harness({ running: 1 });
   controller.start();
   controller.attachWindow(win);
   let prevented = false;
   controller.beforeQuit({ preventDefault: () => (prevented = true) });
-  assert.equal(prevented, true, "Ctrl+Q não encerra");
+  assert.equal(prevented, true, "Ctrl+Q doesn't quit");
   assert.equal(state.shutdown, undefined);
-  assert.ok(state.shown >= 1, "traz a janela de volta");
+  assert.ok(state.shown >= 1, "brings the window back");
 });
 
-test("Sair na bandeja pede confirmação com sessão rodando e respeita a recusa", () => {
+test("Quit in the tray asks for confirmation with a running session and honors a refusal", () => {
   const declined = harness({ running: 2, confirmChoice: 0 });
   declined.controller.start();
-  declined.state.menu.find((i) => i.label === "Sair").click();
+  declined.state.menu.find((i) => i.label === "Quit").click();
   assert.equal(declined.state.dialogs, 1);
   assert.equal(declined.state.quitCalls, 0);
 
   const accepted = harness({ running: 2, confirmChoice: 1 });
   accepted.controller.start();
   accepted.controller.attachWindow(accepted.win);
-  accepted.state.menu.find((i) => i.label === "Sair").click();
+  accepted.state.menu.find((i) => i.label === "Quit").click();
   assert.equal(accepted.state.quitCalls, 1);
-  // Já autorizado pela bandeja: a janela e o before-quit deixam passar.
+  // Already authorized by the tray: the window and before-quit let it through.
   assert.equal(close(accepted.win), false);
   let prevented = false;
   accepted.controller.beforeQuit({ preventDefault: () => (prevented = true) });
@@ -152,32 +152,32 @@ test("Sair na bandeja pede confirmação com sessão rodando e respeita a recusa
   assert.equal(accepted.state.shutdown, true);
 });
 
-test("Sair sem sessão rodando não pergunta nada", () => {
+test("Quit without a running session asks nothing", () => {
   const { controller, state } = harness({ running: 0 });
   controller.start();
-  state.menu.find((i) => i.label === "Sair").click();
+  state.menu.find((i) => i.label === "Quit").click();
   assert.equal(state.dialogs, 0);
   assert.equal(state.quitCalls, 1);
 });
 
-test("o sistema não suspende o app enquanto há sessão rodando", () => {
+test("the system doesn't suspend the app while a session is running", () => {
   const { controller, state } = harness({ running: 1 });
   controller.start();
   controller.refresh();
-  assert.equal(state.blocker.started, 1, "um bloqueio só, sem duplicar");
+  assert.equal(state.blocker.started, 1, "a single blocker, not duplicated");
   state.running = 0;
   controller.refresh();
   assert.equal(state.blocker.stopped, 1);
   assert.match(state.tooltip, /^BeagleDock$/);
 });
 
-test("notifica permissão pendente só com a janela fora de foco e uma vez por pedido", () => {
+test("notifies a pending permission only with the window out of focus and once per request", () => {
   const hidden = harness({ approvals: [{ id: "a1", providerId: "codex", tool: "Bash" }], focused: false });
   hidden.controller.start();
   hidden.controller.onApprovalsChanged();
   hidden.controller.onApprovalsChanged();
   assert.equal(hidden.state.notes.length, 1);
-  assert.match(hidden.state.notes[0].body, /codex quer usar Bash/);
+  assert.match(hidden.state.notes[0].body, /codex wants: Bash/);
 
   const focused = harness({ approvals: [{ id: "a1", providerId: "codex", tool: "Bash" }], focused: true });
   focused.controller.start();
@@ -185,24 +185,24 @@ test("notifica permissão pendente só com a janela fora de foco e uma vez por p
   assert.equal(focused.state.notes.length, 0);
 });
 
-test("ambiente de teste (bypass) deixa o app encerrar normalmente", () => {
+test("the test environment (bypass) lets the app quit normally", () => {
   const { controller, state, win } = harness({ running: 3, bypass: true });
   controller.start();
   controller.attachWindow(win);
   let prevented = false;
   controller.beforeQuit({ preventDefault: () => (prevented = true) });
   assert.equal(prevented, false);
-  assert.equal(close(win), false, "janela fecha durante a saída");
+  assert.equal(close(win), false, "the window closes during the quit");
   assert.equal(state.shutdown, true);
 });
 
-test("ícone ausente conta como bandeja indisponível e o app vira um app comum", () => {
+test("a missing icon counts as an unavailable tray and the app becomes a regular app", () => {
   const { controller, state, win } = harness({ emptyIcon: true, running: 2, confirmChoice: 0 });
   assert.equal(controller.start(), false);
   controller.attachWindow(win);
   assert.equal(close(win), true);
   assert.equal(state.minimized, 1, "fechar minimiza");
-  // Sem bandeja não há "Sair": Ctrl+Q funciona, mas com confirmação por haver sessão rodando.
+  // Without a tray there's no "Quit": Ctrl+Q works, but with a confirmation because a session is running.
   let prevented = false;
   controller.beforeQuit({ preventDefault: () => (prevented = true) });
   assert.equal(state.dialogs, 1);
@@ -210,7 +210,7 @@ test("ícone ausente conta como bandeja indisponível e o app vira um app comum"
   assert.equal(state.shutdown, undefined);
 });
 
-test("sem bandeja e sem sessão rodando, sair é imediato", () => {
+test("without a tray and without a running session, quitting is immediate", () => {
   const { controller, state } = harness({ emptyIcon: true, running: 0 });
   controller.start();
   let prevented = false;
@@ -220,7 +220,7 @@ test("sem bandeja e sem sessão rodando, sair é imediato", () => {
   assert.equal(state.dialogs, 0);
 });
 
-test("o encerramento das CLIs roda uma única vez, mesmo com vários before-quit", () => {
+test("stopping the CLIs runs only once, even with several before-quit", () => {
   const { controller, state } = harness({ running: 0, bypass: true });
   controller.start();
   controller.beforeQuit({ preventDefault() {} });
@@ -230,19 +230,19 @@ test("o encerramento das CLIs roda uma única vez, mesmo com vários before-quit
   assert.equal(state.shutdownCalls, 1);
 });
 
-test("nome amigável da ação nas notificações do Codex", () => {
-  assert.equal(friendlyTool("item/commandExecution/requestApproval"), "executar um comando");
-  assert.equal(friendlyTool("item/fileChange/requestApproval"), "editar arquivos");
-  assert.equal(friendlyTool("item/permissions/requestApproval"), "uma permissão adicional");
-  assert.equal(friendlyTool("item/outra/requestApproval"), "uma ação");
+test("friendly action name in Codex notifications", () => {
+  assert.equal(friendlyTool("item/commandExecution/requestApproval"), "run a command");
+  assert.equal(friendlyTool("item/fileChange/requestApproval"), "edit files");
+  assert.equal(friendlyTool("item/permissions/requestApproval"), "an additional permission");
+  assert.equal(friendlyTool("item/outra/requestApproval"), "an action");
   assert.equal(friendlyTool("Bash"), "Bash");
   const h = harness({ approvals: [{ id: "x", providerId: "codex", tool: "item/commandExecution/requestApproval" }], focused: false });
   h.controller.start();
   h.controller.onApprovalsChanged();
-  assert.equal(h.state.notes[0].body, "codex quer executar um comando");
+  assert.equal(h.state.notes[0].body, "codex wants: run a command");
 });
 
-test("janela ativa = visível e não minimizada", () => {
+test("active window = visible and not minimized", () => {
   const { controller, win } = harness();
   controller.start();
   assert.equal(controller.isWindowActive(), true);
@@ -253,41 +253,41 @@ test("janela ativa = visível e não minimizada", () => {
   assert.equal(controller.isWindowActive(), false);
 });
 
-test("segundo plano desligado: fechar a janela pede para sair, com a confirmação de sempre", () => {
+test("background off: closing the window asks to quit, with the usual confirmation", () => {
   assert.equal(closeAction({ quitting: false, trayReady: true, runInBackground: false }), "quit");
   assert.equal(closeAction({ quitting: false, trayReady: false, runInBackground: false }), "quit");
   assert.equal(closeAction({ quitting: true, trayReady: true, runInBackground: false }), "allow");
-  assert.equal(closeAction({ quitting: false, trayReady: true }), "hide", "o padrão continua sendo a bandeja");
+  assert.equal(closeAction({ quitting: false, trayReady: true }), "hide", "the default is still the tray");
   const { controller, state, win } = harness({ running: 2, confirmChoice: 0 });
   controller.start();
   controller.attachWindow(win);
   controller.setRunInBackground(false);
   assert.equal(close(win), true);
-  assert.equal(state.dialogs, 1, "há sessão rodando: pergunta antes");
+  assert.equal(state.dialogs, 1, "a session is running: it asks first");
   assert.equal(state.quitCalls, 0, "recusou: segue rodando");
   assert.equal(state.hidden, 0);
   controller.setRunInBackground(true);
   close(win);
-  assert.equal(state.hidden, 1, "ligado de novo, volta a esconder");
+  assert.equal(state.hidden, 1, "turned on again, it hides again");
 });
 
-test("selo do ícone: âmbar rodando, vermelho aguardando, ocioso intacto (BGRA)", () => {
+test("icon badge: amber running, red waiting, idle untouched (BGRA)", () => {
   const size = 22;
   const base = Buffer.alloc(size * size * 4, 7);
-  assert.equal(drawBadge(base, size, "idle"), base, "ocioso não desenha nada");
+  assert.equal(drawBadge(base, size, "idle"), base, "idle draws nothing");
   const px = (buf, x, y) => [...buf.subarray((y * size + x) * 4, (y * size + x) * 4 + 4)];
   const running = drawBadge(base, size, "running");
   const waiting = drawBadge(base, size, "waiting");
   const radius = Math.max(3, Math.round(size * 0.24));
   const c = size - radius - 1;
-  assert.deepEqual(px(running, c, c), [11, 158, 245, 255], "miolo âmbar em BGRA");
-  assert.deepEqual(px(waiting, c, c), [72, 29, 225, 255], "miolo vermelho em BGRA");
-  assert.deepEqual(px(running, 0, 0), [7, 7, 7, 7], "fora do selo o ícone não muda");
-  assert.deepEqual(px(base, c, c), [7, 7, 7, 7], "a imagem original não é alterada");
+  assert.deepEqual(px(running, c, c), [11, 158, 245, 255], "amber core in BGRA");
+  assert.deepEqual(px(waiting, c, c), [72, 29, 225, 255], "red core in BGRA");
+  assert.deepEqual(px(running, 0, 0), [7, 7, 7, 7], "outside the badge the icon doesn't change");
+  assert.deepEqual(px(base, c, c), [7, 7, 7, 7], "the original image isn't changed");
   assert.notDeepEqual(running, waiting);
 });
 
-test("a bandeja troca o ícone com o estado e lista as conversas em andamento", () => {
+test("the tray swaps the icon with the state and lists the conversations in progress", () => {
   const { controller, state } = harness({ running: 1 });
   state.sessions = [{ id: "s1", title: "Migrar pagamentos", providerName: "Codex CLI" }];
   controller.start();
@@ -296,29 +296,29 @@ test("a bandeja troca o ícone com o estado e lista as conversas em andamento", 
   const labels = state.menu.map((i) => i.label);
   assert.ok(labels.includes("● Migrar pagamentos · Codex CLI"));
   state.menu.find((i) => i.label?.startsWith("● ")).click();
-  assert.deepEqual(state.opened, ["s1"], "clicar na conversa leva a interface até ela");
+  assert.deepEqual(state.opened, ["s1"], "clicking the conversation takes the interface to it");
   state.approvals = [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "x" }];
   controller.refresh();
-  assert.notEqual(state.images.at(-1), runningIcon, "aguardando permissão tem outro ícone");
+  assert.notEqual(state.images.at(-1), runningIcon, "waiting for permission has another icon");
   assert.ok(state.menu.map((i) => i.label).includes("⚠ Migrar pagamentos · Codex CLI"));
   state.running = 0; state.approvals = []; state.sessions = [];
   controller.refresh();
-  assert.equal(state.images.at(-1).plain, true, "ocioso volta ao ícone sem selo");
+  assert.equal(state.images.at(-1).plain, true, "idle goes back to the icon without a badge");
 });
 
-test("itens do menu: a que aguarda permissão vem primeiro e a lista tem limite", () => {
+test("menu items: the one waiting for permission comes first and the list has a limit", () => {
   const opened = [];
-  const sessions = Array.from({ length: 11 }, (_, i) => ({ id: `s${i}`, title: `Conversa ${i}`, waiting: i === 9 }));
+  const sessions = Array.from({ length: 11 }, (_, i) => ({ id: `s${i}`, title: `Conversation ${i}`, waiting: i === 9 }));
   const items = sessionMenuItems(sessions, (id) => opened.push(id));
   assert.equal(items.length, 9);
-  assert.match(items[0].label, /^⚠ Conversa 9/);
-  assert.equal(items.at(-1).label, "… e mais 3");
+  assert.match(items[0].label, /^⚠ Conversation 9/);
+  assert.equal(items.at(-1).label, "… and 3 more");
   assert.equal(items.at(-1).enabled, false);
   items[1].click();
   assert.deepEqual(opened, ["s0"]);
 });
 
-test("clicar na notificação traz a janela e abre a conversa de origem", () => {
+test("clicking the notification brings the window and opens the source conversation", () => {
   const h = harness({ running: 1 });
   h.controller.start();
   h.controller.notifyTurnFinished({ title: "Codex respondeu", body: "ok", sessionId: "s7" });
@@ -328,5 +328,5 @@ test("clicar na notificação traz a janela e abre a conversa de origem", () => 
   h.state.clicks[0]();
   h.state.clicks[1]();
   assert.deepEqual(h.state.opened, ["s7", "s3"]);
-  assert.ok(h.state.shown >= 2, "a janela volta a aparecer");
+  assert.ok(h.state.shown >= 2, "the window shows up again");
 });

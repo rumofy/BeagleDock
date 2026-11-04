@@ -1,8 +1,8 @@
-// Imagens coladas ou anexadas são otimizadas antes de ir para a CLI e para o histórico:
-// redimensiona se passar do maior lado que os modelos aproveitam e recomprime em WebP.
-// GIF fica como está (pode ser animado); se a versão nova não for menor, vale a original.
+// Pasted or attached images are optimized before going to the CLI and the history: resized when
+// larger than the longest side the models use, and re-encoded as WebP. A GIF stays as is (it may
+// be animated); if the new version isn't smaller, the original is kept.
 
-/** Maior lado aproveitado pelos modelos de visão atuais; acima disso a própria API reduz. */
+/** Longest side current vision models use; above it the API itself scales the image down. */
 export const MAX_IMAGE_EDGE = 2576;
 export const WEBP_QUALITY = 0.9;
 const OPTIMIZABLE = new Set(["image/png", "image/jpeg", "image/webp", "image/bmp"]);
@@ -18,14 +18,14 @@ export function fitWithin(width: number, height: number, max = MAX_IMAGE_EDGE) {
   };
 }
 
-/** Nome com a extensão do formato novo (`print.png` → `print.webp`). */
+/** Name with the new format's extension (`print.png` → `print.webp`). */
 export function webpName(name: string) {
   return /\.[^./]+$/.test(name) ? name.replace(/\.[^./]+$/, ".webp") : `${name}.webp`;
 }
 
 export const canOptimize = (type: string) => OPTIMIZABLE.has(type);
 
-/** Versão otimizada da imagem, ou `null` quando não compensa (ou o navegador não consegue). */
+/** Optimized version of the image, or `null` when it isn't worth it (or the browser can't). */
 export async function optimizeImage(file: Blob): Promise<Blob | null> {
   if (!canOptimize(file.type) || typeof createImageBitmap !== "function") return null;
   try {

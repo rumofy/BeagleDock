@@ -7,7 +7,7 @@ const {
   pendingLogins,
 } = require("../electron/codex-mcp-auth");
 
-// Linha real emitida pelo `codex app-server` (codex-cli 0.166.0) com o MCP do Postman sem login.
+// Real line emitted by `codex app-server` (codex-cli 0.166.0) with the Postman MCP not signed in.
 const REAL_LINE =
   '2026-10-31T12:52:10.767611Z ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when AuthRequired(AuthRequiredError { www_authenticate_header: "Bearer resource_metadata=\\"https://mcp.postman.com/.well-known/oauth-protected-resource/mcp\\"" })';
 const LIST = JSON.stringify([
@@ -20,17 +20,17 @@ const LIST = JSON.stringify([
   },
 ]);
 
-test("extrai o host do MCP que exige login", () => {
+test("extracts the host of the MCP that needs sign-in", () => {
   assert.ok(authErrorHosts(REAL_LINE).includes("mcp.postman.com"));
   assert.deepEqual(authErrorHosts("tudo certo em https://exemplo.com"), []);
 });
 
-test("lista só MCPs habilitados e sem login", () => {
+test("lists only enabled MCPs without sign-in", () => {
   assert.deepEqual(pendingLogins(LIST).map((s) => s.name), ["postman-mcp"]);
   assert.deepEqual(pendingLogins("lixo"), []);
 });
 
-test("filtro retira só a linha de autenticação do MCP e repassa o resto", () => {
+test("the filter takes out only the MCP authentication line and passes the rest through", () => {
   const shown = [];
   const auth = [];
   const filter = createStderrFilter({
@@ -38,7 +38,7 @@ test("filtro retira só a linha de autenticação do MCP e repassa o resto", () 
     onAuthError: (line) => auth.push(line),
   });
   filter("2026-10-31T12:52:09.000000Z WARN codex_core: algo importante\n");
-  // a linha chega fatiada em dois pedaços
+  // the line arrives split in two pieces
   filter(REAL_LINE.slice(0, 60));
   filter(REAL_LINE.slice(60) + "\n");
   filter("erro sem timestamp\n");
@@ -52,7 +52,7 @@ test("filtro retira só a linha de autenticação do MCP e repassa o resto", () 
   ]);
 });
 
-test("aviso identifica o MCP, traz o comando de login e não repete", async () => {
+test("the notice names the MCP, carries the sign-in command and doesn't repeat", async () => {
   const sent = [];
   let clock = 0;
   const watcher = createMcpAuthWatcher({
@@ -72,7 +72,7 @@ test("aviso identifica o MCP, traz o comando de login e não repete", async () =
   assert.equal(extra.actionCommand, "codex mcp login postman-mcp");
 });
 
-test("sem a CLI disponível ainda avisa pelo host", async () => {
+test("without the CLI available it still notifies by host", async () => {
   const sent = [];
   const watcher = createMcpAuthWatcher({
     notify: (...args) => sent.push(args),
@@ -84,7 +84,7 @@ test("sem a CLI disponível ainda avisa pelo host", async () => {
   assert.deepEqual(sent[0][4], {});
 });
 
-test("integrado: o comando de login chega até a notificação guardada pelo ecosystem", async () => {
+test("integrated: the sign-in command reaches the notification kept by the ecosystem", async () => {
   const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
   const { createEcosystem } = require("../electron/ecosystem");
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-eco-"));
@@ -97,10 +97,10 @@ test("integrado: o comando de login chega até a notificação guardada pelo eco
   watcher.inspect(REAL_LINE);
   await new Promise((r) => setImmediate(r));
   const saved = eco.get().notifications.find((n) => n.id === "mcp-auth:codex:postman-mcp");
-  assert.ok(saved, "notificação criada");
+  assert.ok(saved, "notification created");
   assert.equal(saved.category, "mcp_auth");
   assert.equal(saved.actionCommand, "codex mcp login postman-mcp");
-  // Persistida e recarregada com o comando.
+  // Persisted and reloaded with the command.
   const reloaded = createEcosystem({ file: path.join(dir, "ecosystem.json") });
   assert.equal(reloaded.get().notifications[0].actionCommand, "codex mcp login postman-mcp");
 });

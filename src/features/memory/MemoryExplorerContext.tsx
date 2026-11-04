@@ -7,6 +7,6 @@ export const MemoryExplorerProvider = MemoryExplorerContext.Provider;
 export function useMemoryExplorerState(): MemoryExplorerState {
   const value = useContext(MemoryExplorerContext);
   if (!value)
-    throw new Error("useMemoryExplorerState precisa de MemoryExplorerProvider.");
+    throw new Error("useMemoryExplorerState must be used inside MemoryExplorerProvider.");
   return value;
 }

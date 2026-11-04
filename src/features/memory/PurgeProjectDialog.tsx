@@ -5,6 +5,7 @@ import { useMemoryExplorerState } from "./MemoryExplorerContext";
 import { Modal } from "../../components/Modal";
 import { PaneMessage } from "./PaneMessage";
 
+import { t } from "../../i18n";
 export function PurgeProjectDialog() {
   const {
     sel,
@@ -19,12 +20,11 @@ export function PurgeProjectDialog() {
   if (!(purgeOpen && sel)) return null;
 
   return (
-        <Modal title="Excluir projeto" onClose={() => setPurgeOpen(false)}>
+        <Modal title={t("purge.title")} onClose={() => setPurgeOpen(false)}>
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-900 flex gap-2">
             <AlertTriangle size={16} className="shrink-0" />
             <span>
-              Esta ação é <b>irreversível</b>: remove todas as páginas, sessões,
-              observações e handoffs de{" "}
+              {t("purge.before")} <b>{t("purge.irreversible")}</b>{t("purge.after")}{" "}
               <b>
                 {sel.ws}/{sel.p}
               </b>
@@ -49,14 +49,14 @@ export function PurgeProjectDialog() {
               onClick={() => setPurgeOpen(false)}
               className="px-3 py-2 rounded-lg text-xs font-bold bg-[#ede9de]"
             >
-              Cancelar
+              {t("common.cancel")}
             </button>
             <button
               disabled={purgeInput !== `${sel.ws}/${sel.p}` || busyAction}
               onClick={() => void doPurge()}
               className="px-3 py-2 rounded-lg text-xs font-bold bg-rose-700 text-white disabled:opacity-40"
             >
-              {busyAction ? "Excluindo…" : "Excluir projeto"}
+              {busyAction ? t("memory.deleting") : t("purge.title")}
             </button>
           </div>
         </Modal>

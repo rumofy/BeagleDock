@@ -5,6 +5,7 @@ import { useMemoryExplorerState } from "./MemoryExplorerContext";
 import { Modal } from "../../components/Modal";
 import { PaneMessage } from "./PaneMessage";
 
+import { t } from "../../i18n";
 export function DeletePageDialog() {
   const {
     reader,
@@ -23,9 +24,9 @@ export function DeletePageDialog() {
   if (!(deleteOpen && page && reader)) return null;
 
   return (
-        <Modal title="Excluir página" onClose={() => setDeleteOpen(false)}>
+        <Modal title={t("memory.deletePage")} onClose={() => setDeleteOpen(false)}>
           <p className="text-sm">
-            Excluir <code className="font-mono">{page.path}</code> de{" "}
+            {t("memory.deletePrefix")} <code className="font-mono">{page.path}</code> {t("memory.deleteFrom")}{" "}
             <b>
               {reader.ws}/{reader.p}
             </b>
@@ -35,9 +36,8 @@ export function DeletePageDialog() {
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-300 text-xs text-rose-900 flex gap-2">
               <AlertTriangle size={16} className="shrink-0" />
               <span>
-                Atenção: páginas em <b>decisions/</b> registram decisões
-                duradouras e não devem ser excluídas. Para confirmar, digite o
-                nome do arquivo: <b className="font-mono">{fileName}</b>
+                {t("memory.neverBefore")} <b>decisions/</b> {t("memory.neverAfter")}
+                {" "}<b className="font-mono">{fileName}</b>
               </span>
             </div>
           )}
@@ -45,8 +45,7 @@ export function DeletePageDialog() {
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex gap-2">
               <AlertTriangle size={16} className="shrink-0" />
               <span>
-                Esta página é protegida. Mescle o conteúdo útil em outra página
-                antes de excluir.
+                {t("memory.mergeFirst")}
               </span>
             </div>
           )}
@@ -64,14 +63,14 @@ export function DeletePageDialog() {
               onClick={() => setDeleteOpen(false)}
               className="px-3 py-2 rounded-lg text-xs font-bold bg-[#ede9de]"
             >
-              Cancelar
+              {t("common.cancel")}
             </button>
             <button
               disabled={!canConfirmDelete || busyAction}
               onClick={() => void doDelete()}
               className="px-3 py-2 rounded-lg text-xs font-bold bg-rose-700 text-white disabled:opacity-40"
             >
-              {busyAction ? "Excluindo…" : "Excluir página"}
+              {busyAction ? t("memory.deleting") : t("memory.deletePage")}
             </button>
           </div>
         </Modal>

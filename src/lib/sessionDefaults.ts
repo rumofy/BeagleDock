@@ -1,7 +1,7 @@
 import type { AIProviderId, ModelOption, PermissionLevel } from "../types";
 import { modelSelection } from "./modelSelection";
 
-/** Modelo, nível de raciocínio e permissão escolhidos por último numa conversa de uma CLI. */
+/** Model, reasoning level and permission last chosen in a conversation of a CLI. */
 export interface SessionChoice {
   model: string;
   effort: string;
@@ -12,7 +12,7 @@ export type SessionChoices = Partial<Record<AIProviderId, SessionChoice>>;
 
 const PERMISSIONS: PermissionLevel[] = ["inherit", "plan", "ask", "edits", "full"];
 
-/** Guarda a escolha da CLI sem tocar nas das outras (o servidor só mescla o primeiro nível). */
+/** Stores the CLI's choice without touching the others (the server only merges the first level). */
 export function recordChoice(
   saved: SessionChoices | undefined,
   providerId: AIProviderId,
@@ -22,9 +22,9 @@ export function recordChoice(
 }
 
 /**
- * Escolha com que um chat novo da CLI começa, ou null para usar o padrão da CLI. Só vale com a
- * opção ligada e se o modelo ainda existe no catálogo atual; o nível passa pela mesma validação do
- * seletor, então um nível que o modelo não aceita mais volta ao padrão dele.
+ * Choice a new chat of the CLI starts with, or null to use the CLI's default. Only applies with the
+ * option on and if the model still exists in the current catalog; the level goes through the same
+ * validation as the picker, so a level the model no longer accepts falls back to its default.
  */
 export function rememberedChoice(
   enabled: boolean | undefined,

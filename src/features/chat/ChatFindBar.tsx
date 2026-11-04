@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
 
+import { t } from "../../i18n";
 type Props = {
   query: string;
   onQuery: (value: string) => void;
@@ -9,11 +10,11 @@ type Props = {
   onNext: () => void;
   onPrev: () => void;
   onClose: () => void;
-  /** Muda a cada Ctrl+F para devolver o foco e selecionar o texto, mesmo com a barra já aberta. */
+  /** Changes on every Ctrl+F to refocus and select the text, even with the bar already open. */
   focusToken: number;
 };
 
-/** Barra de busca na conversa (Ctrl+F). Enter/F3 avança, Shift+Enter/Shift+F3 volta, Esc fecha. */
+/** Conversation search bar (Ctrl+F). Enter/F3 goes forward, Shift+Enter/Shift+F3 back, Esc closes. */
 export function ChatFindBar({ query, onQuery, total, current, onNext, onPrev, onClose, focusToken }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -21,7 +22,7 @@ export function ChatFindBar({ query, onQuery, total, current, onNext, onPrev, on
     inputRef.current?.select();
   }, [focusToken]);
 
-  const status = !query.trim() ? "" : total === 0 ? "Nenhum resultado" : `${current + 1} de ${total}`;
+  const status = !query.trim() ? "" : total === 0 ? t("find.noResults") : t("find.position", { current: current + 1, total });
   const button =
     "p-1 rounded-md text-[#665e4f] hover:bg-[#ede9de] disabled:opacity-40 disabled:hover:bg-transparent";
   return (
@@ -46,8 +47,8 @@ export function ChatFindBar({ query, onQuery, total, current, onNext, onPrev, on
             onClose();
           }
         }}
-        placeholder="Buscar na conversa"
-        aria-label="Buscar na conversa"
+        placeholder={t("find.placeholder")}
+        aria-label={t("find.placeholder")}
         spellCheck={false}
         className="w-56 bg-transparent text-sm text-[#2e2a24] outline-none"
       />
@@ -58,13 +59,13 @@ export function ChatFindBar({ query, onQuery, total, current, onNext, onPrev, on
       >
         {status}
       </span>
-      <button type="button" onClick={onPrev} disabled={total === 0} className={button} title="Anterior (Shift+Enter)" aria-label="Ocorrência anterior">
+      <button type="button" onClick={onPrev} disabled={total === 0} className={button} title={t("find.prevHint")} aria-label={t("find.prev")}>
         <ChevronUp size={15} />
       </button>
-      <button type="button" onClick={onNext} disabled={total === 0} className={button} title="Próxima (Enter)" aria-label="Próxima ocorrência">
+      <button type="button" onClick={onNext} disabled={total === 0} className={button} title={t("find.nextHint")} aria-label={t("find.next")}>
         <ChevronDown size={15} />
       </button>
-      <button type="button" onClick={onClose} className={button} title="Fechar (Esc)" aria-label="Fechar busca">
+      <button type="button" onClick={onClose} className={button} title={t("find.closeHint")} aria-label={t("find.close")}>
         <X size={15} />
       </button>
     </div>

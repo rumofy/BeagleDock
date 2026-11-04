@@ -24,7 +24,7 @@ const proj = (over = {}) => ({
 });
 const sess = (cwd, days = 10) => ({ cwd, startedAt: ago(days), endedAt: ago(days) });
 
-test("prazo: vazio usa o padrão, 0 ou inválido desliga, teto de 365", () => {
+test("delay: empty uses the default, 0 or invalid turns it off, ceiling of 365", () => {
   assert.equal(normalizeDays(undefined), 7);
   assert.equal(normalizeDays(""), 7);
   assert.equal(normalizeDays(0), 0);
@@ -34,7 +34,7 @@ test("prazo: vazio usa o padrão, 0 ou inválido desliga, teto de 365", () => {
   assert.equal(normalizeDays(9999), 365);
 });
 
-test("pasta temporária: só dentro das raízes, sem confundir prefixo", () => {
+test("temporary folder: only inside the roots, without confusing a prefix", () => {
   assert.ok(isTempCwd("/tmp", roots));
   assert.ok(isTempCwd("/tmp/issue58/live", roots));
   assert.ok(isTempCwd("/var/tmp/x", roots));
@@ -45,13 +45,13 @@ test("pasta temporária: só dentro das raízes, sem confundir prefixo", () => {
   assert.ok(!isTempCwd("tmp/relativo", roots));
 });
 
-test("temporário parado além do prazo é marcado para apagar", () => {
+test("a temporary project idle past the delay is marked for deletion", () => {
   const r = classifyProject({ project: proj(), sessions: [sess("/tmp/tmp.abc")], roots, days: 7, now });
   assert.equal(r.temp, true);
   assert.equal(r.stale, true);
 });
 
-test("temporário recente ou com limpeza desligada não é apagado", () => {
+test("a recent temporary project or with cleanup off isn't deleted", () => {
   const recent = classifyProject({
     project: proj({ lastActivity: ago(1) }),
     sessions: [sess("/tmp/x", 1)],
@@ -65,7 +65,7 @@ test("temporário recente ou com limpeza desligada não é apagado", () => {
   assert.equal(off.stale, false);
 });
 
-test("sessão recente segura o projeto mesmo com lastActivity antigo", () => {
+test("a recent session holds the project even with an old lastActivity", () => {
   const r = classifyProject({
     project: proj({ sessionCount: 2 }),
     sessions: [sess("/tmp/x", 30), sess("/tmp/x", 2)],
@@ -76,17 +76,17 @@ test("sessão recente segura o projeto mesmo com lastActivity antigo", () => {
   assert.equal(r.stale, false);
 });
 
-test("projetos reais nunca entram", () => {
+test("real projects never get in", () => {
   const cases = [
-    // uma sessão fora do temporário
+    // a session outside the temporary folder
     { project: proj({ sessionCount: 2 }), sessions: [sess("/tmp/x"), sess("/home/u/dev/Rumofy/RumofyNext")] },
-    // sessão sem pasta registrada (como as antigas do rumofy-rumofynext)
+    // a session without a recorded folder (like the old rumofy-rumofynext ones)
     { project: proj({ sessionCount: 2 }), sessions: [sess("/tmp/x"), sess("")] },
-    // servidor devolveu menos sessões do que o projeto tem
+    // the server returned fewer sessions than the project has
     { project: proj({ sessionCount: 5 }), sessions: [sess("/tmp/x")] },
-    // sem sessões
+    // no sessions
     { project: proj({ sessionCount: 0 }), sessions: [] },
-    // escopos reservados
+    // reserved scopes
     { project: proj({ project: "_global" }), sessions: [sess("/tmp/x")] },
     { project: proj({ workspace: "_global" }), sessions: [sess("/tmp/x")] },
   ];
@@ -115,7 +115,7 @@ function fakeApi(projects, sessions) {
   };
 }
 
-test("limpeza automática apaga só temporários vencidos; botão apaga todos os temporários", async () => {
+test("automatic cleanup deletes only expired temporary projects; the button deletes all temporary ones", async () => {
   const projects = [
     proj({ project: "tmp.old" }),
     proj({ project: "tmp.new", lastActivity: ago(1) }),
@@ -142,8 +142,8 @@ test("limpeza automática apaga só temporários vencidos; botão apaga todos os
   });
   const auto = await cleanup.run();
   assert.deepEqual(auto.removed, ["default/tmp.old"]);
-  assert.ok(!calls.includes("default/_global"), "escopo reservado nem é consultado");
-  assert.ok(!calls.includes("default/huge"), "projeto grande nem é consultado");
+  assert.ok(!calls.includes("default/_global"), "a reserved scope isn't even queried");
+  assert.ok(!calls.includes("default/huge"), "a large project isn't even queried");
 
   purged.length = 0;
   const all = await cleanup.run({ all: true });
@@ -151,7 +151,7 @@ test("limpeza automática apaga só temporários vencidos; botão apaga todos os
   assert.ok(!purged.includes("rumofy/rumofy-rumofynext"));
 });
 
-test("com o prazo 0 a limpeza automática não apaga nada, mas o botão ainda funciona", async () => {
+test("with delay 0 automatic cleanup deletes nothing, but the button still works", async () => {
   const { api } = fakeApi([proj()], { "default/tmp.abc": [sess("/tmp/tmp.abc")] });
   const purged = [];
   const cleanup = createTempCleanup({
@@ -168,7 +168,7 @@ test("com o prazo 0 a limpeza automática não apaga nada, mas o botão ainda fu
   assert.deepEqual(manual.removed, ["default/tmp.abc"]);
 });
 
-test("falha ao apagar um projeto é informada sem interromper os demais", async () => {
+test("a failure deleting one project is reported without stopping the others", async () => {
   const { api } = fakeApi([proj({ project: "a" }), proj({ project: "b" })], {
     "default/a": [sess("/tmp/a")],
     "default/b": [sess("/tmp/b")],
@@ -186,7 +186,7 @@ test("falha ao apagar um projeto é informada sem interromper os demais", async 
   assert.deepEqual(r.failed, [{ name: "default/a", error: "servidor recusou" }]);
 });
 
-test("pasta de sonda já nasce apontando para o projeto beagledock-probes", () => {
+test("a probe folder is born pointing at the beagledock-probes project", () => {
   const dir = makeProbeDir("issue 58/x");
   try {
     assert.match(path.basename(dir), /^beagledock-issue-58-x-/);

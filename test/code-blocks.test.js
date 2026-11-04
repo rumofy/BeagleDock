@@ -15,12 +15,12 @@ const { tokenize } = load("src/lib/highlight.ts");
 const plain = (v) => JSON.parse(JSON.stringify(v));
 const types = (tokens) => plain(tokens).map((t) => `${t.type}:${t.text}`);
 
-test("texto sem cerca fica intacto", () => {
+test("text without a fence stays intact", () => {
   assert.deepEqual(plain(splitMessage("só texto\ncom linhas")), [{ type: "text", value: "só texto\ncom linhas" }]);
   assert.deepEqual(plain(splitMessage("")), [{ type: "text", value: "" }]);
 });
 
-test("separa texto e blocos com linguagem, preservando o conteúdo", () => {
+test("splits text and blocks with a language, preserving the content", () => {
   const input = "Rode isto:\n```bash\nnpm test\nnpm run build\n```\nDepois:\n```ts\nconst a = 1;\n```\nFim";
   const parts = plain(splitMessage(input));
   assert.deepEqual(parts.map((p) => p.type), ["text", "code", "text", "code", "text"]);
@@ -31,16 +31,16 @@ test("separa texto e blocos com linguagem, preservando o conteúdo", () => {
   assert.equal(parts[4].value, "Fim");
 });
 
-test("bloco ainda aberto durante o streaming aparece como código não fechado", () => {
+test("a block still open during streaming shows up as unclosed code", () => {
   const parts = plain(splitMessage("Veja:\n```python\nprint('oi')\nfor x in"));
   assert.equal(parts[1].closed, false);
   assert.equal(parts[1].lang, "python");
   assert.equal(parts[1].code, "print('oi')\nfor x in");
-  // a cerca de abertura sozinha também já é um bloco
+  // the opening fence alone is already a block
   assert.equal(plain(splitMessage("```"))[0].type, "code");
 });
 
-test("crases dentro do código e cercas com mais texto não quebram o bloco", () => {
+test("backticks inside the code and fences with more text don't break the block", () => {
   const parts = plain(splitMessage("```md\nuse `npm test` aqui\n```"));
   assert.equal(parts[0].code, "use `npm test` aqui");
   const nested = plain(splitMessage("```js\nconst s = `a${b}`;\n```\nok"));
@@ -48,7 +48,7 @@ test("crases dentro do código e cercas com mais texto não quebram o bloco", ()
   assert.equal(nested[1].value, "ok");
 });
 
-test("destaque: palavras-chave, textos, números, comentários e funções", () => {
+test("highlighting: keywords, strings, numbers, comments and functions", () => {
   const t = types(tokenize("const x = foo('a', 42); // fim", "ts"));
   assert.ok(t.includes("keyword:const"));
   assert.ok(t.includes("function:foo"));
@@ -57,26 +57,26 @@ test("destaque: palavras-chave, textos, números, comentários e funções", () 
   assert.ok(t.some((s) => s.startsWith("comment:// fim")));
 });
 
-test("destaque: shell, python e SQL usam os comentários e as palavras-chave da família", () => {
+test("highlighting: shell, python and SQL use the family's comments and keywords", () => {
   assert.ok(types(tokenize("echo oi # comentário", "bash")).some((s) => s.startsWith("comment:# comentário")));
   assert.ok(types(tokenize("def f(x):\n  return None", "python")).includes("keyword:def"));
   assert.ok(types(tokenize("SELECT id FROM t -- nota", "sql")).includes("keyword:SELECT"));
   assert.ok(types(tokenize("// não é comentário em json", "json")).every((s) => !s.startsWith("comment:")));
 });
 
-test("JSON destaca chaves como propriedades e valores como texto", () => {
+test("JSON highlights keys as properties and values as strings", () => {
   const t = types(tokenize('{"nome": "Stella", "idade": 3}', "json"));
   assert.ok(t.includes('property:"nome"'));
   assert.ok(t.includes('string:"Stella"'));
   assert.ok(t.includes("number:3"));
 });
 
-test("diff colore linhas adicionadas, removidas e cabeçalhos", () => {
+test("diff colors added lines, removed lines and headers", () => {
   const t = types(tokenize("--- a/x\n+++ b/x\n@@ -1 +1 @@\n-velho\n+novo\n igual", "diff"));
   assert.deepEqual(t.map((s) => s.split(":")[0]), ["meta", "meta", "keyword", "del", "add", "plain"]);
 });
 
-test("o destaque nunca perde nem altera texto", () => {
+test("highlighting never loses or changes text", () => {
   const samples = ['const s = "a\\"b" + `x${y}`; /* c */', "x = 'não fechado", "<div class=\"a\">&amp;</div>", "a\tb  c\n\nd", "0xFF 1e10 3.14 _x $y"];
   for (const code of samples) for (const lang of ["ts", "python", "json", "sql", "html", "", "diff"])
     assert.equal(plain(tokenize(code, lang)).map((t) => t.text).join(""), code, `${lang}: ${code}`);

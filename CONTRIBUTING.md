@@ -1,15 +1,17 @@
-# Como contribuir
+# Contributing
 
-Obrigado pelo interesse no BeagleDock! Issues e PRs são bem-vindos, em português ou inglês.
+Thanks for your interest in BeagleDock! Issues and PRs are welcome, in English or Portuguese.
 
-## Antes de começar
+## Before you start
 
-- Leia o [README](README.md) para preparar o ambiente (`npm ci`, `npm run dev`).
-- As regras do projeto (versão, changelog, estrutura do frontend, Git) estão em [AGENTS.md](AGENTS.md). Elas valem para pessoas e agentes de IA.
-- Mudanças nas integrações devem cobrir **Claude Code, Codex CLI e Antigravity**, salvo quando a issue restringir o escopo.
-- Toda mudança perceptível ao usuário entra em `## [Unreleased]` no [CHANGELOG.md](CHANGELOG.md).
+- Read the [README](README.md) to set up the environment (`npm ci`, `npm run dev`).
+- The project rules (version, changelog, frontend structure, Git, languages) are in [AGENTS.md](AGENTS.md). They apply to people and AI agents alike.
+- Documentation, code comments, tests, commit messages and PR descriptions are written in English.
+- Every text shown in the interface goes through the dictionaries in `shared/i18n/` (English, Spanish and Brazilian Portuguese); a new key goes into all three files.
+- Changes to the integrations must cover **Claude Code, Codex CLI and Antigravity**, unless the issue narrows the scope.
+- Every user-visible change goes into `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md).
 
-## Antes de abrir o PR
+## Before opening the PR
 
 ```sh
 npm test
@@ -17,41 +19,41 @@ npm run typecheck
 npm run build:vite
 ```
 
-Use `BEAGLEDOCK_DATA_DIR` apontando para uma pasta temporária ao testar; nunca use seus dados pessoais em testes. Ao mexer em streaming ou protocolos das CLIs, siga [test/PROTOCOLS.md](test/PROTOCOLS.md) e diga no PR se a evidência é de CLI simulada ou real, com as versões usadas.
+Point `BEAGLEDOCK_DATA_DIR` at a temporary folder when testing; never use your personal data in tests. When touching streaming or the CLIs' protocols, follow [test/PROTOCOLS.md](test/PROTOCOLS.md) and say in the PR whether the evidence comes from a simulated or a real CLI, with the versions used.
 
 ## Windows
 
-O BeagleDock é suportado oficialmente só no Linux. O código já trata caminhos, launchers `.cmd` e o shell do Windows, mas o aplicativo **nunca foi validado** nessa plataforma. Se você usa Windows, sua ajuda é muito valiosa.
+BeagleDock is officially supported only on Linux. The code already handles Windows paths, `.cmd` launchers and shell, but the app has **never been validated** on this platform. If you use Windows, your help is very valuable.
 
-### Preparar o ambiente
+### Set up the environment
 
-Node.js 22.12 ou superior, Python e Visual Studio Build Tools com a carga de trabalho C++ (para compilar `node-pty` e `sqlite3`). Depois:
+Node.js 22.12 or later, Python and Visual Studio Build Tools with the C++ workload (to build `node-pty` and `sqlite3`). Then:
 
 ```powershell
 npm ci
 npm test
-$env:BEAGLEDOCK_DATA_DIR = "$env:TEMP\beagledock-teste"
+$env:BEAGLEDOCK_DATA_DIR = "$env:TEMP\beagledock-test"
 npm run dev
 ```
 
-### O que precisa ser validado
+### What needs to be validated
 
-Para cada CLI instalada (Claude Code, Codex CLI, Antigravity):
+For each installed CLI (Claude Code, Codex CLI, Antigravity):
 
-1. **Descoberta:** o app encontra a CLI e mostra versão, modelos e níveis.
-2. **Conversa:** enviar uma mensagem, ver a resposta chegando aos poucos (streaming) e reabrir a conversa depois de reiniciar o app.
-3. **Aprovação:** em "Aceitar edições", pedir um comando e aprovar/recusar pelo painel. No Antigravity isso usa um hook com socket local, o ponto mais sensível no Windows.
-4. **Parar:** interromper uma resposta com um comando longo em execução e conferir no Gerenciador de Tarefas se não sobrou processo filho.
-5. **Terminal:** abrir o shell integrado e conferir cores, redimensionamento e entrada de texto.
-6. **Cotas e consumo:** os indicadores de uso aparecem para cada CLI.
-7. **Empacotamento (opcional):** `npm run build:electron -- --win --dir` e abrir o executável gerado.
+1. **Discovery:** the app finds the CLI and shows its version, models and levels.
+2. **Conversation:** send a message, watch the reply arrive bit by bit (streaming) and reopen the conversation after restarting the app.
+3. **Approval:** in "Accept edits", ask for a command and approve/deny it through the panel. In Antigravity this uses a hook with a local socket, the most sensitive point on Windows.
+4. **Stop:** interrupt a reply with a long command running and check in Task Manager that no child process is left.
+5. **Terminal:** open the built-in shell and check colors, resizing and text input.
+6. **Quotas and usage:** the usage indicators show up for each CLI.
+7. **Packaging (optional):** `npm run build:electron -- --win --dir` and open the built executable.
 
-Registre o resultado com o modelo de issue **Relato de plataforma**, mesmo que tudo funcione: um relato positivo também ajuda. Correções específicas do Windows devem manter o comportamento no Linux e, quando possível, vir com teste em `test/` que simule a plataforma (veja `test/data.test.js`).
+Record the result with the **Platform report** issue template, even if everything works: a positive report helps too. Windows-specific fixes must keep the Linux behavior and, when possible, come with a test in `test/` that simulates the platform (see `test/data.test.js`).
 
 ## macOS
 
-Também não testado. Relatos com o mesmo roteiro são bem-vindos. Pontos já conhecidos: o Claude Code pode guardar credenciais no Keychain (a cota pode não aparecer) e o app não é assinado.
+Also untested. Reports following the same script are welcome. Known points: Claude Code may keep credentials in the Keychain (the quota may not show) and the app isn't signed.
 
-## Segurança
+## Security
 
-Não abra issue pública para vulnerabilidades. Veja [SECURITY.md](SECURITY.md).
+Don't open a public issue for vulnerabilities. See [SECURITY.md](SECURITY.md).

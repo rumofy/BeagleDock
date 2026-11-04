@@ -15,7 +15,7 @@ const reply = (extra = {}) => ({
 });
 const event = (extra = {}) => ({ id: "e1", kind: "command", title: "Bash", detail: "npm test", status: "done", startedAt: 1, endedAt: 5, durationMs: 4, exitCode: 0, ...extra });
 
-test("a linha do tempo é gravada e volta junto com a resposta", async () => {
+test("the timeline is saved and comes back with the reply", async () => {
   await store.saveSession(session);
   await store.saveChatMessage(reply({ events: [event(), event({ id: "e2", kind: "reasoning", title: "R", text: "pensei" })] }));
   const [message] = await store.getChatMessages("s-events");
@@ -25,31 +25,31 @@ test("a linha do tempo é gravada e volta junto com a resposta", async () => {
   assert.equal(message.events[1].text, "pensei");
 });
 
-test("salvar a mesma resposta sem eventos (o renderer) não apaga a linha do tempo", async () => {
+test("saving the same reply without events (the renderer) doesn't erase the timeline", async () => {
   await store.saveChatMessage(reply({ text: "pronto, de novo" }));
   const [message] = await store.getChatMessages("s-events");
   assert.equal(message.text, "pronto, de novo");
   assert.equal(message.events.length, 2);
 });
 
-test("itens inválidos na lista de eventos são descartados em vez de quebrar o salvamento", async () => {
+test("invalid items in the event list are dropped instead of breaking the save", async () => {
   await store.saveChatMessage(reply({ id: "r2", events: [null, 7, "x", event({ id: "ok" })] }));
   const messages = await store.getChatMessages("s-events");
   const saved = messages.find((m) => m.id === "r2");
   assert.deepEqual(saved.events.map((e) => e.id), ["ok"]);
 });
 
-test("replaceChatMessages preserva a linha do tempo e normaliza o estado", async () => {
+test("replaceChatMessages preserves the timeline and normalizes the state", async () => {
   const current = await store.getChatMessages("s-events");
   await store.replaceChatMessages("s-events", current.map((m) => ({ ...m, sessionId: "s-events" })));
   const after = await store.getChatMessages("s-events");
   assert.equal(after.find((m) => m.id === "r1").events.length, 2);
   await store.saveChatMessage(reply({ id: "r3", events: [event({ id: "x", status: "qualquer" })] }));
   const r3 = (await store.getChatMessages("s-events")).find((m) => m.id === "r3");
-  assert.equal(r3.events[0].status, "done", "estado desconhecido vira concluído");
+  assert.equal(r3.events[0].status, "done", "an unknown state becomes done");
 });
 
-test("limita a quantidade e o tamanho do que é gravado", async () => {
+test("limits the amount and size of what's saved", async () => {
   const many = Array.from({ length: 400 }, (_, i) => event({ id: `m${i}`, detail: "d".repeat(900), text: "t".repeat(9000) }));
   await store.saveChatMessage(reply({ id: "r4", events: many }));
   const r4 = (await store.getChatMessages("s-events")).find((m) => m.id === "r4");
@@ -58,7 +58,7 @@ test("limita a quantidade e o tamanho do que é gravado", async () => {
   assert.ok((r4.events[0].text || "").length <= 4000);
 });
 
-test("etapas de agentes guardam o pai e os dados do agente, só com campos conhecidos", async () => {
+test("agent steps keep the parent and the agent's data, only with known fields", async () => {
   await store.saveChatMessage(reply({ id: "r5", events: [
     event({ id: "ag", kind: "agent", title: "Agente x", meta: { tokens: 13780, toolUses: 1, subagentType: "general-purpose", lastTool: "Bash", perigo: "<script>", taskId: "t1" } }),
     event({ id: "fi", kind: "command", parentId: "ag" }),
@@ -68,7 +68,7 @@ test("etapas de agentes guardam o pai e os dados do agente, só com campos conhe
   assert.deepEqual(r5.events[0].meta, { tokens: 13780, toolUses: 1, subagentType: "general-purpose", lastTool: "Bash", taskId: "t1" });
 });
 
-test("atualização tardia mescla por id na resposta gravada, sem apagar o resto da linha do tempo", async () => {
+test("a late update merges by id into the saved reply, without erasing the rest of the timeline", async () => {
   await store.saveChatMessage(reply({ id: "r6", events: [
     event({ id: "cmd", status: "done" }),
     event({ id: "ag", kind: "agent", title: "Agente", status: "running", meta: { background: true } }),
@@ -86,16 +86,31 @@ test("atualização tardia mescla por id na resposta gravada, sem apagar o resto
   assert.deepEqual(await store.mergeMessageEvents("s-events", "nao-existe", [event()]), { success: false });
 });
 
-test("mensagem entregue no meio de uma resposta: o histórico reaberto mantém a ordem vista na tela", async () => {
+test("a message delivered in the middle of a reply: the reopened history keeps the order seen on screen", async () => {
   const ms = (offset) => new Date(Date.now() + offset).toISOString().replace("T", " ").replace("Z", "");
   const m = (id, sender, extra) => ({ id, sessionId: "s-order", sender, senderName: sender, text: id, timestamp: "t", ...extra });
   await store.saveSession({ ...session, id: "s-order" });
   await store.saveChatMessage(m("u1", "user"));
   await store.saveChatMessage(m("u2", "user"));
-  // As respostas são gravadas no fim do turno, depois das duas mensagens do usuário.
+  // Replies are saved at the end of the turn, after the user's two messages.
   await store.saveChatMessage(m("a1", "claude", { createdAt: ms(1999) }));
   await store.setMessageTime("s-order", "u2", ms(2000));
   await store.saveChatMessage(m("a2", "claude", { createdAt: ms(3000) }));
   const order = (await store.getChatMessages("s-order")).map((x) => x.id);
   assert.deepEqual(order, ["u1", "a1", "u2", "a2"]);
+});
+
+test("a proposed plan keeps its full text in the history; other steps keep the usual limit", async () => {
+  const plan = "# Plan\n" + "step\n".repeat(2000);
+  await store.saveChatMessage(reply({
+    id: "r-plan",
+    events: [
+      event({ id: "p", kind: "plan", title: "Plano proposto", text: plan, meta: { proposal: true } }),
+      event({ id: "r", kind: "reasoning", title: "R", text: "x".repeat(9000) }),
+    ],
+  }));
+  const saved = (await store.getChatMessages("s-events")).find((m) => m.id === "r-plan");
+  assert.equal(saved.events[0].text, plan);
+  assert.equal(saved.events[0].meta.proposal, true);
+  assert.equal(saved.events[1].text.length, 4000);
 });

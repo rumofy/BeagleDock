@@ -13,6 +13,7 @@ const {
   applyRotations,
 } = require("./message-segments");
 const { askApproval, codexApprovalOptions } = require("./approval-options");
+const { t } = require("./i18n");
 
 const textOf = (value) =>
   (Array.isArray(value) ? value : value == null ? [] : [value])
@@ -33,7 +34,7 @@ function createCodexStream({
   spawn,
   store,
   emit = () => {},
-  turnTimeout = 0, // 0 = sem limite de tempo por turno
+  turnTimeout = 0, // 0 = no time limit per turn
   approvals,
   onMcpAuthError = () => {},
   onLateEvents = () => {},
@@ -51,7 +52,7 @@ function createCodexStream({
       ok: false,
       cancelled: true,
       output: e.text,
-      error: "Execução interrompida.",
+      error: t("errors.runStopped"),
     });
     for (const p of e.requests.values()) p.reject(new Error("CLI encerrada."));
     e.requests.clear();
@@ -137,7 +138,7 @@ function createCodexStream({
       });
       entries.set(sessionId, e);
       const current = e;
-      // `shellId` é o id do evento da linha do tempo do comando que produziu a saída.
+      // `shellId` is the id of the timeline event of the command that produced the output.
       const output = (data, shellId) =>
         emit("pty-data", {
           sessionId,
@@ -190,7 +191,7 @@ function createCodexStream({
           ...(detail ? { detail } : {}),
           pid: child.pid,
         });
-      // Uma compactação manual em andamento bloqueia o envio seguinte até terminar.
+      // A manual compaction in progress blocks the next send until it finishes.
       function settleCompaction(entry) {
         const c = entry.compaction;
         if (!c) return;
@@ -204,8 +205,8 @@ function createCodexStream({
         entry.context.compacted({ trigger: entry.manualCompaction ? "manual" : "auto" });
         settleCompaction(entry);
       }
-      // Turno que o app-server começou sozinho (ex.: o agente principal recebeu o resultado de um
-      // agente e responde): vira uma mensagem nova, em vez de ser descartado.
+      // Turn the app-server started on its own (e.g. the main agent got the result of an
+      // agent and replies): it becomes a new message, instead of being discarded.
       function startAutoTurn() {
         const id = `auto-${randomUUID()}`;
         current.messages.clear();
@@ -232,7 +233,7 @@ function createCodexStream({
             error: result.error,
             events,
             model: current.model,
-            // Compactação automática, parada ou turno sem texto: nada a mostrar no chat.
+            // Automatic compaction, stop or a turn without text: nothing to show in the chat.
             discard: !!result.cancelled || (!text.trim() && !result.error),
             context: current.context.hasData() ? current.context.snapshot() : undefined,
           };
@@ -262,7 +263,7 @@ function createCodexStream({
         if (full && full !== received) {
           if (full.startsWith(received)) output(full.slice(received.length), id);
           else if (received && full.endsWith(received))
-            output("\r\n[Início da saída]\r\n" + full.slice(0, -received.length), id);
+            output("\r\n[" + t("shell.outputStart") + "]\r\n" + full.slice(0, -received.length), id);
           else if (!received) output(full, id);
         }
         output("\r\n", id);
@@ -301,7 +302,7 @@ function createCodexStream({
           if (item.type === "commandExecution") completeCommand(id, item);
         }
       }
-      // Registra as conversas dos agentes lançados, para rotear as etapas delas.
+      // Registers the conversations of the launched agents, to route their steps.
       function learnSubThreads(item) {
         const ids =
           item.type === "collabAgentToolCall" && ["spawnAgent", "spawn_agent"].includes(item.tool)
@@ -316,7 +317,7 @@ function createCodexStream({
         for (const threadId of ids)
           if (typeof threadId === "string")
             if (!current.subThreads.has(threadId)) current.subThreads.set(threadId, item.id);
-        // Agente do Codex pode seguir trabalhando depois do fim do turno: não é encerrado com ele.
+        // A Codex agent may keep working after the turn ends: it isn't closed with it.
         current.events.upsert(item.id, {
           kind: "agent",
           title: codexItemActivity(item)?.title || "Subagente",
@@ -347,7 +348,7 @@ function createCodexStream({
           if (pending) {
             current.requests.delete(ev.id);
             ev.error
-              ? pending.reject(new Error(ev.error.message || "Falha no Codex."))
+              ? pending.reject(new Error(ev.error.message || t("usage.codexFailed")))
               : pending.resolve(ev.result);
           }
           return;
@@ -364,7 +365,7 @@ function createCodexStream({
                 ev.method,
                 request,
               );
-              // Sem broker a resposta é imediata (negada), sem passar por uma volta assíncrona.
+              // Without a broker the answer is immediate (denied), without an async round trip.
               const decision = approvals
                 ? await askApproval(approvals, {
                     sessionId,
@@ -400,14 +401,14 @@ function createCodexStream({
               id: ev.id,
               error: {
                 code: -32601,
-                message: "Solicitação interativa não suportada.",
+                message: "Interactive request not supported.",
               },
             });
           return;
         }
         const params = ev.params || {};
         if (params.threadId && params.threadId !== current.nativeId) {
-          // Conversa de um subagente: as etapas dela entram aninhadas sob o agente que a lançou.
+          // A subagent's conversation: its steps go nested under the agent that launched it.
           const parentId = current.subThreads?.get(params.threadId);
           if (parentId) handleSubThreadItem(ev.method, params, parentId);
           return;
@@ -433,7 +434,7 @@ function createCodexStream({
           emit("cli-stream-chunk", {
             sessionId,
             responseMessageId: liveReply(current, current.text).responseMessageId,
-            activity: "Recebendo saída do comando…",
+            activity: t("activity.commandOutput"),
             pid: child.pid,
           });
           output(params.delta || "", params.itemId);
@@ -452,7 +453,7 @@ function createCodexStream({
             output(`$ ${params.item.command}\r\n`, params.item.id);
           const label = codexItemActivity(params.item);
           if (label) {
-            // Uma atividade do subagente atualiza o agente original; não cria um agente por mensagem.
+            // A subagent activity updates the original agent; it doesn't create an agent per message.
             if (params.item.type === "subAgentActivity" && current.subThreads?.has(params.item.agentThreadId)) {
               updateAgentStates(params.item);
               return;
@@ -472,8 +473,8 @@ function createCodexStream({
           ev.method === "item/reasoning/textDelta" ||
           ev.method === "item/reasoning/summaryTextDelta"
         ) {
-          // Resumo e conteúdo são fluxos separados: o texto exibido é o conteúdo, ou o resumo se
-          // não houver (nunca os dois misturados).
+          // Summary and content are separate streams: the displayed text is the content, or the summary if
+          // there's none (never both mixed).
           const parts = (current.reasoningParts ||= new Map()).get(
             params.itemId,
           ) || { summary: "", content: "" };
@@ -486,7 +487,7 @@ function createCodexStream({
             parts.content || parts.summary,
             {
               kind: "reasoning",
-              title: "Raciocínio",
+              title: t("activity.reasoning"),
             },
           );
           current.reasoning = (
@@ -501,15 +502,15 @@ function createCodexStream({
           const parts = current.reasoningParts?.get(params.itemId);
           if (parts?.summary) parts.summary += "\n\n";
         } else if (ev.method === "item/mcpToolCall/progress") {
-          sendActivity("Ferramenta MCP em andamento…", params.message);
-          // Só atualiza uma etapa conhecida: progresso de item desconhecido não cria etapa sem título.
+          sendActivity(t("activity.mcpRunning"), params.message);
+          // Only updates a known step: progress of an unknown item doesn't create an untitled step.
           if (current.events.get(params.itemId))
             current.events.upsert(params.itemId, { detail: params.message });
         } else if (ev.method === "turn/plan/updated") {
-          sendActivity("Atualizando o plano…", params.explanation);
+          sendActivity(t("activity.planNow"), params.explanation);
           current.events.upsert("plan", {
             kind: "plan",
-            title: "Plano",
+            title: t("activity.plan"),
             text: planText(params.plan, params.explanation),
           });
         } else if (ev.method === "item/completed") {
@@ -552,12 +553,15 @@ function createCodexStream({
                       current.events.get(item.id)?.text,
                   }
                 : {}),
-              ...(item.type === "plan" ? { text: item.text } : {}),
+              // Plan mode's proposed plan (not the progress checklist): shown in full in the chat.
+              ...(item.type === "plan"
+                ? { text: item.text, ...(item.text ? { meta: { proposal: true } } : {}) }
+                : {}),
               ...(item.error
                 ? {
                     detail:
                       item.error.message ||
-                      (typeof item.error === "string" ? item.error : "Falha."),
+                      (typeof item.error === "string" ? item.error : t("activity.failed")),
                   }
                 : {}),
             });
@@ -572,7 +576,7 @@ function createCodexStream({
           }
         } else if (ev.method === "turn/completed") {
           const turn = params.turn || {};
-          // Fim de OUTRO turno (ex.: a compactação manual) ou fora de turno: não encerra a resposta atual.
+          // End of ANOTHER turn (e.g. the manual compaction) or outside a turn: doesn't close the current reply.
           if (
             (turn.id && current.turnId && turn.id !== current.turnId) ||
             !current.finish
@@ -580,9 +584,9 @@ function createCodexStream({
             settleCompaction(current);
             return;
           }
-          // "Responder agora": o turno foi interrompido de propósito. A mensagem entregue por
-          // turn/steer ainda não tinha sido lida (o Codex lê na próxima etapa), então ela segue num
-          // turno novo, e a resposta continua aberta para ele.
+          // "Answer now": the turn was interrupted on purpose. The message delivered by
+          // turn/steer hadn't been read yet (Codex reads it on the next step), so it goes on in a
+          // new turn, and the reply stays open for it.
           if (current.answering && turn.status === "interrupted" && current.steered?.length) {
             current.answering = false;
             const input = current.steered.flat();
@@ -609,7 +613,7 @@ function createCodexStream({
                 : turn.error?.message || `Codex: ${turn.status || "falha"}`,
           });
         } else if (ev.method === "error" && !params.willRetry) {
-          current.error = params.error?.message || "Falha no Codex.";
+          current.error = params.error?.message || t("usage.codexFailed");
         }
       }
       const decoder = new StringDecoder("utf8");
@@ -618,7 +622,7 @@ function createCodexStream({
         if (current.buffer.length > 16 * 1024 * 1024) {
           current.finish?.({
             ok: false,
-            error: "Saída do Codex excedeu o limite.",
+            error: t("errors.codexOutputLimit"),
           });
           close(sessionId);
           return;
@@ -646,11 +650,11 @@ function createCodexStream({
         current.finish?.({ ok: false, error: error.message }),
       );
       child.on("close", (code) => {
-        // Pedidos de permissão pendentes não sobrevivem ao app-server que os fez.
+        // Pending permission requests don't outlive the app-server that made them.
         approvals?.cancelSession(sessionId);
         if (entries.get(sessionId) === current) entries.delete(sessionId);
         for (const pending of current.requests.values())
-          pending.reject(new Error("O Codex encerrou a conexão."));
+          pending.reject(new Error(t("errors.codexClosed")));
         current.requests.clear();
         current.finish?.({
           ok: false,
@@ -693,9 +697,9 @@ function createCodexStream({
           typeof actual !== "string" ||
           !/^[a-zA-Z0-9_-]{8,160}$/.test(actual)
         )
-          throw new Error("O Codex não informou o ID da conversa.");
+          throw new Error(t("errors.codexNoThreadId"));
         if (nativeId && actual !== nativeId)
-          throw new Error("O Codex abriu outra conversa durante a retomada.");
+          throw new Error(t("errors.codexOtherThread"));
         current.nativeId = actual;
         await store.setNativeSession(sessionId, "codex", actual, cwd);
       })();
@@ -709,12 +713,12 @@ function createCodexStream({
       return { ok: false, error: error.message };
     }
     if (entries.get(sessionId) !== current)
-      return { ok: false, cancelled: true, error: "Execução interrompida." };
-    // Compactação manual em curso: espera terminar para os eventos dela não caírem neste turno.
+      return { ok: false, cancelled: true, error: t("errors.runStopped") };
+    // Manual compaction in progress: wait for it to finish so its events don't land in this turn.
     if (current.compaction) await current.compaction.promise;
     if (current.autoDone) await current.autoDone;
     if (entries.get(sessionId) !== current)
-      return { ok: false, cancelled: true, error: "Execução interrompida." };
+      return { ok: false, cancelled: true, error: t("errors.runStopped") };
     current.messages.clear();
     current.commands.clear();
     current.turnId = null;
@@ -722,7 +726,7 @@ function createCodexStream({
     current.error = null;
     current.responseMessageId = responseMessageId;
     current.rotations = [];
-    // Mensagens entregues por turn/steer neste turno: reenviadas se a pessoa pedir "Responder agora".
+    // Messages delivered by turn/steer in this turn: resent if the person asks to "Answer now".
     current.steered = [];
     current.answering = false;
     current.reasoningParts = new Map();
@@ -735,7 +739,7 @@ function createCodexStream({
           ? setTimeout(() => {
               current.finish({
                 ok: false,
-                error: "Tempo limite da execução. A conversa permanece salva.",
+                error: t("errors.runTimeout"),
               });
               close(sessionId);
             }, turnTimeout)
@@ -748,7 +752,7 @@ function createCodexStream({
         clearTimeout(timer);
         current.finish = null;
         current.events.finishRunning(result.ok ? "done" : "error");
-        // Com mensagens entregues no meio, cada resposta leva as próprias etapas.
+        // With messages delivered midway, each reply carries its own steps.
         const rotated = current?.rotations?.length;
         const turnEvents = rotated
           ? current.events.snapshotFor(current.responseMessageId)
@@ -785,9 +789,9 @@ function createCodexStream({
         );
     });
   }
-  // Mensagem enviada durante a execução: `turn/steer` a entrega ao turno ativo (como o Enter durante
-  // a resposta na CLI do Codex). Devolve false quando não há turno em andamento compatível ou o
-  // Codex recusa (ex.: o turno acabou no meio); aí a mensagem espera na fila.
+  // Message sent during the run: `turn/steer` delivers it to the active turn (like Enter during
+  // the reply in Codex's CLI). Returns false when there's no compatible turn in progress or
+  // Codex refuses (e.g. the turn ended midway); then the message waits in the queue.
   function canInject(p) {
     const e = entries.get(p?.sessionId);
     return !(
@@ -822,7 +826,7 @@ function createCodexStream({
         expectedTurnId: e.turnId,
         input: p.input,
       });
-      // A resposta que estava recebendo o texto (a original ou a de uma entrega anterior) fecha aqui.
+      // The reply that was receiving the text (the original or that of an earlier delivery) closes here.
       const from = liveReply(e, e.text).responseMessageId;
       const rotation = addRotation(e, { responseMessageId: p.responseMessageId, text: e.text });
       e.events?.rotate(p.responseMessageId);
@@ -832,15 +836,15 @@ function createCodexStream({
       return false;
     }
   }
-  // "Responder agora" no Codex: interrompe o turno (o comando em execução é cancelado) e a mensagem
-  // entregue vai num turno novo (ver turn/completed). O app-server não tem como mandar um comando
-  // para o segundo plano.
+  // "Answer now" in Codex: interrupts the turn (the running command is cancelled) and the delivered
+  // message goes in a new turn (see turn/completed). The app-server has no way to send a command
+  // to the background.
   async function answerNow(sessionId) {
     const e = entries.get(sessionId);
     if (!e?.finish || !e.turnId || !e.nativeId)
-      return { ok: false, error: "Não há resposta em andamento nesta conversa." };
+      return { ok: false, error: t("errors.noReplyRunning") };
     if (!e.steered?.length)
-      return { ok: false, error: "Nenhuma mensagem entregue esperando a IA ler." };
+      return { ok: false, error: t("errors.noDeliveredMessage") };
     e.answering = true;
     try {
       await e.request("turn/interrupt", { threadId: e.nativeId, turnId: e.turnId });
@@ -850,20 +854,20 @@ function createCodexStream({
       return { ok: false, error: error.message };
     }
   }
-  // Compactação nativa do Codex (thread/compact/start): só com o app-server da conversa ativo e
-  // ocioso. Espera a compactação terminar e devolve o contexto resultante (para ser salvo).
+  // Codex's native compaction (thread/compact/start): only with the conversation's app-server active and
+  // idle. Waits for the compaction to finish and returns the resulting context (to be saved).
   async function compact(id, { timeoutMs = 120000 } = {}) {
     const e = entries.get(id);
     if (!e || !e.nativeId || e.child.exitCode !== null || e.child.killed)
       return {
         ok: false,
         error:
-          "Envie uma mensagem ao Codex antes de compactar: a conversa ainda não está ativa.",
+          t("errors.codexCompactInactive"),
       };
     if (e.finish)
-      return { ok: false, error: "Aguarde o fim da execução para compactar." };
-    if (e.compaction) return { ok: false, error: "A conversa já está sendo compactada." };
-    // Fora de turno os eventos não pertencem à resposta anterior.
+      return { ok: false, error: t("errors.compactWaitRun") };
+    if (e.compaction) return { ok: false, error: t("errors.compactRunning") };
+    // Outside a turn the events don't belong to the previous reply.
     e.responseMessageId = undefined;
     e.events.start(undefined);
     let resolve;
@@ -899,12 +903,12 @@ function createCodexStream({
           .map(
             (c) =>
               new Promise((resolve, reject) => {
-                const t = setTimeout(
-                  () => reject(new Error("Codex ainda está encerrando.")),
+                const timer = setTimeout(
+                  () => reject(new Error(t("errors.codexStillClosing"))),
                   3000,
                 );
                 c.once("close", () => {
-                  clearTimeout(t);
+                  clearTimeout(timer);
                   resolve();
                 });
               }),

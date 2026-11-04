@@ -1,6 +1,7 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { t } = require("./i18n");
 const BLOCKED_ACTIONS = [
   "command(*)",
   "unsandboxed(*)",
@@ -22,20 +23,20 @@ function readInheritedPermissions(options) {
   } catch (error) {
     if (error.code === "ENOENT") return {};
     throw new Error(
-      "Não foi possível ler a política global do AGY. Corrija settings.json antes de iniciar o chat.",
+      t("errors.agyPolicyRead"),
     );
   }
   const rules = settings.permissions;
   if (rules === undefined || rules === null) return {};
   if (typeof rules !== "object" || Array.isArray(rules))
-    throw new Error("A política global de permissões do AGY é inválida.");
+    throw new Error(t("errors.agyPolicyInvalid"));
   for (const key of ["deny", "ask", "allow"])
     if (
       rules[key] !== undefined &&
       (!Array.isArray(rules[key]) ||
         rules[key].some((rule) => typeof rule !== "string"))
     )
-      throw new Error("As regras globais de permissão do AGY são inválidas.");
+      throw new Error(t("errors.agyRulesInvalid"));
   return { deny: rules.deny || [], ask: rules.ask || [] };
 }
 function agyPermissionSettings(
@@ -44,7 +45,7 @@ function agyPermissionSettings(
   interactive = false,
 ) {
   if (!["plan", "ask", "edits", "full"].includes(permission))
-    throw new Error("Permissão do AGY inválida.");
+    throw new Error(t("errors.agyPermissionInvalid"));
   const readonly = permission === "plan" || permission === "ask";
   return {
     toolPermission: permission === "full" ? "always-proceed" : "request-review",

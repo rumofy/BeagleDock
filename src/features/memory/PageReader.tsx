@@ -11,6 +11,7 @@ import { PaneMessage } from "./PaneMessage";
 import { MarkdownView } from "./MarkdownView";
 import { MaintenanceChatPane } from "./MaintenanceChatPane";
 
+import { t } from "../../i18n";
 export function PageReader() {
   const {
     userProfile,
@@ -33,15 +34,15 @@ export function PageReader() {
   } = useMemoryExplorerState();
   return (
       <section
-        aria-label="Leitor"
+        aria-label={t("reader.label")}
         className="flex-1 min-w-0 flex flex-col min-h-0 bg-white"
       >
         {chat && (
           <div className="flex border-b border-[#eeeae0] text-xs font-bold">
             {(
               [
-                ["reader", "Leitor", FileText],
-                ["chat", "Manutenção", MessageSquare],
+                ["reader", t("reader.label"), FileText],
+                ["chat", t("pages.maintenance"), MessageSquare],
               ] as const
             ).map(([id, label, Icon]) => (
               <button
@@ -66,11 +67,10 @@ export function PageReader() {
           <div className="flex-1 min-h-0 flex flex-col">
             {!reader && (
               <PaneMessage>
-                Selecione uma página para ler. Links [[assim]] abrem a página
-                no mesmo projeto.
+                {t("reader.empty")}
               </PaneMessage>
             )}
-            {pageLoading && <PaneMessage>Carregando página…</PaneMessage>}
+            {pageLoading && <PaneMessage>{t("reader.loading")}</PaneMessage>}
             {pageError && <PaneMessage tone="error">{pageError}</PaneMessage>}
             {page && meta && reader && (
               <>
@@ -85,14 +85,14 @@ export function PageReader() {
                   </div>
                   <button
                     onClick={copyPath}
-                    title="Copiar caminho"
+                    title={t("reader.copyPath")}
                     className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-[#f4f1e8] hover:bg-[#eae4d5] border border-[#dfdacd] flex items-center gap-1"
                   >
-                    <Copy size={11} /> {copied ? "Copiado" : "Copiar"}
+                    <Copy size={11} /> {copied ? t("common.copied") : t("common.copy")}
                   </button>
                   <button
                     onClick={() => void openPage({ ws: reader.ws, p: reader.p }, page.path)}
-                    title="Atualizar página"
+                    title={t("reader.refresh")}
                     className="p-1.5 rounded-lg hover:bg-[#ede9de] text-[#6d6657]"
                   >
                     <RefreshCw size={13} />
@@ -105,13 +105,13 @@ export function PageReader() {
                     }}
                     className="px-2 py-1 rounded-lg text-[11px] font-semibold text-rose-700 border border-rose-200 hover:bg-rose-50 flex items-center gap-1"
                   >
-                    <Trash2 size={11} /> Excluir página
+                    <Trash2 size={11} /> {t("memory.deletePage")}
                   </button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-4">
                   {linkMissing && (
                     <div className="mb-3 p-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
-                      Página não encontrada: <code>{linkMissing}</code>
+                      {t("reader.notFound")} <code>{linkMissing}</code>
                     </div>
                   )}
                   {meta.entries.length > 0 && (

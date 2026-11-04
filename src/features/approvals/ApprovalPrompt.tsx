@@ -1,6 +1,7 @@
 import { useApp } from "../../hooks/AppStateProvider";
 import { ApprovalCard } from "../../components/ApprovalCard";
 
+import { t } from "../../i18n";
 export function ApprovalPrompt() {
   const {
     activeTab,
@@ -12,7 +13,7 @@ export function ApprovalPrompt() {
     allSessions,
     maintenanceSessionId,
   } = useApp();
-  // O que já aparece no chat aberto, ou na Manutenção, não repete no aviso global.
+  // What already shows in the open chat, or in Maintenance, isn't repeated in the global notice.
   const pending = cliApprovals.filter(
     (a) =>
       !(activeTab === "memory" && a.sessionId === maintenanceSessionId) &&
@@ -22,11 +23,11 @@ export function ApprovalPrompt() {
   const first = pending[0];
   const title =
     allSessions.find((s) => s.id === first.sessionId)?.title ||
-    "Abrir conversa";
+    t("approvalPrompt.openConversation");
   return (
     <div
       role="dialog"
-      aria-label="Permissão pendente em outra conversa"
+      aria-label={t("approvalPrompt.label")}
       className="fixed bottom-6 right-6 z-[70] w-[26rem] max-w-[calc(100vw-48px)] space-y-2"
     >
       <button
@@ -37,9 +38,34 @@ export function ApprovalPrompt() {
         }}
       >
         {title}
-        {pending.length > 1 ? ` · +${pending.length - 1} pendente(s)` : ""}
+        {pending.length > 1 ? ` · ${t("approvalPrompt.more", { count: pending.length - 1 })}` : ""}
       </button>
-      <ApprovalCard approval={first} onResolve={resolveApproval} compact />
+      {first.kind === "plan" ? (
+        // A plan is reviewed inside its conversation, never approved from a corner popup.
+        <div
+          data-testid="plan-ready-notice"
+          className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 shadow-md p-3.5 space-y-2"
+        >
+          <div className="text-sm font-bold text-emerald-900">
+            {t("approvalPrompt.planReady")}
+          </div>
+          <p className="text-xs text-[#2c2822]">
+            {t("approvalPrompt.planReadyHint")}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveSessionId(first.sessionId);
+              setActiveTab("chat");
+            }}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-700 text-white hover:bg-emerald-800"
+          >
+            {t("approvalPrompt.review")}
+          </button>
+        </div>
+      ) : (
+        <ApprovalCard approval={first} onResolve={resolveApproval} compact />
+      )}
     </div>
   );
 }
