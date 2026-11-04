@@ -6,7 +6,9 @@
 //   "✳" quando termina ou para num pedido de permissão. Responde sozinho também (agente em segundo
 //   plano), então o spinner basta para começar a contar.
 // - Codex CLI: avisa o estado em OSC 7501 (`state=working` / `state=idle`). Na abertura ele também
-//   passa por `working`, por isso só conta depois de você enviar algo (Enter).
+//   passa por `working`, por isso só conta depois de você enviar algo (Enter), e só um Enter dado
+//   com ele já pronto (depois do primeiro `idle`): o Enter numa tela de abertura (confiança da
+//   pasta, revisão de hooks) é seguido pela inicialização, não por uma resposta.
 // - AGY: não manda sinal nenhum; enquanto trabalha a tela anima sem parar, e ao terminar fica em
 //   silêncio. Conta como fim o silêncio depois de um período de atividade, também só depois do Enter.
 
@@ -39,6 +41,8 @@ function createTurnWatcher({
   minBusyMs = 800,
 }) {
   let armed = false;
+  // Codex: já avisou `idle` uma vez (terminou de abrir).
+  let ready = false;
   let busySince = null;
   let firstOutput = null;
   let quietTimer = null;
@@ -70,6 +74,7 @@ function createTurnWatcher({
     // O que a pessoa digitou no terminal: o Enter arma a espera pelo fim da resposta.
     input(data) {
       if (typeof data !== "string" || !data.includes("\r")) return;
+      if (providerId === "codex" && !ready) return;
       armed = true;
       firstOutput = null;
       if (providerId !== "claude") busySince = null;
@@ -91,6 +96,7 @@ function createTurnWatcher({
         const state = lastMatch(text, /\x1b\]7501;([^\x07\x1b]*)(?:\x07|\x1b\\)/g);
         if (!state) return;
         tail = text.slice(state.index + state[0].length).slice(-CARRY);
+        if (/(^|:)state=idle\b/.test(state[1])) ready = true;
         if (!armed) return;
         if (/(^|:)state=working\b/.test(state[1])) busy();
         else if (/(^|:)state=idle\b/.test(state[1])) idle();

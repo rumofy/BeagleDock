@@ -82,6 +82,24 @@ test("Codex CLI: o estado OSC 7501 só conta depois de você enviar algo", () =>
   assert.equal(ends.length, 1);
 });
 
+test("Codex: Enter numa tela de abertura (confiança, revisão de hooks) não vira fim de resposta", () => {
+  const c = clock();
+  const ends = [];
+  const w = createTurnWatcher({ providerId: "codex", onTurnEnd: (e) => ends.push(e), ...c });
+  // Codex CLI 0.166.0 com hooks alterados: nenhum estado até a pessoa passar da tela de revisão.
+  w.input("\r");
+  w.output("\x1b]7501;state=idle:app=codex\x07");
+  w.output("\x1b]7501;state=working:app=codex\x07");
+  c.advance(2500);
+  w.output("\x1b]7501;state=idle:app=codex\x07");
+  assert.equal(ends.length, 0, "a inicialização depois da tela não é resposta");
+  w.input("oi\r");
+  w.output("\x1b]7501;state=working:app=codex\x07");
+  c.advance(3000);
+  w.output("\x1b]7501;state=idle:app=codex\x07");
+  assert.equal(ends.length, 1);
+});
+
 test("AGY: silêncio depois de uma resposta encerra; atividade curta (eco, comando de barra) não", () => {
   const c = clock();
   const ends = [];

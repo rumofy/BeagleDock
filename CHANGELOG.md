@@ -4,6 +4,12 @@ As mudanças de cada versão são registradas aqui. O projeto segue versionament
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-04
+
+### Corrigido
+
+- No modo terminal do Codex CLI, confirmar uma tela de abertura (confiança da pasta, revisão de hooks) não gera mais a notificação falsa de que a resposta terminou.
+
 ## [0.13.0] - 2026-11-03
 
 ### Adicionado
@@ -309,7 +315,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/rumofy/BeagleDock/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/rumofy/BeagleDock/compare/v0.11.0...v0.11.1
