@@ -79,7 +79,7 @@ function initDatabase() {
       "CREATE TRIGGER IF NOT EXISTS link_requires_session BEFORE INSERT ON session_links WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversation does not exist or was removed.'); END",
     );
     for (const [table, columns] of Object.entries({
-      sessions: ["permission", "archived", "context_json", "title_locked"],
+      sessions: ["permission_before_plan", "permission", "archived", "context_json", "title_locked"],
       chat_history: [
         "model_badge",
         "reasoning_badge",
@@ -146,7 +146,7 @@ async function saveSession(s) {
     !["claude", "codex", "antigravity"].includes(s.providerId)
   )
     throw new Error(t("errors.invalidSession"));
-  const previous = await get("SELECT provider_id FROM sessions WHERE id=?", [
+  const previous = await get("SELECT provider_id,permission,permission_before_plan FROM sessions WHERE id=?", [
     s.id,
   ]);
   if (previous && previous.provider_id !== s.providerId)
@@ -158,8 +158,13 @@ async function saveSession(s) {
     throw new Error(t("errors.nativeIdTaken"));
   if (link && link.cwd !== s.cwd)
     throw new Error(t("errors.newSessionForCwd"));
+  const permission = s.permission || "inherit";
+  const beforePlan = permission === "plan"
+    ? previous?.permission === "plan" ? previous.permission_before_plan : previous?.permission || s.permissionBeforePlan
+    : null;
+  const validBeforePlan = ["inherit", "ask", "edits", "full"].includes(beforePlan) ? beforePlan : null;
   await run(
-    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,updated_ts=CURRENT_TIMESTAMP",
+    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,permission_before_plan,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,permission_before_plan=excluded.permission_before_plan,updated_ts=CURRENT_TIMESTAMP",
     [
       s.id,
       s.providerId,
@@ -171,13 +176,19 @@ async function saveSession(s) {
       s.cwd || os.homedir(),
       s.createdAt || new Date().toISOString(),
       s.lastActive || "",
-      s.permission || "inherit",
+      permission,
+      validBeforePlan,
       s.titleLocked ? "1" : null,
     ],
   );
   if (s.nativeSessionId)
     await setNativeSession(s.id, s.providerId, s.nativeSessionId, s.cwd);
   return { success: true, id: s.id };
+}
+async function getSessionPermission(sessionId) {
+  await initDatabase();
+  const row = await get("SELECT permission,permission_before_plan FROM sessions WHERE id=?", [sessionId]);
+  return row ? { permission: row.permission || "inherit", permissionBeforePlan: row.permission_before_plan || undefined } : undefined;
 }
 async function getNativeSession(sessionId, providerId) {
   await initDatabase();
@@ -333,6 +344,7 @@ async function getSavedSessions() {
     createdAt: r.created_at,
     lastActive: r.last_active,
     permission: r.permission || "edits",
+    permissionBeforePlan: r.permission_before_plan || undefined,
     archived: r.archived === "1",
     titleLocked: r.title_locked === "1",
     context: parseContext(r.context_json),
@@ -701,6 +713,7 @@ module.exports = {
   setSessionArchived,
   setSessionContext,
   getSavedSessions,
+  getSessionPermission,
   getNativeSession,
   setNativeSession,
   deleteSessionFromDb,

@@ -1,9 +1,10 @@
 import { memo, useState } from "react";
 import { ListChecks, ShieldAlert } from "lucide-react";
 import { approvalTitle, PROVIDER_NAMES } from "../lib/approvalLabels";
-import type { ApprovalOption, CliApproval } from "../types/api";
+import type { ApprovalOption, CliApproval, QuestionAnswers } from "../types/api";
 
 import { t } from "../i18n";
+import { QuestionCard } from "../features/approvals/QuestionCard";
 /**
  * Permission request with the CLI's own native options (allow once, always, for this session,
  * deny with an instruction…). The choice goes back to the CLI in its own format.
@@ -14,7 +15,7 @@ export const ApprovalCard = memo(function ApprovalCard({
   compact = false,
 }: {
   approval: CliApproval;
-  onResolve: (id: string, decision: string, message?: string) => void;
+  onResolve: (id: string, decision: string, message?: string, answers?: QuestionAnswers) => void;
   compact?: boolean;
 }) {
   const [note, setNote] = useState("");
@@ -26,6 +27,8 @@ export const ApprovalCard = memo(function ApprovalCard({
   const noteOption = deny.find((o) => o.allowsMessage);
   // A plan is a decision, not a permission: it gets its own look so it is never approved by habit.
   const isPlan = approval.kind === "plan";
+
+  if (approval.kind === "question") return <QuestionCard key={approval.id} approval={approval} onResolve={onResolve} />;
 
   const button = (option: ApprovalOption, primary: boolean) => (
     <button

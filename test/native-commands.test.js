@@ -219,6 +219,16 @@ test("permission mode by shortcut: cycle, plan on/off and only Alt+P/Alt+M count
   assert.equal(togglePlan("edits"), "plan");
   assert.equal(togglePlan("plan"), "edits");
   assert.equal(togglePlan("full"), "plan");
+  const { withPermission, permissionAfterPlan } = loadTs("src/lib/permissionModes.ts");
+  for (const permission of ["inherit", "ask", "edits", "full"]) {
+    const plan = withPermission({ permission }, "plan");
+    assert.equal(plan.permission, "plan");
+    assert.equal(plan.permissionBeforePlan, permission);
+    assert.equal(withPermission(plan, "plan").permissionBeforePlan, permission);
+    assert.equal(permissionAfterPlan(plan), permission);
+    assert.equal(togglePlan("plan", permission), permission);
+    assert.equal(withPermission(plan, permission).permissionBeforePlan, undefined);
+  }
   const key = (k, extra = {}) => ({ key: k, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, ...extra });
   assert.equal(permissionShortcut(key("p")), "plan");
   assert.equal(permissionShortcut(key("M")), "cycle");

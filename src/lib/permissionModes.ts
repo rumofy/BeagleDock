@@ -1,4 +1,4 @@
-import type { PermissionLevel } from "../types";
+import type { ChatSession, PermissionLevel } from "../types";
 
 import { t, tn } from "../i18n";
 /** Order in which the shortcut cycles through the modes, from most restricted to most open. */
@@ -29,9 +29,23 @@ export function nextPermission(current: PermissionLevel | undefined): Permission
   return PERMISSION_CYCLE[(index + 1) % PERMISSION_CYCLE.length];
 }
 
-/** Alt+P: turns plan mode on; with it on, goes back to normal execution (accept edits). */
-export const togglePlan = (current: PermissionLevel | undefined): PermissionLevel =>
-  current === "plan" ? "edits" : "plan";
+/** Plans temporarily restrict the conversation; leaving restores its previous permission. */
+export const permissionAfterPlan = (session: Pick<ChatSession, "permissionBeforePlan">): PermissionLevel =>
+  session.permissionBeforePlan || "edits";
+
+export function withPermission(session: ChatSession, permission: PermissionLevel): ChatSession {
+  return {
+    ...session,
+    permission,
+    permissionBeforePlan: permission === "plan"
+      ? session.permission === "plan" ? session.permissionBeforePlan : session.permission || "inherit"
+      : undefined,
+  };
+}
+
+/** Alt+P toggles plan mode and restores the permission held before entering it. */
+export const togglePlan = (current: PermissionLevel | undefined, previous?: Exclude<PermissionLevel, "plan">): PermissionLevel =>
+  current === "plan" ? previous || "edits" : "plan";
 
 /** Message sent by the "Approve plan and run" button, with the conversation already out of plan mode. */
 export const planApprovedPrompt = () => t("prompt.planApproved");

@@ -807,3 +807,45 @@ test("Codex: Answer now interrupts the turn and resends the delivered message in
   assert.deepEqual(result.followUps.map((f) => [f.responseMessageId, f.text]), [["ai-segunda", "42"]]);
   runner.shutdown();
 });
+
+test("Codex questions wait for answers, retain native question IDs and reject unrelated threads", async (t) => {
+  const { createApprovalBroker } = require("../electron/approvals");
+  const approvals = createApprovalBroker();
+  const h = harness(), runner = h.make({ approvals });
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload);
+  await tick();
+  const child = h.calls[0].child;
+  const question = (id, threadId = child.threadId) => child.event({ id, method: "item/tool/requestUserInput", params: {
+    threadId, questions: [{ id: "channel-native", question: "Channel?", options: [{ label: "Email", description: "Existing" }] }],
+  } });
+  question(190);
+  await tick();
+  assert.equal(child.messages.some((m) => m.id === 190), false);
+  assert.equal(approvals.list()[0].kind, "question");
+  approvals.resolve(approvals.list()[0].id, "answer", { answers: { "channel-native": ["Email"] } });
+  await tick();
+  assert.deepEqual(child.messages.find((m) => m.id === 190).result, { answers: { "channel-native": { answers: ["Email"] } } });
+  question(191, "unrelated");
+  assert.deepEqual(child.messages.find((m) => m.id === 191).result, { answers: {} });
+  question(192);
+  approvals.cancelSession(payload.sessionId);
+  await tick();
+  assert.deepEqual(child.messages.find((m) => m.id === 192).result, { answers: {} });
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+});
+
+test("Codex plan starts and resumes the native thread with a read-only sandbox", async (t) => {
+  const h = harness(), runner = h.make();
+  t.after(() => runner.shutdown());
+  const pending = runner.execute({ ...payload, permission: "plan" });
+  await tick();
+  assert.ok(h.calls[0].args.includes('sandbox_mode="read-only"'));
+  assert.ok(h.calls[0].args.includes('approval_policy="never"'));
+  const start = h.calls[0].child.messages.find((m) => m.method === "thread/start");
+  assert.equal(start.params.sandbox, "read-only");
+  assert.equal(start.params.approvalPolicy, "never");
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+});

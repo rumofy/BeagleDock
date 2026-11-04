@@ -6,6 +6,7 @@ const fs = require("fs"),
 const { removeLegacyHooks } = require("./migration");
 const { settingsPath } = require("./agy-permissions");
 const { t } = require("./i18n");
+const { userQuestions, claudeAnswers } = require("./user-questions");
 const READ_TOOLS = new Set([
   "read_file",
   "view_file",
@@ -133,6 +134,7 @@ async function createAgyApprovalBridge({
   sessionId,
   permission,
   ask,
+  askDetailed,
   getNativeId,
   onConversation = () => {},
   home,
@@ -208,7 +210,19 @@ async function createAgyApprovalBridge({
         READ_MCP_TOOLS.has(args.ToolName);
       const isRead = READ_TOOLS.has(name) || isReadMcp;
       let result = { decision: "allow" };
-      if (
+      if (name === "ask_question" && askDetailed) {
+        const decision = await askDetailed({
+          sessionId, providerId: "antigravity", kind: "question", tool: name, input: args,
+        });
+        // The CLI's hook contract has no tool-result replacement. Deliver the person's
+        // answer in the denial reason, skipping the terminal-only interactive dialog.
+        result = {
+          decision: "deny",
+          reason: decision.answers
+            ? t("question.agyAnswer", { answers: JSON.stringify(claudeAnswers(userQuestions(args), decision.answers)) })
+            : t("question.agyDismissed"),
+        };
+      } else if (
         !isRead &&
         ["plan", "ask"].includes(activePermission) &&
         !launchedReadonly

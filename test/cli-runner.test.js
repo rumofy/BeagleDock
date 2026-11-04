@@ -1521,3 +1521,61 @@ test("claude: Answer now without a possible background command falls back to int
   await run;
   runner.shutdown();
 });
+
+test("Claude questions return selections and write-ins as updatedInput.answers without losing original fields", async (t) => {
+  const { createApprovalBroker } = require("../electron/approvals");
+  const approvals = createApprovalBroker();
+  const h = harness(), runner = h.make({ approvals });
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload("claude"));
+  await tick();
+  const child = h.calls[0].child;
+  const input = { questions: [
+    { question: "Channels?", options: [{ label: "Email" }, { label: "WhatsApp" }], multiSelect: true },
+    { question: "Details?", options: [{ label: "Default" }] },
+  ], metadata: "preserve" };
+  child.event({ type: "control_request", request_id: "question-request", request: {
+    subtype: "can_use_tool", tool_name: "AskUserQuestion", input,
+  } });
+  await tick();
+  assert.equal(child.inputs.some((line) => JSON.parse(line).type === "control_response"), false);
+  approvals.resolve(approvals.list()[0].id, "answer", { answers: { 0: ["Email", "WhatsApp"], 1: ["My custom response"] } });
+  await tick();
+  const response = child.inputs.map(JSON.parse).find((m) => m.type === "control_response");
+  assert.equal(response.response.request_id, "question-request");
+  assert.deepEqual(response.response.response, { behavior: "allow", updatedInput: {
+    ...input, answers: { "Channels?": "Email, WhatsApp", "Details?": "My custom response" },
+  } });
+  child.event({ type: "result", result: "ok" });
+  await pending;
+});
+
+for (const [previous, mode] of [["full", "bypassPermissions"], ["edits", "acceptEdits"], ["ask", "plan"], ["inherit", "default"]]) {
+  test(`Claude: native plan approval restores ${previous} from the saved conversation`, async (t) => {
+    const { createApprovalBroker } = require("../electron/approvals");
+    const approvals = createApprovalBroker();
+    const h = harness();
+    h.store.getSessionPermission = async () => ({ permission: "plan", permissionBeforePlan: previous });
+    const runner = h.make({ approvals });
+    t.after(() => runner.shutdown());
+    const pending = runner.execute(payload("claude"));
+    await tick();
+    const child = h.calls[0].child;
+    child.event({ type: "system", session_id: "native-plan-123" });
+    child.event({ type: "control_request", request_id: "plan", request: {
+      subtype: "can_use_tool", tool_name: "ExitPlanMode", input: { plan: "Plan text" },
+    } });
+    await tick();
+    approvals.resolve(approvals.list()[0].id, "approve-plan");
+    await tick();
+    const response = child.inputs.map(JSON.parse).find((m) => m.type === "control_response");
+    assert.equal(response.response.response.updatedPermissions[0].mode, mode);
+    assert.equal(h.emitted.find((e) => e.ch === "cli-permission-changed").data.permission, previous);
+    child.event({ type: "result", result: "ok" });
+    await pending;
+  });
+}
+
+test("CLI global plan approval restores the configured native Claude mode", () => {
+  assert.deepEqual(planExit({ permission: "plan", permissionBeforePlan: "inherit", inheritedPermissionMode: "auto" }), { permission: "inherit", mode: "auto" });
+});

@@ -147,6 +147,9 @@ async function send(win, text, expected) {
         win,
         `document.body.innerText.includes('${name} fixture resposta 2')`,
       );
+      await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='plan'`);
+      await win.webContents.executeJavaScript(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', altKey: true, bubbles: true, cancelable: true }))`);
+      await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full'`);
       await send(win, "smoke three", `${name} fixture resposta 3`);
     }
   }
@@ -642,6 +645,74 @@ async function send(win, text, expected) {
         );
         await waitFor(win, `!!document.querySelector('input[placeholder^="Message to"]')`);
       }
+      // Exercise the same question form through all three native protocol fixtures.
+      await win.webContents.executeJavaScript(`(() => {
+        const input = document.querySelector('input[placeholder^="Message to"]');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'smoke-question');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await waitFor(win, `!document.querySelector('input[placeholder^="Message to"]').form.querySelector('button[type="submit"]').disabled`);
+      await win.webContents.executeJavaScript(`document.querySelector('input[placeholder^="Message to"]').form.requestSubmit()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="question-card"]')`);
+      assert.equal(await win.webContents.executeJavaScript(`(() => {
+        const card = document.querySelector('[data-testid="question-card"]');
+        return card.querySelectorAll('fieldset').length === 2 && !card.querySelector('pre') &&
+          card.querySelector('button[type="submit"]').disabled && !card.innerText.includes('Allow once');
+      })()`), true);
+      await win.webContents.executeJavaScript(`(() => {
+        const fields = document.querySelectorAll('[data-testid="question-card"] fieldset');
+        fields[0].querySelectorAll('input')[0].click();
+        fields[0].querySelectorAll('input')[1].click();
+        fields[1].querySelectorAll('input')[0].click();
+      })()`);
+      await waitFor(win, `!document.querySelector('[data-testid="question-card"] button[type="submit"]').disabled`);
+      await win.webContents.executeJavaScript(`document.querySelectorAll('[data-testid="question-card"] fieldset')[1].querySelectorAll('input')[2].click()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="question-card"] textarea')`);
+      assert.equal(await win.webContents.executeJavaScript(`document.querySelector('[data-testid="question-card"] button[type="submit"]').disabled`), true);
+      await win.webContents.executeJavaScript(`(() => {
+        const input = document.querySelector('[data-testid="question-card"] textarea');
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(input, 'Custom campaign details');
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      })()`);
+      await waitFor(win, `!document.querySelector('[data-testid="question-card"] button[type="submit"]').disabled`);
+      if (process.env.BEAGLEDOCK_SHOT_DIR) {
+        for (const theme of ["light", "dark"]) {
+          await win.webContents.executeJavaScript(`document.documentElement.dataset.theme=${JSON.stringify(theme)};void 0`);
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          require("fs").writeFileSync(path.join(process.env.BEAGLEDOCK_SHOT_DIR, `question-${index}-${theme}.png`), (await win.webContents.capturePage()).toPNG());
+        }
+        await win.webContents.executeJavaScript(`document.documentElement.dataset.theme='light';void 0`);
+      }
+      await win.webContents.executeJavaScript(`document.querySelector('[data-testid="question-card"]').requestSubmit()`);
+      await waitFor(win, `!document.querySelector('[data-testid="question-card"]') && document.body.innerText.includes('QUESTION_ANSWER_DONE')`);
+      await waitFor(win, `!document.querySelector('header').innerText.includes('RUNNING CLI')`);
+      const questionReply = await win.webContents.executeJavaScript(`document.body.innerText.split('QUESTION_ANSWER_DONE').at(-1)`);
+      assert.match(questionReply, /Email/);
+      assert.match(questionReply, /WhatsApp/);
+      assert.match(questionReply, /Custom campaign details/);
+
+      {
+        const chooseMode = async (value) => {
+          await win.webContents.executeJavaScript(`(() => {
+            const input = document.querySelector('select[data-control="permission"]');
+            Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+          })()`);
+          await waitFor(win, `document.querySelector('select[data-control="permission"]').value===${JSON.stringify(value)}`);
+        };
+        await chooseMode("full");
+        await chooseMode("plan");
+        const planState = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
+        const planned = planState.sessions.find((s) => s.providerId === ["claude", "codex", "antigravity"][index] && s.permission === 'plan');
+        assert.equal(planned.permissionBeforePlan, "full");
+        await send(win, "smoke-plan", "PLAN_READY_FOR_REVIEW");
+        await waitFor(win, `!!document.querySelector('button[title="Restore the previous permission mode and ask the AI to implement the plan"]')`);
+        await win.webContents.executeJavaScript(`document.querySelector('button[title="Restore the previous permission mode and ask the AI to implement the plan"]').click()`);
+        await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full' && document.body.innerText.includes('PLAN_RESTORED_AND_CONTINUED')`);
+        await waitFor(win, `!document.querySelector('header').innerText.includes('RUNNING CLI')`);
+        await chooseMode("inherit");
+      }
+
       for (const [prompt, button, answer] of [
         ["smoke-approval allow", "Allow once", "APPROVED_ACTION_DONE"],
         ["smoke-approval deny", "Deny", "DENIED_ACTION_DONE"],
@@ -1004,6 +1075,12 @@ async function send(win, text, expected) {
     await press("p");
     await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='plan'`);
     await press("p");
+    await waitFor(win, `document.querySelector('select[data-control="permission"]').value===${JSON.stringify(start)}`);
+    await win.webContents.executeJavaScript(`(() => {
+      const input = document.querySelector('select[data-control="permission"]');
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(input, 'edits');
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    })()`);
     await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='edits'`);
     await press("m");
     await waitFor(win, `document.querySelector('select[data-control="permission"]').value==='full'`);
@@ -1179,6 +1256,14 @@ async function send(win, text, expected) {
     for (const id of created.filter((id) => !initialIds.includes(id)))
       assert.equal((await js(`window.beagleAPI.deleteSession(${JSON.stringify(id)})`))?.success, true);
     console.log("Desktop new chats: Claude, Codex and AGY repeat model, level and permission when the option is on.");
+  }
+  if (stage === "first") {
+    // Leave the original conversations planning, then verify the prior permission after a real app restart.
+    const state = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
+    for (const session of state.sessions.filter((s) => s.title === "smoke one")) {
+      await win.webContents.executeJavaScript(`window.beagleAPI.saveSession(${JSON.stringify({ ...session, permission: "full" })})`);
+      await win.webContents.executeJavaScript(`window.beagleAPI.saveSession(${JSON.stringify({ ...session, permission: "plan" })})`);
+    }
   }
   assert.deepEqual(failures, []);
   console.log(

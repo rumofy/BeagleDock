@@ -57,7 +57,7 @@ SQLite stores the link between the app's conversation and the CLI's native ID. C
 
 The CLIs must offer the arguments used (check `--help`): Claude with stream-json and stdio permission control, Codex with `app-server`, AGY with stream-json, `--conversation` and hooks. The AGY adapter uses its `event: user` / `init` / `step_update` / `result` protocol; Claude uses `type` envelopes. The non-interactive quota query requires AGY 1.1.11 or later.
 
-- **Plan/restricted:** planning mode in Claude/AGY and a read-only sandbox in Codex. Actions blocked by read-only mode aren't released automatically.
+- **Plan/restricted:** planning mode in Claude/AGY and a read-only sandbox in Codex. Actions blocked by read-only mode aren't released automatically. Plan mode saves the conversation's previous permission; approving the plan or turning planning off restores that permission, even after an app restart.
 - **Accept edits:** acceptEdits/accept-edits in the corresponding CLIs and workspace-write in Codex.
 - **Full access:** requires an explicit choice in the interface; allows the CLI's no-approval mode.
 

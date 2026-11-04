@@ -1,6 +1,7 @@
 const { randomUUID } = require("crypto");
 const { ALLOW_ONCE, DENY } = require("./approval-options");
 const { t } = require("./i18n");
+const { userQuestions, validateAnswers } = require("./user-questions");
 
 // timeout 0 = the approval waits for the person's decision (as in the terminal); only cancelling the session denies it.
 function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
@@ -15,6 +16,7 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
       const id = randomUUID(),
         timer = timeout > 0 ? setTimeout(() => finish(id, { optionId: "deny", allow: false }), timeout) : undefined;
       timer?.unref?.();
+      const questions = request.kind === "question" ? userQuestions(request.input) : [];
       const options =
         Array.isArray(request.options) && request.options.length ? request.options : [ALLOW_ONCE, DENY];
       requests.set(id, {
@@ -23,6 +25,7 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
           sessionId: request.sessionId,
           providerId: request.providerId,
           ...(request.kind === "plan" || request.kind === "question" ? { kind: request.kind } : {}),
+          ...(questions.length ? { questions } : {}),
           tool: String(request.tool || "Ferramenta").slice(0, 200),
           input: (typeof request.input === "string"
             ? request.input
@@ -66,11 +69,16 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
     askDetailed,
     list,
     // `decision`: "allow" | "deny" (first option of that type) or the id of an offered option.
-    resolve(id, decision, { message } = {}) {
+    resolve(id, decision, { message, answers } = {}) {
       if (typeof id !== "string" || typeof decision !== "string")
         throw new Error(t("errors.invalidApprovalAnswer"));
       const entry = requests.get(id);
       if (!entry) return { ok: false };
+      if (entry.public.kind === "question" && decision !== "deny") {
+        const validated = decision === "answer" && validateAnswers(entry.public.questions || [], answers);
+        if (!validated) throw new Error(t("errors.invalidApprovalAnswer"));
+        return { ok: finish(id, { optionId: "answer", allow: true, answers: validated }) };
+      }
       const option =
         entry.options.find((o) => o.id === decision) ||
         (decision === "allow" || decision === "deny"

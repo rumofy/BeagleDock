@@ -8,8 +8,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   readNotifications: () => ipcRenderer.invoke("read-notifications"),
   updateCli: (id) => ipcRenderer.invoke("update-cli", id),
   getCliApprovals: () => ipcRenderer.invoke("get-cli-approvals"),
-  resolveCliApproval: (id, decision, message) =>
-    ipcRenderer.invoke("resolve-cli-approval", id, decision, message),
+  resolveCliApproval: (id, decision, message, answers) =>
+    ipcRenderer.invoke("resolve-cli-approval", id, decision, message, answers),
   setLivePermission: (sessionId, permission) =>
     ipcRenderer.invoke("set-live-permission", sessionId, permission),
   detectTools: () => ipcRenderer.invoke("detect-tools"),
