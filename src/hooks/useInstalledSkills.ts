@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
 import type { SkillItem } from "../types";
 
-/** Skills instaladas (carga inicial + atualização periódica). O histórico carrega ao abrir o modal. */
+/** Installed skills (initial load + periodic refresh). The history loads when the modal opens. */
 export function useInstalledSkills() {
   const [installedSkills, setInstalledSkills] = useState<SkillItem[]>([]);
   useEffect(() => {

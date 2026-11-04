@@ -3,6 +3,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t } from "../../i18n";
 export function SidebarFooter() {
   const {
     activeTab,
@@ -14,7 +15,7 @@ export function SidebarFooter() {
           <div className="flex items-center gap-2.5 truncate">
             <div
               className="w-7 h-7 rounded-xl bg-[#262420] text-amber-50 flex items-center justify-center font-bold text-xs ring-1 ring-[#d4cdbd] shrink-0"
-              title={`Usuário do Sistema Operacional: ${userProfile.fullName} (${userProfile.email})`}
+              title={t("footer.osUser", { name: userProfile.fullName, email: userProfile.email })}
             >
               {userProfile.initials || "U"}
             </div>
@@ -35,7 +36,7 @@ export function SidebarFooter() {
                 ? "bg-[#dfdacd] text-[#181715]"
                 : "text-[#6d6657] hover:bg-[#e4dec9]"
             }`}
-            title="Configurações, Banco SQLite & MCPs"
+            title={t("footer.settings")}
           >
             <SettingsIcon size={16} />
           </button>

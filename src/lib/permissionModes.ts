@@ -1,33 +1,45 @@
 import type { PermissionLevel } from "../types";
 
-/** Ordem em que o atalho percorre os modos, do mais restrito ao mais livre. */
+import { t, tn } from "../i18n";
+/** Order in which the shortcut cycles through the modes, from most restricted to most open. */
 export const PERMISSION_CYCLE: PermissionLevel[] = ["inherit", "plan", "ask", "edits", "full"];
 
+// Getters: every read uses the current interface language.
 export const PERMISSION_LABELS: Record<PermissionLevel, string> = {
-  inherit: "Global da CLI",
-  plan: "Somente leitura (plano)",
-  ask: "Restrito",
-  edits: "Aceitar edições",
-  full: "Acesso total",
+  get inherit() {
+    return t("permission.inherit");
+  },
+  get plan() {
+    return t("permission.plan");
+  },
+  get ask() {
+    return t("permission.ask");
+  },
+  get edits() {
+    return t("permission.edits");
+  },
+  get full() {
+    return t("permission.full");
+  },
 };
 
-/** Próximo modo do ciclo (Alt+M); volta ao primeiro depois do último. */
+/** Next mode in the cycle (Alt+M); wraps around to the first after the last. */
 export function nextPermission(current: PermissionLevel | undefined): PermissionLevel {
   const index = PERMISSION_CYCLE.indexOf(current ?? "inherit");
   return PERMISSION_CYCLE[(index + 1) % PERMISSION_CYCLE.length];
 }
 
-/** Alt+P: liga o plano; com o plano ligado, volta ao modo de execução normal (aceitar edições). */
+/** Alt+P: turns plan mode on; with it on, goes back to normal execution (accept edits). */
 export const togglePlan = (current: PermissionLevel | undefined): PermissionLevel =>
   current === "plan" ? "edits" : "plan";
 
-/** Mensagem enviada pelo botão "Aprovar plano e executar", já com a conversa fora do modo plano. */
-export const PLAN_APPROVED_PROMPT = "Plano aprovado. Pode implementar.";
+/** Message sent by the "Approve plan and run" button, with the conversation already out of plan mode. */
+export const planApprovedPrompt = () => t("prompt.planApproved");
 
 /**
- * O botão de aprovar o plano aparece quando a conversa está no modo plano, parada, e a última
- * mensagem é uma resposta concluída da IA (o plano a aprovar). Vale para as três CLIs: no Codex e no
- * AGY o plano termina só em texto, e no Claude Code ele às vezes também pergunta por texto.
+ * The approve-plan button shows when the conversation is in plan mode, idle, and the last message
+ * is a finished AI reply (the plan to approve). It applies to all three CLIs: in Codex and AGY the
+ * plan ends as plain text, and Claude Code sometimes also asks in text.
  */
 export function canApprovePlan(
   permission: PermissionLevel | undefined,
@@ -52,7 +64,7 @@ export interface ShortcutKey {
   shiftKey: boolean;
 }
 
-/** Que ação o atalho pede: `plan` (Alt+P), `cycle` (Alt+M) ou nenhuma. Alt sozinho, sem Ctrl/Meta. */
+/** Which action the shortcut asks for: `plan` (Alt+P), `cycle` (Alt+M) or none. Alt alone, no Ctrl/Meta. */
 export function permissionShortcut(e: ShortcutKey): "plan" | "cycle" | null {
   if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return null;
   const key = e.key.toLowerCase();
@@ -66,8 +78,9 @@ export interface LivePermissionOutcome {
 }
 
 /**
- * Explica uma troca de permissão feita com a resposta em andamento: se a CLI já usa o novo nível ou
- * só na próxima mensagem, e quantas aprovações pendentes foram liberadas. Sem nada a explicar, null.
+ * Explains a permission change made while a reply is running: whether the CLI already uses the new
+ * level or only from the next message, and how many pending approvals were released. Null when
+ * there is nothing to explain.
  */
 export function livePermissionNotice(
   result: LivePermissionOutcome | undefined,
@@ -75,14 +88,9 @@ export function livePermissionNotice(
 ): string | null {
   if (!result?.ok) return null;
   const approved = result.approved || 0;
-  const released =
-    approved === 1
-      ? " 1 aprovação pendente foi liberada."
-      : approved > 1
-        ? ` ${approved} aprovações pendentes foram liberadas.`
-        : "";
+  const released = approved > 0 ? ` ${tn("permission.released", approved)}` : "";
   if (!executing) return released ? released.trim() : null;
   return result.applied === "now"
-    ? `Novo nível aplicado à resposta em andamento.${released}`
-    : `A resposta em andamento segue com o nível anterior; o novo vale a partir da próxima mensagem.${released}`;
+    ? `${t("permission.appliedNow")}${released}`
+    : `${t("permission.appliedNext")}${released}`;
 }

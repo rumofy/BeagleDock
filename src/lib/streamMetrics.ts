@@ -1,8 +1,8 @@
-/** Atraso do stream: evento emitido pela CLI → recebido pela interface → aplicado na tela. */
+/** Stream latency: event emitted by the CLI → received by the interface → applied on screen. */
 export interface StreamSample {
-  ipcMs: number; // emissão no processo principal → chegada no renderer
-  frameWaitMs: number; // chegada → início do flush no quadro seguinte
-  commitMs: number; // duração do commit do React
+  ipcMs: number; // emitted in the main process → arrived in the renderer
+  frameWaitMs: number; // arrival → start of the flush on the next frame
+  commitMs: number; // duration of the React commit
   totalMs: number;
 }
 

@@ -1,32 +1,32 @@
-# Validação dos shells por comando (issue #7)
+# Validation of per-command shells (issue #7)
 
-Cada trecho de saída do shell sai do backend com `shellId`: o id do evento da linha do tempo do comando que o
-produziu. A interface lê título, estado e agente de lá. Saída que a CLI não permite atribuir fica sem `shellId`
-e aparece só na aba "Tudo"; a origem nunca é inventada.
+Each chunk of shell output leaves the backend with a `shellId`: the id of the timeline event of the command that
+produced it. The interface reads title, state and agent from there. Output the CLI doesn't let us attribute has no
+`shellId` and shows only in the "All" tab; the origin is never made up.
 
-## Evidência real (`node test/native-cli-canary.cjs --parallel`), 2026-10-31
+## Real evidence (`node test/native-cli-canary.cjs --parallel`), 2026-10-31
 
-Dois comandos pedidos ao mesmo tempo; cada um imprime marcadores `PAR_A_*` / `PAR_B_*`.
+Two commands requested at the same time; each prints `PAR_A_*` / `PAR_B_*` markers.
 
-| CLI | Versão | Origem distinta por comando | Sem mistura entre abas | Saída sem origem |
+| CLI | Version | Distinct origin per command | No mixing between tabs | Output without origin |
 | --- | --- | --- | --- | --- |
-| Codex CLI | 0.166.0 | sim (`exec-…` de cada comando) | sim | 0 |
-| Claude Code | 2.1.316 | sim (`toolu_…` de cada ferramenta) | sim | 1 trecho |
-| Antigravity | 1.4.12 | sim (`step-N` de cada `run_command`) | sim | 0 |
+| Codex CLI | 0.166.0 | yes (each command's `exec-…`) | yes | 0 |
+| Claude Code | 2.1.316 | yes (each tool's `toolu_…`) | yes | 1 chunk |
+| Antigravity | 1.4.12 | yes (each `run_command`'s `step-N`) | yes | 0 |
 
-- Claude Code: o log ao vivo de uma ferramenta só é atribuído quando há exatamente uma em andamento; com duas,
-  esse trecho fica sem origem, e o resultado final de cada ferramenta chega com a origem certa.
-- Antigravity: o comando assíncrono é um passo `run_command` (`step-2`) e a saída vem depois pelo
-  `manage_task`, cujo `TaskId` termina em `task-N` (N = passo do `run_command`). A saída é atribuída ao passo
-  do comando, então cada comando tem uma única aba. Antes disso, cada comando aparecia em duas abas
-  (`step-2` e `step-5`). A primeira tentativa do dia não pôde ser feita porque a CLI não respondia a prompts
-  de modelo; foi refeita quando voltou.
+- Claude Code: a tool's live log is only attributed when exactly one is in progress; with two, that chunk has no
+  origin, and each tool's final result arrives with the right origin.
+- Antigravity: the async command is a `run_command` step (`step-2`) and the output comes later through
+  `manage_task`, whose `TaskId` ends in `task-N` (N = the `run_command` step). The output is attributed to the
+  command's step, so each command has a single tab. Before that, each command showed up in two tabs
+  (`step-2` and `step-5`). The day's first attempt couldn't be made because the CLI didn't answer model
+  prompts; it was redone when it came back.
 
-## Evidência simulada
+## Simulated evidence
 
-- Contratos nas três CLIs: `test/codex-stream.test.js` e `test/cli-runner.test.js` (comandos em paralelo
-  etiquetados, sem mistura).
-- Regras das abas (título/estado/agente, abas visíveis e menu "mais", limites por aba e por sessão):
+- Contracts in the three CLIs: `test/codex-stream.test.js` and `test/cli-runner.test.js` (parallel commands
+  tagged, without mixing).
+- Tab rules (title/state/agent, visible tabs and the "more" menu, limits per tab and per session):
   `test/native-commands.test.js`.
-- Integrado: `test:desktop` abre o app com o Codex simulado, confere os dois `shellId`, as duas abas e a troca
-  de aba.
+- Integrated: `test:desktop` opens the app with the simulated Codex, checks both `shellId`s, both tabs and the tab
+  switch.

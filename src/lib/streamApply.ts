@@ -48,7 +48,7 @@ function applyOne(
     return {
       ...message,
       queuedFor: undefined,
-      // Uma etapa nova nesta resposta: a IA já leu a mensagem entregue.
+      // A new step in this reply: the AI has read the delivered message.
       deliveredFor: undefined,
       events,
       lastEventAt: now,
@@ -56,8 +56,8 @@ function applyOne(
     };
   }
   const { fullText, activity, detail } = item.payload;
-  // `fullText` é o texto inteiro: num lote só o último de cada mensagem precisa ser processado.
-  // Os anteriores continuam contando como progresso, sem limpar nem comparar o texto de novo.
+  // `fullText` is the whole text: within a batch only the last one per message needs processing.
+  // The earlier ones still count as progress, without cleaning or comparing the text again.
   const text =
     typeof fullText === "string" && !skipText ? clean(fullText) : message.text;
   const textArrived = typeof fullText === "string" && skipText;
@@ -66,9 +66,9 @@ function applyOne(
     (activity !== message.activity || detail !== message.detail);
   return {
     ...message,
-    // Chegou algo da CLI para esta resposta: ela saiu da fila.
+    // Something arrived from the CLI for this reply: it has left the queue.
     queuedFor: undefined,
-    // Só texto prova que a IA leu a mensagem entregue (o aviso de atividade chega antes disso).
+    // Only text proves the AI read the delivered message (the activity notice arrives earlier).
     deliveredFor:
       message.deliveredFor && typeof fullText === "string" && /\S/.test(fullText)
         ? undefined
@@ -88,7 +88,7 @@ function applyOne(
   };
 }
 
-/** Aplica um lote de eventos do stream às mensagens, copiando cada lista no máximo uma vez. */
+/** Applies a batch of stream events to the messages, copying each list at most once. */
 export function applyStreamItems(
   prev: Record<string, ChatMessage[]>,
   items: StreamItem[],
@@ -110,16 +110,16 @@ export function applyStreamItems(
     const list = next[sessionId];
     if (!list) continue;
     const responseId = item.payload.responseMessageId;
-    // Sem id de resposta só vale se houver uma única mensagem em streaming; com a fila, um evento
-    // tardio de outro turno cairia na resposta errada.
+    // Without a reply id it only applies when exactly one message is streaming; with the queue, a late
+    // event from another turn would land on the wrong reply.
     const streaming = responseId ? [] : list.filter((m) => m.isStreaming);
     if (!responseId && streaming.length !== 1) continue;
     const index = responseId
       ? list.findIndex((m) => m.id === responseId)
       : list.indexOf(streaming[0]);
     if (index < 0) continue;
-    // Uma resposta já concluída ainda recebe atualizações de agentes em segundo plano: só de
-    // etapas que ela já tem (ou filhas delas), nunca texto nem atividade.
+    // A finished reply still receives updates from background agents: only for steps it already
+    // has (or their children), never text or activity.
     if (!list[index].isStreaming) {
       const late = item.kind === "event" ? item.payload.event : null;
       const known =
@@ -127,7 +127,7 @@ export function applyStreamItems(
         list[index].events?.some(
           (e) => e.id === late.id || e.id === late.parentId,
         );
-      // Um evento atrasado nunca reabre uma etapa já concluída.
+      // A late event never reopens a finished step.
       const existing =
         late && list[index].events?.find((e) => e.id === late.id);
       const reopens =

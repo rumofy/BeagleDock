@@ -1,15 +1,15 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { findMatches, stepMatch } from "../../lib/textSearch";
 
-// Nomes dos realces usados em index.css (::highlight(...)).
+// Highlight names used in index.css (::highlight(...)).
 const ALL = "chat-find";
 const CURRENT = "chat-find-current";
-// Texto de blocos diferentes não se junta numa ocorrência só ("fim" de uma caixa + "começo" da outra).
+// Text from different blocks never joins into a single match (the "end" of one box + the "start" of the next).
 const BLOCK = "p,div,li,pre,blockquote,h1,h2,h3,h4,h5,h6,td,th,tr,ul,ol,table";
 
 type Piece = { node: Text; start: number };
 
-/** Texto visível do contêiner, com a posição de cada nó de texto para converter de volta em Range. */
+/** Visible text of the container, with each text node's position to convert back into a Range. */
 function collectText(root: HTMLElement): { text: string; pieces: Piece[] } {
   const pieces: Piece[] = [];
   let text = "";
@@ -19,7 +19,7 @@ function collectText(root: HTMLElement): { text: string; pieces: Piece[] } {
       const parent = node.parentElement;
       if (!parent || !node.nodeValue) return NodeFilter.FILTER_REJECT;
       if (parent.closest("[data-find-skip]")) return NodeFilter.FILTER_REJECT;
-      // Trechos recolhidos (timeline fechada, etc.) não aparecem; não contam como resultado.
+      // Collapsed parts (closed timeline, etc.) aren't visible and don't count as results.
       if (parent.checkVisibility && !parent.checkVisibility()) return NodeFilter.FILTER_REJECT;
       return NodeFilter.FILTER_ACCEPT;
     },
@@ -34,7 +34,7 @@ function collectText(root: HTMLElement): { text: string; pieces: Piece[] } {
   return { text, pieces };
 }
 
-/** Nó e deslocamento da posição `pos` do texto juntado. `end` prefere o fim do nó anterior. */
+/** Node and offset of position `pos` in the joined text. `end` prefers the end of the previous node. */
 function locate(pieces: Piece[], pos: number, end: boolean): [Text, number] {
   let lo = 0;
   let hi = pieces.length - 1;
@@ -66,7 +66,7 @@ function clearHighlights() {
   highlights()?.delete(CURRENT);
 }
 
-/** Centraliza a ocorrência no rolador do chat, sem mexer no resto da janela. */
+/** Centers the match in the chat scroller without moving the rest of the window. */
 function scrollIntoView(scroller: HTMLElement, range: Range) {
   const rect = range.getBoundingClientRect();
   const box = scroller.getBoundingClientRect();
@@ -75,8 +75,8 @@ function scrollIntoView(scroller: HTMLElement, range: Range) {
 }
 
 /**
- * Busca na conversa aberta (Ctrl+F): realça todas as ocorrências no que está na tela, inclusive no
- * texto que ainda chega por streaming, e navega entre elas.
+ * Search in the open conversation (Ctrl+F): highlights every match on screen, including text still
+ * streaming in, and navigates between them.
  */
 export function useChatFind(
   scrollerRef: RefObject<HTMLElement | null>,
@@ -102,8 +102,8 @@ export function useChatFind(
     } else registry.delete(CURRENT);
   }, [scrollerRef]);
 
-  // Recalcula quando a busca muda (vai para a primeira ocorrência a partir do que está visível)
-  // e quando a conversa muda na tela (mantém a posição, sem puxar a rolagem).
+  // Recomputes when the query changes (goes to the first match from what is visible)
+  // and when the conversation changes on screen (keeps the position without pulling the scroll).
   useEffect(() => {
     const content = contentRef.current;
     if (!open || !content || !query.trim()) {

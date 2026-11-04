@@ -11,19 +11,19 @@ const ctx = { exports: {}, String };
 vm.runInNewContext(out, ctx);
 const { SEGMENT_MARK, SEGMENT_SEPARATOR, messageSegments, plainMessageText } = ctx.exports;
 
-test("trechos: o separador é o mesmo no backend e na tela", () => {
+test("segments: the separator is the same in the backend and on screen", () => {
   assert.equal(SEGMENT_MARK, backend.SEGMENT_MARK);
   assert.equal(SEGMENT_SEPARATOR, backend.SEGMENT_SEPARATOR);
 });
 
-test("trechos: a tela divide por separador e texto antigo continua uma caixa só", () => {
-  assert.deepEqual([...messageSegments("um\n\ndois")], ["um\n\ndois"], "parágrafos comuns não viram caixas");
+test("segments: the screen splits by separator and old text stays a single box", () => {
+  assert.deepEqual([...messageSegments("um\n\ndois")], ["um\n\ndois"], "ordinary paragraphs don't become boxes");
   assert.deepEqual([...messageSegments(`um${SEGMENT_SEPARATOR}dois\n\nainda dois${SEGMENT_SEPARATOR}três`)], ["um", "dois\n\nainda dois", "três"]);
-  assert.deepEqual([...messageSegments(`um${SEGMENT_SEPARATOR}`)], ["um"], "trecho vazio no fim some");
+  assert.deepEqual([...messageSegments(`um${SEGMENT_SEPARATOR}`)], ["um"], "an empty segment at the end vanishes");
   assert.deepEqual([...messageSegments("")], [""]);
 });
 
-test("trechos: texto limpo para cópia, notificação e continuação em outra CLI", () => {
+test("segments: clean text for copying, notifications and continuing in another CLI", () => {
   const text = `um${SEGMENT_SEPARATOR}dois`;
   assert.equal(plainMessageText(text), "um\n\ndois");
   assert.equal(backend.plainText(text), "um\n\ndois");

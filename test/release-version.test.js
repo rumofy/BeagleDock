@@ -33,7 +33,7 @@ Intro.
 [0.1.0]: https://github.com/x/y/releases/tag/v0.1.0
 `;
 
-test("releaseChangelog move entradas, mantém ordem e atualiza links", async () => {
+test("releaseChangelog moves entries, keeps the order and updates links", async () => {
   const { releaseChangelog } = await load();
   const out = releaseChangelog(SAMPLE, "0.2.0", "2026-11-01");
   const iU = out.indexOf("## [Unreleased]");
@@ -51,14 +51,14 @@ test("releaseChangelog move entradas, mantém ordem e atualiza links", async () 
   assert.ok(out.endsWith("\n"));
 });
 
-test("releaseChangelog recusa Unreleased sem entradas", async () => {
+test("releaseChangelog refuses an Unreleased without entries", async () => {
   const { releaseChangelog } = await load();
   const vazio = SAMPLE.replace(/## \[Unreleased\][\s\S]*?(?=## \[0\.1\.1\])/, "## [Unreleased]\n\n");
-  assert.throws(() => releaseChangelog(vazio, "0.2.0", "2026-11-01"), /sem entradas/);
+  assert.throws(() => releaseChangelog(vazio, "0.2.0", "2026-11-01"), /has no entries/);
   assert.throws(() => releaseChangelog("# x\n", "0.2.0", "2026-11-01"), /Unreleased/);
 });
 
-test("syncOpenapi atualiza info.version", async () => {
+test("syncOpenapi updates info.version", async () => {
   const { syncOpenapi } = await load();
   const out = JSON.parse(syncOpenapi(JSON.stringify({ info: { title: "t", version: "0.0.1" }, paths: {} }), "1.2.3"));
   assert.equal(out.info.version, "1.2.3");
@@ -66,7 +66,7 @@ test("syncOpenapi atualiza info.version", async () => {
   assert.deepEqual(out.paths, {});
 });
 
-test("consistência: versão única em package.json, openapi, CHANGELOG e README", () => {
+test("consistency: a single version in package.json, openapi, CHANGELOG and README", () => {
   const version = JSON.parse(read("package.json")).version;
   assert.equal(JSON.parse(read("docs/openapi.json")).info.version, version);
 
@@ -75,11 +75,18 @@ test("consistência: versão única em package.json, openapi, CHANGELOG e README
   const released = [...cl.matchAll(/^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$/gm)].map((m) => m[1]);
   assert.equal(released[0], version);
 
-  const allowed = ["Adicionado", "Alterado", "Descontinuado", "Removido", "Corrigido", "Segurança"];
-  for (const m of cl.matchAll(/^### (.+)$/gm)) assert.ok(allowed.includes(m[1].trim()), `Subseção inválida: ${m[1]}`);
+  // New entries use the English Keep a Changelog sections; versions released before the switch to
+  // English keep their Portuguese section names.
+  const english = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"];
+  const legacy = ["Adicionado", "Alterado", "Descontinuado", "Removido", "Corrigido", "Segurança"];
+  const unreleased = cl.slice(cl.indexOf("## [Unreleased]"), cl.search(/^## \[\d/m));
+  for (const m of unreleased.matchAll(/^### (.+)$/gm))
+    assert.ok(english.includes(m[1].trim()), `Invalid Unreleased section: ${m[1]}`);
+  for (const m of cl.matchAll(/^### (.+)$/gm))
+    assert.ok([...english, ...legacy].includes(m[1].trim()), `Invalid section: ${m[1]}`);
 
   const readme = read("README.md");
   const esc = version.replace(/\./g, "\\.");
-  assert.doesNotMatch(readme, new RegExp(`(?<![\\d.])${esc}(?![\\d.])`), "README não deve conter a versão do app");
-  assert.doesNotMatch(readme, /BeagleDock[ -]v?\d+\.\d+\.\d+/, "README não deve fixar versão após o nome");
+  assert.doesNotMatch(readme, new RegExp(`(?<![\\d.])${esc}(?![\\d.])`), "README must not contain the app version");
+  assert.doesNotMatch(readme, /BeagleDock[ -]v?\d+\.\d+\.\d+/, "README must not pin a version after the name");
 });

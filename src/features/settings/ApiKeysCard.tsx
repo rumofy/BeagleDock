@@ -3,6 +3,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t } from "../../i18n";
 export function ApiKeysCard() {
   const {
     settings,
@@ -13,11 +14,10 @@ export function ApiKeysCard() {
   return (
                 <div className="bg-[#ffffff] border border-[#ded8cb] rounded-2xl p-6 shadow-xs">
                   <h2 className="font-bold text-lg text-[#1c1b18] mb-1">
-                    Credenciais da aplicação
+                    {t("apiKeys.title")}
                   </h2>
                   <p className="text-xs text-[#7d7565] mb-6">
-                    Protegidas pelo cofre do sistema no aplicativo desktop. As
-                    CLIs usam suas próprias credenciais.
+                    {t("apiKeys.intro")}
                   </p>
 
                   <div className="space-y-4">
@@ -29,8 +29,8 @@ export function ApiKeysCard() {
                         type="password"
                         placeholder={
                           settings.configuredSecrets?.openRouterApiKey
-                            ? "Chave já cadastrada; digite para substituir"
-                            : "Chave de API"
+                            ? t("dictationSettings.keyConfigured")
+                            : t("apiKeys.placeholder")
                         }
                         value={settings.openRouterApiKey || ""}
                         onChange={(e) =>
@@ -47,7 +47,7 @@ export function ApiKeysCard() {
                       {settingsSavedBanner ? (
                         <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
                           <CheckCircle2 size={15} />
-                          Configurações salvas com sucesso!
+                          {t("apiKeys.saved")}
                         </span>
                       ) : (
                         <span />
@@ -56,7 +56,7 @@ export function ApiKeysCard() {
                         onClick={handleSaveSettings}
                         className="px-5 py-2.5 rounded-xl bg-[#1c1b18] hover:bg-[#32302b] text-white text-xs font-bold transition"
                       >
-                        Salvar configurações
+                        {t("apiKeys.save")}
                       </button>
                     </div>
                   </div>

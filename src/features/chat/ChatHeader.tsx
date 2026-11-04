@@ -22,14 +22,13 @@ import type {
   PermissionLevel,
 } from "../../types";
 import { ContinueInCliButton } from "./ContinueInCli";
-import { HANDOFF_PROMPT } from "../../lib/handoffPrompt";
+import { handoffPrompt } from "../../lib/handoffPrompt";
 import { backgroundLabel, backgroundWork } from "../../lib/backgroundWork";
 import { TerminalDictationButton } from "../terminal/TerminalDictationButton";
 
-const SOURCE_LABEL = {
-  git: "remoto git",
-  folder: "nome da pasta",
-} as const;
+import { t, tn } from "../../i18n";
+const sourceLabel = (source: "git" | "folder") =>
+  source === "git" ? t("memoryScope.sourceGit") : t("memoryScope.sourceFolder");
 
 function AiMemoryBadge({
   scope,
@@ -44,7 +43,7 @@ function AiMemoryBadge({
     return (
       <span
         className={`${base} font-medium text-[#8c8270] bg-[#e8e2d4]`}
-        title="Servidor do ai-memory inacessível"
+        title={t("memoryScope.offlineHint")}
       >
         ai-memory offline
       </span>
@@ -53,16 +52,16 @@ function AiMemoryBadge({
   const name = `${scope.workspace}/${scope.project}`;
   const source =
     scope.source === "marker"
-      ? `marcador ${scope.markerPath}`
-      : SOURCE_LABEL[scope.source];
+      ? t("memoryScope.sourceMarker", { path: scope.markerPath })
+      : sourceLabel(scope.source);
   const pages = scope.projectExists
-    ? `${scope.pages ?? 0} páginas`
-    : "projeto ainda não existe no servidor";
+    ? tn("memoryScope.pages", scope.pages ?? 0)
+    : t("memoryScope.projectMissing");
   return (
     <button
       type="button"
       onClick={onOpen}
-      title={`Origem: ${source} · ${pages}`}
+      title={t("memoryScope.hint", { source, pages })}
       className={`${base} ${
         scope.projectExists
           ? "text-emerald-800 bg-emerald-100/90"
@@ -75,7 +74,7 @@ function AiMemoryBadge({
         }`}
       />
       ai-memory · {name}
-      {scope.projectExists ? "" : " (novo)"}
+      {scope.projectExists ? "" : ` ${t("memoryScope.new")}`}
     </button>
   );
 }
@@ -106,12 +105,17 @@ export function ChatHeader() {
     currentMessages,
   } = useApp();
   const background = backgroundWork(currentMessages);
-  // Modo terminal: a CLI cuida de modelo, plano, permissões e aprovações; o topo só guarda o que
-  // é do BeagleDock (projeto, VS Code, handoff, ditado e cota).
+  // Terminal mode: the CLI handles model, plan, permissions and approvals; the header only keeps
+  // what belongs to BeagleDock (project, VS Code, handoff, dictation and quota).
   const terminalMode = cliTerminals.isTerminal(currentSession?.id);
   const waitingApproval = cliApprovals.some(
     (a) => a.sessionId === currentSession?.id,
   );
+  const waitingPlanOnly =
+    waitingApproval &&
+    cliApprovals
+      .filter((a) => a.sessionId === currentSession?.id)
+      .every((a) => a.kind === "plan");
   const { scope: memoryScope } = useAiMemoryScope(
     currentSession?.cwd,
     memoryStatus.serverRunning,
@@ -128,7 +132,7 @@ export function ChatHeader() {
               className="max-w-[26rem] truncate"
               title={currentSession?.title || undefined}
             >
-              {currentSession?.title || "Selecione uma sessão"}
+              {currentSession?.title || t("header.selectSession")}
             </span>
 
             {currentProvider && currentSession && !terminalMode && (
@@ -136,7 +140,7 @@ export function ChatHeader() {
                 <Bot size={13} className="text-[#7d7565]" />
                 <select
                   value={currentModelSelection.model}
-                  aria-label="Modelo"
+                  aria-label={t("header.model")}
                   data-control="model"
                   onChange={(e) => handleModelChange(e.target.value)}
                   className="text-xs font-semibold bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
@@ -144,14 +148,14 @@ export function ChatHeader() {
                   title={
                     currentProvider.modelsError ||
                     currentProvider.modelsSource ||
-                    "Usa o modelo padrão da CLI"
+                    t("header.modelDefaultHint")
                   }
                 >
-                  <option value="">Padrão da CLI</option>
+                  <option value="">{t("header.cliDefault")}</option>
                   {currentModelSelection.model &&
                     !currentModelSelection.option && (
                       <option value={currentModelSelection.model} disabled>
-                        {currentModelSelection.model} (aguardando catálogo)
+                        {t("header.modelWaitingCatalog", { model: currentModelSelection.model })}
                       </option>
                     )}
                   {(currentProvider.modelOptions || []).map((model) => (
@@ -168,7 +172,7 @@ export function ChatHeader() {
                 <Gauge size={13} className="text-[#7d7565]" />
                 <select
                   value={currentModelSelection.effort}
-                  aria-label="Nível de raciocínio"
+                  aria-label={t("header.effort")}
                   data-control="effort"
                   onChange={(e) =>
                     handleReasoningChange(
@@ -180,10 +184,10 @@ export function ChatHeader() {
                     isExecutingPrompt ||
                     !currentModelSelection.option?.efforts.length
                   }
-                  title="Níveis informados pela CLI para o modelo selecionado"
+                  title={t("header.effortHint")}
                 >
                   {!currentModelSelection.option?.requiresEffort && (
-                    <option value="">Padrão da CLI</option>
+                    <option value="">{t("header.cliDefault")}</option>
                   )}
                   {currentModelSelection.option?.efforts.map((level) => (
                     <option
@@ -210,14 +214,14 @@ export function ChatHeader() {
                     handlePermissionChange(e.target.value as PermissionLevel)
                   }
                   className="text-xs font-semibold bg-inherit outline-none cursor-pointer"
-                  title="Permissões da conversa (Alt+P liga o plano · Alt+M troca de modo); pode trocar durante a resposta. Solicitações elegíveis aparecem no painel de aprovação"
+                  title={t("header.permissionHint")}
                 >
-                  <option value="inherit">Global da CLI</option>
-                  <option value="plan">🔍 Somente leitura (plano)</option>
-                  <option value="ask">🔒 Restrito (nega aprovações)</option>
-                  <option value="edits">✏️ Aceitar edições</option>
+                  <option value="inherit">{t("permission.inherit")}</option>
+                  <option value="plan">🔍 {t("permission.plan")}</option>
+                  <option value="ask">🔒 {t("header.permissionAsk")}</option>
+                  <option value="edits">✏️ {t("permission.edits")}</option>
                   <option value="full">
-                    ⚠️ Acesso total (sem confirmação)
+                    ⚠️ {t("header.permissionFull")}
                   </option>
                 </select>
               </div>
@@ -239,7 +243,7 @@ export function ChatHeader() {
                 className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-white bg-amber-600 px-2 py-0.5 rounded-full animate-pulse"
               >
                 <ShieldCheck size={10} />
-                AGUARDANDO PERMISSÃO
+                {waitingPlanOnly ? t("header.planToReview") : t("header.waitingPermission")}
               </span>
             )}
             {terminalMode ? (
@@ -250,13 +254,13 @@ export function ChatHeader() {
             ) : isExecutingPrompt ? (
               <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                 <RefreshCw size={10} className="animate-spin" />
-                EXECUTANDO CLI
+                {t("header.runningCli")}
               </span>
             ) : background.total > 0 ? (
               <span
                 role="status"
                 data-testid="header-background"
-                title="A resposta terminou, mas o trabalho continua; a IA avisa quando acabar"
+                title={t("header.backgroundHint")}
                 className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
@@ -292,7 +296,7 @@ export function ChatHeader() {
                 disabled={
                   !!currentSession?.nativeSessionId || isExecutingPrompt
                 }
-                title="Após iniciar uma conversa, crie outra sessão para trocar de projeto"
+                title={t("header.workspaceLocked")}
               >
                 {workspaces.map((ws) => (
                   <option key={ws.id} value={ws.path}>
@@ -306,8 +310,8 @@ export function ChatHeader() {
               <button
                 type="button"
                 onClick={() => setShowWorkspaceManager(true)}
-                title="Gerenciar workspaces"
-                aria-label="Gerenciar workspaces"
+                title={t("header.manageWorkspaces")}
+                aria-label={t("header.manageWorkspaces")}
                 className="p-0.5 rounded text-[#8c8270] hover:text-[#2c2822] hover:bg-[#e6e0d0]"
               >
                 <Settings2 size={12} />
@@ -340,14 +344,14 @@ export function ChatHeader() {
               });
               if (!result?.ok)
                 setAppError(
-                  result?.error || "Não foi possível abrir o VS Code.",
+                  result?.error || t("header.vsCodeFailed"),
                 );
             } catch (error) {
               setAppError((error as Error).message);
             }
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] disabled:opacity-40 border border-[#d6cfbe] text-[#332f28] transition shadow-2xs"
-          title="Abrir o projeto desta conversa no VS Code"
+          title={t("header.vsCodeHint")}
         >
           <Code2 size={14} />
           <span>VS Code</span>
@@ -357,12 +361,12 @@ export function ChatHeader() {
         <button
           onClick={() => {
             if (!currentSession) return;
-            // No terminal, o pedido é colado e enviado na própria CLI (a fila, se houver, é a dela).
-            if (terminalMode) void cliTerminals.pasteToTerminal(currentSession.id, HANDOFF_PROMPT, true);
+            // In the terminal the request is pasted and sent in the CLI itself (any queue is the CLI's own).
+            if (terminalMode) void cliTerminals.pasteToTerminal(currentSession.id, handoffPrompt(), true);
             else void handleTriggerHandoff();
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] border border-[#d6cfbe] text-[#332f28] transition shadow-2xs hover:shadow-xs group"
-          title="Salvar um handoff desta conversa no ai-memory"
+          title={t("header.handoffHint")}
         >
           <ArrowRightLeft
             size={14}
@@ -381,7 +385,7 @@ export function ChatHeader() {
             >
               {formatQuota(currentQuota!.window5hPercent)}
             </b>
-            <span className="text-[#8c8270]">| Sem:</span>
+            <span className="text-[#8c8270]">| {t("header.weekShort")}:</span>
             <b
               className={
                 getQuotaColor(currentQuota!.weeklyPercent).split(" ")[0]
@@ -401,16 +405,16 @@ export function ChatHeader() {
               ? "bg-[#1c1b18] text-white shadow-xs"
               : "bg-[#ede9de] hover:bg-[#e2dcce] text-[#36322b]"
           }`}
-          title="Exibir ou ocultar o terminal PTY flutuante"
+          title={t("header.shellToggleHint")}
         >
           <Terminal size={14} />
-          <span>Shell {showInlineTerminal ? "Visível" : "Oculto"}</span>
+          <span>{showInlineTerminal ? t("header.shellVisible") : t("header.shellHidden")}</span>
         </button>
 
         <button
           onClick={() => setActiveTab("terminal")}
           className="p-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] transition text-[#36322b]"
-          title="Tela cheia do Terminal PTY"
+          title={t("header.shellFullscreen")}
         >
           <Maximize2 size={14} />
         </button>

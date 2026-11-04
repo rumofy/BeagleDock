@@ -2,6 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { tokenize, type TokenType } from "../lib/highlight";
 
+import { t } from "../i18n";
 const COLOR: Record<TokenType, string> = {
   plain: "text-[#2e2a24]",
   keyword: "text-[#8a2f9a] font-semibold",
@@ -36,7 +37,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** Bloco de código com destaque de sintaxe e botão "copiar". Memoizado: só o bloco que cresce re-renderiza. */
+/** Code block with syntax highlighting and a "copy" button. Memoized: only the growing block re-renders. */
 export const CodeBlock = memo(function CodeBlock({
   code,
   lang,
@@ -55,8 +56,8 @@ export const CodeBlock = memo(function CodeBlock({
     >
       <div className="flex items-center justify-between px-3 py-1 bg-[#ebe6d9] border-b border-[#dcd6c7]">
         <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-[#6d6657]">
-          {lang || "código"}
-          {streaming ? " · recebendo…" : ""}
+          {lang || t("code.label")}
+          {streaming ? ` · ${t("code.receiving")}` : ""}
         </span>
         <button
           type="button"
@@ -65,14 +66,14 @@ export const CodeBlock = memo(function CodeBlock({
             setTimeout(() => setCopied("idle"), 1800);
           }}
           className="flex items-center gap-1 text-[10px] font-bold text-[#443e33] hover:text-[#181715]"
-          aria-label="Copiar código"
+          aria-label={t("code.copyLabel")}
         >
           {copied === "ok" ? <Check size={12} /> : <Copy size={12} />}
           {copied === "ok"
-            ? "Copiado"
+            ? t("common.copied")
             : copied === "fail"
-              ? "Não foi possível copiar"
-              : "Copiar"}
+              ? t("common.copyFailed")
+              : t("common.copy")}
         </button>
       </div>
       <pre className="p-3 overflow-x-auto text-[12px] leading-relaxed font-mono whitespace-pre">

@@ -1,11 +1,12 @@
-/** Nome legível da ação que pede permissão (o Codex informa o método do protocolo). */
+import { t } from "../i18n";
+/** Readable name of the action asking for permission (Codex reports the protocol method). */
 export function approvalTitle(tool: string): string {
-  if (tool === "ExitPlanMode") return "Aprovar o plano";
-  if (/commandExecution\/requestApproval$/.test(tool)) return "Executar um comando";
-  if (/fileChange\/requestApproval$/.test(tool)) return "Editar arquivos";
-  if (/permissions\/requestApproval$/.test(tool)) return "Permissão adicional";
-  if (/requestApproval$/.test(tool)) return "Ação que exige permissão";
-  return tool || "Ferramenta";
+  if (tool === "ExitPlanMode") return t("approval.title.plan");
+  if (/commandExecution\/requestApproval$/.test(tool)) return t("approval.title.command");
+  if (/fileChange\/requestApproval$/.test(tool)) return t("approval.title.files");
+  if (/permissions\/requestApproval$/.test(tool)) return t("approval.title.extraPermission");
+  if (/requestApproval$/.test(tool)) return t("approval.title.generic");
+  return tool || t("approval.title.tool");
 }
 
 export const PROVIDER_NAMES: Record<string, string> = {

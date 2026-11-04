@@ -6,6 +6,7 @@ import type { AIProviderId, AIProviderStatus } from "../../types";
 import { PaneMessage } from "./PaneMessage";
 import type { Sel } from "./useMemoryExplorer";
 
+import { t } from "../../i18n";
 export function MaintenanceDialog({
   sel,
   providers,
@@ -74,20 +75,20 @@ export function MaintenanceDialog({
       prompt,
     });
     setStarting(false);
-    if (!ok) setError("Não foi possível iniciar a manutenção. Veja o erro no app.");
+    if (!ok) setError(t("maintenance.startFailed"));
   };
 
   return (
-    <Modal title="Manutenção assistida" onClose={onClose} wide>
+    <Modal title={t("maintenance.title")} onClose={onClose} wide>
       <p className="text-xs text-[#6d6657]">
-        Uma conversa será aberta para organizar o projeto{" "}
+        {t("maintenance.introBefore")}{" "}
         <b>
           {sel.ws}/{sel.p}
         </b>{" "}
-        usando as ferramentas memory_* da CLI escolhida.
+        {t("maintenance.introAfter")}
       </p>
       {!installed.length ? (
-        <PaneMessage tone="error">Nenhuma CLI instalada.</PaneMessage>
+        <PaneMessage tone="error">{t("maintenance.noCli")}</PaneMessage>
       ) : (
         <div className="grid grid-cols-2 gap-3 text-xs">
           <label className="space-y-1">
@@ -105,10 +106,10 @@ export function MaintenanceDialog({
             </select>
           </label>
           <label className="space-y-1">
-            <span className="font-bold">Modelo</span>
+            <span className="font-bold">{t("header.model")}</span>
             <select
               value={selection.model}
-              aria-label="Modelo"
+              aria-label={t("header.model")}
               onChange={(e) => {
                 setModel(e.target.value);
                 setEffort(
@@ -121,10 +122,10 @@ export function MaintenanceDialog({
               }}
               className="w-full px-2 py-1.5 rounded-lg border border-[#d6cfbe] bg-white"
             >
-              <option value="">Padrão da CLI</option>
+              <option value="">{t("header.cliDefault")}</option>
               {selection.model && !selection.option && (
                 <option value={selection.model} disabled>
-                  {selection.model} (aguardando catálogo)
+                  {t("maintenance.awaitingCatalog", { model: selection.model })}
                 </option>
               )}
               {(provider?.modelOptions || []).map((m) => (
@@ -135,16 +136,16 @@ export function MaintenanceDialog({
             </select>
           </label>
           <label className="space-y-1">
-            <span className="font-bold">Nível</span>
+            <span className="font-bold">{t("maintenance.level")}</span>
             <select
               value={selection.effort}
-              aria-label="Nível de raciocínio"
+              aria-label={t("header.effort")}
               onChange={(e) => setEffort(e.target.value)}
               disabled={!selection.option?.efforts.length}
               className="w-full px-2 py-1.5 rounded-lg border border-[#d6cfbe] bg-white"
             >
               {!selection.option?.requiresEffort && (
-                <option value="">Padrão da CLI</option>
+                <option value="">{t("header.cliDefault")}</option>
               )}
               {selection.option?.efforts.map((l) => (
                 <option key={l.id} value={l.id} title={l.description}>
@@ -154,7 +155,7 @@ export function MaintenanceDialog({
             </select>
           </label>
           <label className="space-y-1">
-            <span className="font-bold">Limite de exclusões</span>
+            <span className="font-bold">{t("maintenance.deleteLimit")}</span>
             <input
               type="number"
               min={0}
@@ -167,14 +168,14 @@ export function MaintenanceDialog({
             />
           </label>
           <fieldset className="col-span-2 space-y-1">
-            <legend className="font-bold">Modo</legend>
+            <legend className="font-bold">{t("maintenance.mode")}</legend>
             <label className="flex items-center gap-2">
               <input
                 type="radio"
                 checked={mode === "plan"}
                 onChange={() => setMode("plan")}
               />
-              Planejar e aguardar aprovação (recomendado)
+              {t("maintenance.modePlan")}
             </label>
             <label className="flex items-center gap-2">
               <input
@@ -182,14 +183,14 @@ export function MaintenanceDialog({
                 checked={mode === "execute"}
                 onChange={() => setMode("execute")}
               />
-              Executar com limite
+              {t("maintenance.modeExecute")}
             </label>
           </fieldset>
         </div>
       )}
       <details className="rounded-xl border border-[#e6e1d5] bg-[#faf8f4] text-xs">
         <summary className="cursor-pointer px-3 py-1.5 font-bold text-[#665e4f]">
-          Prévia do prompt
+          {t("maintenance.promptPreview")}
         </summary>
         {promptError ? (
           <div className="px-3 pb-2 text-rose-700">{promptError}</div>
@@ -205,14 +206,14 @@ export function MaintenanceDialog({
           onClick={onClose}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-[#ede9de]"
         >
-          Cancelar
+          {t("common.cancel")}
         </button>
         <button
           disabled={!providerId || !prompt || starting}
           onClick={() => void start()}
           className="px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1b18] text-white disabled:opacity-40"
         >
-          {starting ? "Iniciando…" : "Iniciar"}
+          {starting ? t("maintenance.starting") : t("maintenance.start")}
         </button>
       </div>
     </Modal>

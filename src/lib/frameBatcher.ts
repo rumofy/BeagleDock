@@ -1,11 +1,11 @@
 /**
- * Agrupa eventos de alta frequência em, no máximo, um flush por quadro de animação.
- * Não segura dados além do próximo quadro (~16 ms) e entrega todos os eventos, em ordem,
- * então a tela sempre reflete o estado mais recente sem renderizar a cada token.
+ * Groups high-frequency events into at most one flush per animation frame.
+ * It never holds data past the next frame (~16 ms) and delivers every event, in order,
+ * so the screen always shows the latest state without rendering on every token.
  */
 /**
- * Agenda `cb` no próximo quadro de animação, com prazo de segurança: o navegador pausa
- * `requestAnimationFrame` com a janela oculta ou minimizada, e o stream não pode parar por isso.
+ * Schedules `cb` on the next animation frame, with a safety deadline: the browser pauses
+ * `requestAnimationFrame` while the window is hidden or minimized, and the stream can't stop for that.
  */
 export function createFrameScheduler(
   deps: {
@@ -59,7 +59,7 @@ export function createFrameBatcher<T>(
         schedule(run);
       }
     },
-    /** Entrega imediatamente o que estiver pendente (ex.: ao encerrar a escuta). */
+    /** Delivers whatever is pending right away (e.g. when the listener stops). */
     flushNow() {
       run();
     },

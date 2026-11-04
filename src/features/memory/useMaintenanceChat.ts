@@ -12,7 +12,7 @@ interface Params {
   setActiveTab: (tab: AppTab) => void;
 }
 
-/** Sessão de Manutenção Assistida do ai-memory exibida dentro do explorador. */
+/** ai-memory Assisted Maintenance session shown inside the explorer. */
 export function useMaintenanceChat({
   sessions,
   cliApprovals,

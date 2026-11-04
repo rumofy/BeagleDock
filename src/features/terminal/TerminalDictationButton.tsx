@@ -4,12 +4,13 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { useDictationModel } from "../../hooks/useDictationModel";
 import { dictationAvailable, useVoiceDictation } from "../chat/useVoiceDictation";
 
-/** Evento do terminal para o Ctrl+Shift+M (o terminal não deixa a tecla chegar à janela). */
+import { t } from "../../i18n";
+/** Terminal event for Ctrl+Shift+M (the terminal doesn't let the key reach the window). */
 export const DICTATION_TOGGLE_EVENT = "beagledock:dictation-toggle";
 
 const clock = (total: number) => `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 
-/** Ditado no modo terminal: transcreve e cola o texto na CLI, sem enviar, para revisar antes. */
+/** Dictation in terminal mode: transcribes and pastes the text into the CLI, without sending, for review. */
 export function TerminalDictationButton() {
   const { currentSession, currentProvider, workspaces, setAppError, cliTerminals } = useApp();
   const speechModel = useDictationModel(setAppError);
@@ -18,7 +19,7 @@ export function TerminalDictationButton() {
     onText: (text) => sessionId && void cliTerminals.pasteToTerminal(sessionId, text),
     onError: setAppError,
     onModelMissing: () =>
-      setAppError("O ditado local precisa do modelo de voz: baixe em Configurações › Ditado por voz."),
+      setAppError(t("terminalDictation.needsModel")),
     context: () => {
       const cwd = currentSession?.cwd || "";
       const folder = cwd.split(/[\\/]/).filter(Boolean).pop();
@@ -31,7 +32,7 @@ export function TerminalDictationButton() {
     if (dictation.state !== "idle" || speechModel.download) return;
     const status = await speechModel.refresh();
     if (status?.engine === "local" && !status.model.installed)
-      setAppError("O ditado local precisa do modelo de voz: baixe em Configurações › Ditado por voz.");
+      setAppError(t("terminalDictation.needsModel"));
     else void dictation.start();
   };
   const toggleRef = useRef(toggle);
@@ -60,8 +61,8 @@ export function TerminalDictationButton() {
       onClick={() => void toggle()}
       disabled={busy}
       data-testid="terminal-dictation"
-      aria-label={recording ? "Concluir ditado e colar no terminal" : "Ditar por voz no terminal"}
-      title={recording ? "Concluir e colar no terminal (Ctrl+Shift+M · Esc descarta)" : "Ditar por voz: o texto é colado no terminal, sem enviar (Ctrl+Shift+M)"}
+      aria-label={recording ? t("terminalDictation.finishLabel") : t("terminalDictation.startLabel")}
+      title={recording ? t("terminalDictation.finishHint") : t("terminalDictation.startHint")}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition shadow-2xs ${
         recording
           ? "bg-rose-50 border-rose-200 text-rose-800"
@@ -75,7 +76,7 @@ export function TerminalDictationButton() {
       ) : (
         <Mic size={14} />
       )}
-      <span>{busy ? "Transcrevendo…" : recording ? clock(dictation.seconds) : "Ditado"}</span>
+      <span>{busy ? t("composer.transcribing") : recording ? clock(dictation.seconds) : t("terminalDictation.button")}</span>
     </button>
   );
 }

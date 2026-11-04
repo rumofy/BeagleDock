@@ -1,3 +1,4 @@
+const { t } = require("./i18n");
 const SECRET_KEYS = [
   "openRouterApiKey",
   "anthropicApiKey",
@@ -30,13 +31,13 @@ function protectSettings(incoming, existing = {}, storage = systemStorage()) {
       result[key] = value;
       continue;
     }
-    if (typeof value !== "string") throw new Error("Credencial inválida.");
+    if (typeof value !== "string") throw new Error(t("errors.invalidCredential"));
     if (
       !storage?.isEncryptionAvailable() ||
       storage.getSelectedStorageBackend?.() === "basic_text"
     )
       throw new Error(
-        "O cofre do sistema não está disponível. Salve chaves pelo aplicativo desktop com o cofre desbloqueado.",
+        t("errors.vaultUnavailable"),
       );
     result[key] = {
       encrypted: 1,
@@ -53,8 +54,8 @@ function publicSettings(settings) {
   }
   return result;
 }
-// Credenciais cifradas com a identidade antiga do app podem não ser mais legíveis.
-// Remove apenas as que falham ao decifrar; sem cofre disponível não há como saber.
+// Credentials encrypted with the app's old identity may no longer be readable.
+// Only the ones that fail to decrypt are removed; without a vault there's no way to tell.
 function dropUnreadableSecrets(settings, storage = systemStorage()) {
   const result = { ...settings };
   const dropped = [];
@@ -75,13 +76,13 @@ function dropUnreadableSecrets(settings, storage = systemStorage()) {
   }
   return { settings: result, dropped };
 }
-// Devolve o valor em claro de uma credencial guardada (só para uso no processo principal).
+// Returns the plain value of a stored credential (only for use in the main process).
 function revealSecret(value, storage = systemStorage()) {
   if (!value) return "";
   if (typeof value === "string") return value;
   if (typeof value !== "object" || value.encrypted !== 1) return "";
   if (!storage?.isEncryptionAvailable())
-    throw new Error("O cofre do sistema não está disponível para ler a credencial.");
+    throw new Error(t("errors.vaultReadUnavailable"));
   return storage.decryptString(Buffer.from(String(value.ciphertext), "base64"));
 }
 module.exports = {

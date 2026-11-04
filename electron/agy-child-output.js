@@ -1,5 +1,5 @@
-// O AGY não encaminha ferramentas de subagentes para o stream-json do pai.
-// O transcript nativo fornece o comando e seu resultado; tasks/*.log fornece a saída ao vivo.
+// AGY doesn't forward subagent tools to the parent's stream-json.
+// The native transcript provides the command and its result; tasks/*.log provides the live output.
 function createAgyChildOutput({
   onCommand = () => {},
   onOutput = () => {},
@@ -55,7 +55,7 @@ function createAgyChildOutput({
             });
         }
         if (!["run_command", "manage_task"].includes(result.tool) || typeof step.content !== "string") continue;
-        // Não publica mensagens do agente, prompts nem outras ferramentas como saída de terminal.
+        // Agent messages, prompts and other tools are not published as terminal output.
         const marker = "Command output:\n";
         const at = step.content.indexOf(marker);
         if (at < 0 || hasLiveOutput(step.step_index)) continue;

@@ -7,7 +7,7 @@ const { describeDirectory, startDirectory, pickDirectory } = require("../electro
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-picker-"));
 
-test("descreve a pasta: nome, git e ai-memory", () => {
+test("describes the folder: name, git and ai-memory", () => {
   const dir = tmp();
   fs.mkdirSync(path.join(dir, ".git"));
   fs.writeFileSync(path.join(dir, ".ai-memory.toml"), "");
@@ -17,22 +17,22 @@ test("descreve a pasta: nome, git e ai-memory", () => {
   assert.equal(describeDirectory(plain).hasAIMemory, false);
 });
 
-test("arquivo ou caminho inexistente não vira workspace", () => {
+test("a file or missing path doesn't become a workspace", () => {
   const dir = tmp();
   const file = path.join(dir, "a.txt");
   fs.writeFileSync(file, "x");
-  assert.throws(() => describeDirectory(file), /pasta/);
+  assert.throws(() => describeDirectory(file), /folder/);
   assert.throws(() => describeDirectory(path.join(dir, "nada")));
 });
 
-test("o seletor começa na pasta digitada, se existir, ou na home", () => {
+test("the picker starts at the typed folder, if it exists, or at home", () => {
   const dir = tmp();
   assert.equal(startDirectory(dir), dir);
   assert.equal(startDirectory("/nao/existe", fs, "/home/x"), "/home/x");
   assert.equal(startDirectory(undefined, fs, "/home/x"), "/home/x");
 });
 
-test("cancelar o seletor não retorna caminho; escolher retorna os dados da pasta", async () => {
+test("cancelling the picker returns no path; choosing returns the folder's data", async () => {
   const dir = tmp();
   const calls = [];
   const dialog = (result) => ({ showOpenDialog: async (win, opts) => (calls.push(opts), result) });

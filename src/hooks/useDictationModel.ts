@@ -2,12 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { beagleApi } from "../api/beagleApi";
 import type { DictationStatus } from "../types/api";
 
+import { t } from "../i18n";
 export interface DictationDownload {
   received: number;
   total: number;
 }
 
-/** Status do ditado local (modelo baixado, motor compilado) e download do modelo com progresso. */
+/** Local dictation status (model downloaded, engine built) and model download with progress. */
 export function useDictationModel(onError: (message: string) => void) {
   const [status, setStatus] = useState<DictationStatus | null>(null);
   const [download, setDownload] = useState<DictationDownload | null>(null);
@@ -42,8 +43,8 @@ export function useDictationModel(onError: (message: string) => void) {
     const result = await beagleApi.downloadDictationModel();
     setDownload(null);
     await refresh();
-    // Cancelar não é erro para mostrar.
-    if (!result.success && !/cancelado/i.test(result.error || "")) onError(result.error || "Falha ao baixar o modelo de voz.");
+    // Cancelling isn't an error to show.
+    if (!result.success && !/cancel/i.test(result.error || "")) onError(result.error || t("dictationSettings.downloadFailed"));
     return result.success;
   }, [onError, refresh, status?.model.size]);
 
@@ -53,7 +54,7 @@ export function useDictationModel(onError: (message: string) => void) {
 
   const remove = useCallback(async () => {
     const result = await beagleApi.removeDictationModel();
-    if (!result.success) onError(result.error || "Falha ao apagar o modelo de voz.");
+    if (!result.success) onError(result.error || t("dictationSettings.deleteFailed"));
     await refresh();
   }, [onError, refresh]);
 

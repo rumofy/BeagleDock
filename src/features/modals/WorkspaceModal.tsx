@@ -4,6 +4,7 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { backendAvailable, beagleApi } from "../../api/beagleApi";
 import type { WorkspaceItem } from "../../types";
 
+import { t } from "../../i18n";
 export function WorkspaceModal() {
   const {
     setAppError,
@@ -18,7 +19,7 @@ export function WorkspaceModal() {
   const [newWorkspacePath, setNewWorkspacePath] = useState("");
   const [pickedInfo, setPickedInfo] = useState("");
 
-  // Seletor de pastas do sistema operacional; digitar o caminho continua possível.
+  // The operating system's folder picker; typing the path still works.
   const handlePickFolder = async () => {
     try {
       const picked = await beagleApi.pickDirectory({
@@ -32,10 +33,10 @@ export function WorkspaceModal() {
       setPickedInfo(
         [
           workspaces.some((w) => w.path === picked.path)
-            ? "Esta pasta já está cadastrada; salvar atualiza o workspace."
+            ? t("workspaceModal.alreadyRegistered")
             : "",
-          picked.isGitRepo ? "Repositório git" : "",
-          picked.hasAIMemory ? "ai-memory configurado" : "",
+          picked.isGitRepo ? t("workspaceModal.gitRepo") : "",
+          picked.hasAIMemory ? t("workspaceModal.aiMemory") : "",
         ]
           .filter(Boolean)
           .join(" · "),
@@ -92,7 +93,7 @@ export function WorkspaceModal() {
           <div className="flex items-center gap-2">
             <FolderOpen size={20} className="text-[#8c8270]" />
             <h3 className="font-bold text-base text-[#1c1b18]">
-              Cadastrar Novo Workspace
+              {t("workspaceModal.title")}
             </h3>
           </div>
           <button
@@ -106,11 +107,11 @@ export function WorkspaceModal() {
         <form onSubmit={handleAddWorkspace} className="space-y-4">
           <div>
             <label className="block text-xs font-bold text-[#443e33] uppercase tracking-wider mb-1">
-              Nome do Projeto
+              {t("workspaceModal.projectName")}
             </label>
             <input
               type="text"
-              placeholder="Ex: API, App Mobile..."
+              placeholder={t("workspaceModal.namePlaceholder")}
               value={newWorkspaceName}
               onChange={(e) => setNewWorkspaceName(e.target.value)}
               className="w-full px-3 py-2 rounded-xl border border-[#d6cfbe] bg-[#fcfbfa] text-sm outline-none focus:border-[#968d7a]"
@@ -119,12 +120,12 @@ export function WorkspaceModal() {
 
           <div>
             <label className="block text-xs font-bold text-[#443e33] uppercase tracking-wider mb-1">
-              Caminho Absoluto no Disco
+              {t("workspaceModal.path")}
             </label>
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="Escolha a pasta ou cole o caminho"
+                placeholder={t("workspaceModal.pathPlaceholder")}
                 value={newWorkspacePath}
                 onChange={(e) => {
                   setNewWorkspacePath(e.target.value);
@@ -138,7 +139,7 @@ export function WorkspaceModal() {
                 onClick={handlePickFolder}
                 className="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-xs font-bold text-[#2c2822] transition"
               >
-                <FolderSearch size={14} /> Escolher pasta
+                <FolderSearch size={14} /> {t("workspaces.chooseFolder")}
               </button>
             </div>
             {pickedInfo && (
@@ -148,11 +149,10 @@ export function WorkspaceModal() {
 
           <div className="p-3 rounded-xl bg-[#f8f7f2] border border-[#eae4d7] text-xs text-[#6d6657] space-y-1">
             <div className="font-semibold text-[#2c2822]">
-              💡 Persistência no SQLite & Auto-detecção:
+              💡 {t("workspaceModal.noteTitle")}
             </div>
             <p>
-              O BeagleDock grava o workspace na tabela `workspaces` e verifica
-              se existe `.ai-memory.toml` ou `AGENTS.md`.
+              {t("workspaceModal.note")}
             </p>
           </div>
 
@@ -162,14 +162,14 @@ export function WorkspaceModal() {
               onClick={() => setShowWorkspaceModal(false)}
               className="px-4 py-2 rounded-xl text-xs font-semibold text-[#6d6657] hover:bg-[#ede9de] transition"
             >
-              Cancelar
+              {t("common.cancel")}
             </button>
             <button
               type="submit"
               disabled={!newWorkspacePath.trim()}
               className="px-4 py-2 rounded-xl bg-[#1c1b18] hover:bg-[#32302b] disabled:opacity-30 text-white text-xs font-bold transition"
             >
-              Salvar Workspace
+              {t("workspaceModal.save")}
             </button>
           </div>
         </form>

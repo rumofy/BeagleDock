@@ -3,8 +3,8 @@ import { backendAvailable, beagleApi } from "../../api/beagleApi";
 import type { HistorySessionItem } from "../../types";
 
 /**
- * Histórico carregado só com o modal aberto. A busca vai ao backend (título e texto das mensagens
- * das conversas do BeagleDock; título e pasta das conversas do terminal) com um pequeno atraso.
+ * History loaded only while the modal is open. The search goes to the backend (title and message
+ * text of BeagleDock conversations; title and folder of terminal conversations) with a small delay.
  */
 export function useConversationHistory(open: boolean, query: string) {
   const [items, setItems] = useState<HistorySessionItem[]>([]);

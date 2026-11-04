@@ -3,10 +3,11 @@ import { Pencil, X } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { staleContext } from "../../lib/staleContext";
 import { formatTokens } from "../../lib/tokens";
-import { backgroundLabel, backgroundWork } from "../../lib/backgroundWork";
+import { backgroundLabel, backgroundWork, hasLiveReply } from "../../lib/backgroundWork";
 import type { ChatSession } from "../../types";
 
-/** Uma conversa aberta: selecionar, renomear (duplo clique) e fechar (ela continua no histórico). */
+import { t } from "../../i18n";
+/** An open conversation: select, rename (double click) and close (it stays in the history). */
 export function SessionRow({ session, now }: { session: ChatSession; now: number }) {
   const {
     activeTab,
@@ -22,10 +23,12 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     messages,
   } = useApp();
   const background = backgroundWork(messages[session.id]);
+  // Running also covers a turn the CLI started on its own (no prompt sent from the app).
+  const running = session.status === "running" || hasLiveReply(messages[session.id]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const input = useRef<HTMLInputElement>(null);
-  // Escape cancela: o blur que vem junto não pode salvar o nome.
+  // Escape cancels: the blur that comes with it must not save the name.
   const cancelled = useRef(false);
   const isSelected = activeSessionId === session.id && activeTab === "chat";
 
@@ -48,12 +51,13 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     setDraft(session.title);
     setEditing(true);
   };
-  const waitingPermission = cliApprovals.some(
-    (a) => a.sessionId === session.id,
-  );
-  // Conversa grande com o cache expirado: retomar reprocessa o contexto inteiro.
+  const sessionApprovals = cliApprovals.filter((a) => a.sessionId === session.id);
+  const waitingPermission = sessionApprovals.length > 0;
+  // Only a plan waiting: the badge says so, so it isn't mistaken for a tool permission.
+  const waitingPlanOnly = waitingPermission && sessionApprovals.every((a) => a.kind === "plan");
+  // Large conversation with an expired cache: resuming reprocesses the whole context.
   const context = contextBySession[session.id];
-  const cold = session.status === "running" ? null : staleContext(context, now);
+  const cold = running ? null : staleContext(context, now);
 
   return (
     <div
@@ -61,7 +65,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
       role="button"
       tabIndex={0}
       aria-current={isSelected ? "true" : undefined}
-      aria-label={`Conversa ${session.title}`}
+      aria-label={t("session.label", { title: session.title })}
       onKeyDown={(e) => {
         if (editing || e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
@@ -86,26 +90,26 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     >
       <div className="flex items-center justify-between w-full">
         <div className="flex items-center gap-2 truncate min-w-0">
-          {session.status === "running" ? (
+          {running ? (
             <span
               className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0"
-              title="Processo ativo"
+              title={t("session.running")}
             />
           ) : background.total > 0 ? (
             <span
               data-testid="session-background"
               className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"
-              title={`${backgroundLabel(background)}: a IA avisa quando terminar`}
+              title={t("session.backgroundHint", { work: backgroundLabel(background) })}
             />
           ) : session.status === "waiting_input" ? (
             <span
               className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
-              title="Aguardando confirmação"
+              title={t("session.waitingConfirmation")}
             />
           ) : (
             <span
               className="w-1.5 h-1.5 rounded-full bg-[#a39b8b] shrink-0"
-              title="Histórico / Idle"
+              title={t("session.idle")}
             />
           )}
           {editing ? (
@@ -113,7 +117,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
               ref={input}
               value={draft}
               maxLength={120}
-              aria-label="Novo nome da conversa"
+              aria-label={t("session.newName")}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={commit}
@@ -130,7 +134,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
             <span
               className="truncate text-xs"
               data-session-title
-              title={`${session.title}${session.currentModel ? `\nModelo: ${session.currentModel}` : ""}\nDuplo clique para renomear`}
+              title={`${session.title}${session.currentModel ? `\n${t("session.model", { model: session.currentModel })}` : ""}\n${t("session.renameHint")}`}
               onDoubleClick={(e) => {
                 e.stopPropagation();
                 startEditing();
@@ -142,34 +146,34 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
           {waitingPermission && (
             <span
               className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-white bg-amber-600 rounded px-1 animate-pulse"
-              title="Aguardando a sua permissão"
+              title={waitingPlanOnly ? t("session.planWaiting") : t("session.permissionWaiting")}
             >
-              permissão
+              {waitingPlanOnly ? t("session.badgePlan") : t("session.badgePermission")}
             </span>
           )}
           {unreadSessionIds.includes(session.id) && (
             <span
               className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-white bg-emerald-600 rounded px-1"
-              title="A CLI respondeu sozinha (ex.: um agente em segundo plano terminou)"
+              title={t("session.newHint")}
             >
-              novo
+              {t("session.badgeNew")}
             </span>
           )}
           {cold && (
             <span
               className="shrink-0 text-[9px] font-bold tracking-wider text-amber-800 bg-amber-100 rounded px-1"
-              title={`Parada há mais tempo que o cache de prompt${context?.cacheTtlMs ? "" : " (estimado em 1 h: esta CLI não informa a validade)"}. Retomar reprocessa cerca de ${formatTokens(cold.used)} tokens de contexto; compactar antes ou começar uma conversa nova sai mais barato.`}
+              title={t(context?.cacheTtlMs ? "session.coldHint" : "session.coldHintEstimated", { tokens: formatTokens(cold.used) })}
               data-testid="session-cold"
             >
-              fria · {formatTokens(cold.used)}
+              {t("session.badgeCold", { tokens: formatTokens(cold.used) })}
             </span>
           )}
           {draftIds.includes(session.id) && session.id !== activeSessionId && (
             <span
               className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 rounded px-1"
-              title="Mensagem não enviada"
+              title={t("session.draftHint")}
             >
-              rascunho
+              {t("session.badgeDraft")}
             </span>
           )}
         </div>
@@ -189,8 +193,8 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
                   startEditing();
                 }}
                 className="p-0.5 hover:text-[#181715] rounded"
-                title="Renomear"
-                aria-label="Renomear conversa"
+                title={t("session.rename")}
+                aria-label={t("session.renameLabel")}
               >
                 <Pencil size={11} />
               </button>
@@ -201,8 +205,8 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
                   void setSessionArchived(session.id, true);
                 }}
                 className="p-0.5 hover:text-[#181715] rounded ml-0.5"
-                title="Fechar (encerra a CLI; a conversa fica no histórico, Ctrl+H)"
-                aria-label="Fechar conversa"
+                title={t("session.closeHint")}
+                aria-label={t("session.closeLabel")}
               >
                 <X size={12} />
               </button>

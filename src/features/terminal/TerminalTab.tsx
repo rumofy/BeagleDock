@@ -5,7 +5,8 @@ import { CompanyIcon } from "../../components/CompanyIcon";
 import { SessionShell } from "./SessionShell";
 import { CliTerminalView } from "./CliTerminalView";
 
-/** Grade com as CLIs abertas no modo terminal, para acompanhar várias ao mesmo tempo. */
+import { t } from "../../i18n";
+/** Grid with the CLIs open in terminal mode, to follow several at once. */
 function TerminalGrid() {
   const { cliTerminals, allSessions, setActiveSessionId, setActiveTab } = useApp();
   const [focused, setFocused] = useState<string | null>(null);
@@ -36,7 +37,7 @@ function TerminalGrid() {
                 {session.cwd.split(/[\\/]/).filter(Boolean).pop()}
               </span>
               {cliTerminals.terminals[session.id]?.exited && (
-                <span className="text-[10px] font-bold text-amber-300">encerrada</span>
+                <span className="text-[10px] font-bold text-amber-300">{t("terminalTab.exited")}</span>
               )}
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -47,7 +48,7 @@ function TerminalGrid() {
                   setActiveTab("chat");
                 }}
                 className="p-1 rounded text-[#a1a1aa] hover:bg-[#2e2e33]"
-                title="Abrir esta conversa"
+                title={t("terminalTab.openConversation")}
               >
                 <MessageSquare size={13} />
               </button>
@@ -56,7 +57,7 @@ function TerminalGrid() {
                   type="button"
                   onClick={() => setFocused((id) => (id === session.id ? null : session.id))}
                   className="p-1 rounded text-[#a1a1aa] hover:bg-[#2e2e33]"
-                  title={focused === session.id ? "Voltar à grade" : "Ampliar"}
+                  title={focused === session.id ? t("terminalTab.backToGrid") : t("terminalTab.enlarge")}
                 >
                   {focused === session.id ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
                 </button>
@@ -76,8 +77,7 @@ export function TerminalTab() {
   return (
             <div className="p-6 flex-1 flex flex-col overflow-hidden">
               <p className="max-w-5xl w-full mx-auto mb-3 text-xs text-[#7e7565]">
-                Nenhuma CLI aberta no modo terminal. Use o botão Terminal no topo de uma conversa para
-                abrir a interface própria da CLI; as abertas aparecem aqui lado a lado.
+                {t("terminalTab.empty")}
               </p>
               <div className="max-w-5xl w-full mx-auto flex-1 flex flex-col bg-[#141416] rounded-2xl overflow-hidden shadow-xl border border-[#27272a]">
                 <div className="h-10 bg-[#1e1e21] px-4 flex items-center justify-between">

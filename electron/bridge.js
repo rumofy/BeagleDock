@@ -1,5 +1,5 @@
-// Bridge HTTP para rodar o backend do BeagleDock (electron/main.js) fora do Electron,
-// ex.: ao abrir http://localhost:5173 num navegador. Usa os mesmos handlers IPC reais.
+// HTTP bridge to run BeagleDock's backend (electron/main.js) outside Electron,
+// e.g. when opening http://localhost:5173 in a browser. It uses the same real IPC handlers.
 const Module = require("module");
 const path = require("path");
 
@@ -60,7 +60,7 @@ function createBridge() {
       invoke: (ch, ...args) => {
         const h = handlers.get(ch);
         if (!h)
-          return Promise.reject(new Error("Canal IPC desconhecido: " + ch));
+          return Promise.reject(new Error("Unknown IPC channel: " + ch));
         return Promise.resolve(h({ sender: fakeWindow.webContents }, ...args));
       },
       on() {},
@@ -94,7 +94,7 @@ function createBridge() {
         method === "on" ||
         typeof api[method] !== "function"
       )
-        throw new Error("Método desconhecido: " + method);
+        throw new Error("Unknown method: " + method);
       return await api[method](...(args || []));
     },
     close: () => {

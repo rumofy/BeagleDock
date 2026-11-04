@@ -1,6 +1,6 @@
-// Pasta temporária para testes com CLI real (Claude Code, Codex, Antigravity).
-// O `.ai-memory.toml` faz as sessões caírem no projeto único `beagledock-probes` em vez de
-// criar um projeto novo no ai-memory para cada pasta.
+// Temporary folder for tests with a real CLI (Claude Code, Codex, Antigravity).
+// Its `.ai-memory.toml` makes the sessions land in the single `beagledock-probes` project instead of
+// creating a new ai-memory project for every folder.
 // Uso no terminal: `cd "$(node test/probe-dir.cjs issue58)"`.
 const fs = require("fs");
 const os = require("os");

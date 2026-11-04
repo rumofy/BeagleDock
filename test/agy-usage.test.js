@@ -103,7 +103,7 @@ test("unknown, disabled, invalid and expired buckets never become fabricated usa
     assert.throws(
       () =>
         parseUsageReport(report([{ name: "pool", buckets: [bucket] }]), now),
-      /conhecidas/,
+      /known/,
     );
   assert.throws(
     () =>
@@ -111,7 +111,7 @@ test("unknown, disabled, invalid and expired buckets never become fabricated usa
         JSON.stringify({ status: "SUCCESS", response: "not a usage command" }),
         now,
       ),
-    /relatório/,
+    /report/,
   );
 });
 test("visible AGY summary uses Gemini Models even when other pools have higher usage", () => {
@@ -168,7 +168,7 @@ test("old AGY versions never receive /usage as a possible model prompt", async (
   const value = await reader.get();
   assert.equal(calls.length, 1);
   assert.equal(value.window5hPercent, null);
-  assert.match(value.quotaError, /Atualize/);
+  assert.match(value.quotaError, /Update/);
 });
 test("failed refresh keeps timestamp and marks old readings stale; expired windows become unknown", async () => {
   let time = now,

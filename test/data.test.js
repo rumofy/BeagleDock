@@ -320,7 +320,7 @@ test("secrets are encrypted, never returned to renderer, and unavailable/basic-t
   );
   assert.throws(
     () => protectSettings({ openaiApiKey: "private-value" }, {}, undefined),
-    /cofre/,
+    /keyring/,
   );
   assert.throws(
     () =>
@@ -329,7 +329,7 @@ test("secrets are encrypted, never returned to renderer, and unavailable/basic-t
         {},
         { ...vault, getSelectedStorageBackend: () => "basic_text" },
       ),
-    /cofre/,
+    /keyring/,
   );
   assert.equal(
     protectSettings({}, { openaiApiKey: "legacy-value" }, vault).openaiApiKey
@@ -361,7 +361,7 @@ test("database keeps the prompt cache state of a conversation across restarts", 
   const [saved] = JSON.parse(execFileSync(process.execPath, ["-e", second], { env, encoding: "utf8" }));
   assert.equal(saved.context.lastCallAt, 1500);
   assert.equal(saved.context.cacheTtlMs, 3600000);
-  assert.equal(saved.context.model, "opus", "o modelo do cache sobrevive para avisar sobre troca depois de reabrir");
+  assert.equal(saved.context.model, "opus", "the cache's model survives so a switch can be flagged after reopening");
   assert.deepEqual(saved.context.cache, { read: 9014, write: 6390 });
 });
 test("platform discovery includes macOS Homebrew and Windows npm; shells use platform arguments", (t) => {
@@ -434,7 +434,7 @@ test("model capabilities refresh from changed CLI cache contents without retaini
     ["replacement"],
   );
 });
-test("AGY: conversa aberta na interface da CLI (history.jsonl sem ID) é achada pela pasta brain", (t) => {
+test("AGY: a conversation opened in the CLI's interface (history.jsonl without ID) is found through the brain folder", (t) => {
   const home = fixture(t);
   const cwd = path.join(home, "project");
   const at = Date.parse("2026-11-04T00:15:11Z");
@@ -442,7 +442,7 @@ test("AGY: conversa aberta na interface da CLI (history.jsonl sem ID) é achada 
     home,
     ".gemini/antigravity-cli/history.jsonl",
     lines([
-      // Formato real do AGY 1.4.12 na interface: só texto, hora e pasta.
+      // Real AGY 1.4.12 format in the interface: only text, time and folder.
       { display: "diga só GIRASSOL", timestamp: at + 400, workspace: cwd },
       { display: "outra pergunta sem conversa", timestamp: at + 900, workspace: cwd },
     ]),
@@ -465,7 +465,7 @@ test("AGY: conversa aberta na interface da CLI (history.jsonl sem ID) é achada 
   );
   const reader = createHistory({ home, env: {} });
   const items = reader.history().filter((h) => h.provider === "antigravity");
-  assert.deepEqual(items.map((h) => [h.sessionId, h.project]), [["agy-tui-0001", cwd]], "a de outra data não casa");
+  assert.deepEqual(items.map((h) => [h.sessionId, h.project]), [["agy-tui-0001", cwd]], "the one from another date doesn't match");
   const result = reader.conversation("antigravity", "agy-tui-0001");
   assert.equal(result.cwd, cwd);
   assert.deepEqual(result.messages.map((m) => [m.sender, m.text]), [

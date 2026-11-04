@@ -12,13 +12,13 @@ if (args[0] === "update") {
   console.log("Updated fixture.");
   process.exit(0);
 }
-// Modo terminal: sem os argumentos do protocolo estruturado, a CLI abre a própria interface.
-// A fixture imita só o essencial: anuncia os argumentos e registra o que chegou pelo teclado.
+// Terminal mode: without the structured protocol's arguments, the CLI opens its own interface.
+// The fixture imitates only the essentials: announces the arguments and records what came from the keyboard.
 const structured = ["-p", "--print", "exec", "app-server", "--input-format", "--output-format", "models", "mcp"];
 if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsWith("/"))) {
   const root = process.env.BEAGLEDOCK_SMOKE_ROOT;
   fs.writeFileSync(path.join(root, "tui-" + name + ".json"), JSON.stringify({ args, cwd: process.cwd() }));
-  // Como as CLIs reais, liga a colagem delimitada (o terminal marca o início e o fim do bloco).
+  // Like the real CLIs, turns on bracketed paste (the terminal marks the start and end of the block).
   process.stdout.write(`\x1b[?2004hFIXTURE TUI ${name} ${args.join(" ")}\r\n> `);
   process.stdin.setRawMode(true);
   let pending = "";
@@ -30,8 +30,8 @@ if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsW
     if (!text.includes("\r")) return;
     const prompt = pending.replace(/\x1b\[20[01]~/g, "").trim();
     pending = "";
-    // AGY: como a CLI real, anima a tela enquanto trabalha, grava a conversa em brain/<id> e fica
-    // em silêncio ao terminar (é assim que o BeagleDock percebe o fim e lê o histórico).
+    // AGY: like the real CLI, animates the screen while it works, saves the conversation in brain/<id> and goes
+    // silent when done (that's how BeagleDock notices the end and reads the history).
     const conversation = args[0] === "--conversation" ? args[1] : null;
     if (name !== "agy" || !prompt || !conversation) return;
     const started = Date.now();
@@ -272,7 +272,7 @@ if (name === "codex" && args[0] === "app-server") {
               delta: "LIVE_FIRST while running\n",
             },
           });
-          // Segundo comando em paralelo: cada um precisa ganhar a própria aba de shell.
+          // Second command in parallel: each one must get its own shell tab.
           emit({ method: "item/started", params: { threadId: thread, turnId, item: { id: "live-cmd-2", type: "commandExecution", command: "fixture build" } } });
           emit({ method: "item/commandExecution/outputDelta", params: { threadId: thread, turnId, itemId: "live-cmd-2", delta: "PARALLEL_BUILD while running\n" } });
           emit({
@@ -505,8 +505,8 @@ function respond() {
   }
 }
 let approvalPending = false;
-// Execução travada (smoke-hang): como a CLI real no meio de uma etapa longa, recebe as mensagens
-// entregues durante a resposta, mas não responde; só o Parar a encerra.
+// Hung run (smoke-hang): like the real CLI in the middle of a long step, it receives the messages
+// delivered during the reply, but doesn't answer; only Stop ends it.
 let hanging = false;
 let answerHold = false;
 let buffer = "";
@@ -519,7 +519,7 @@ process.stdin.on("data", (chunk) => {
   for (const line of lines)
     if (line.trim()) {
       const input = JSON.parse(line);
-      // Troca do modo de permissão ao vivo (protocolo do Claude Code 2.1.316): confirma e registra.
+      // Live permission mode switch (Claude Code 2.1.316 protocol): confirms and records.
       if (name === "claude" && input.type === "control_request" && input.request?.subtype === "set_permission_mode") {
         fs.appendFileSync(path.join(root, "permission-modes-claude.jsonl"), JSON.stringify(input.request.mode) + "\n");
         process.stdout.write(
@@ -530,8 +530,8 @@ process.stdin.on("data", (chunk) => {
         );
         continue;
       }
-      // "Responder agora" (protocolo do Claude Code 2.1.317): o comando longo vai para o segundo plano
-      // ou a etapa é interrompida, e a mensagem entregue durante ele é respondida em seguida.
+      // "Answer now" (Claude Code 2.1.317 protocol): the long command goes to the background
+      // or the step is interrupted, and the message delivered during it is answered right after.
       if (
         name === "claude" &&
         answerHold &&
@@ -574,7 +574,7 @@ process.stdin.on("data", (chunk) => {
         continue;
       }
       const content = input.message?.content;
-      // Claude manda blocos (imagem + texto) quando há anexos; o Antigravity manda texto.
+      // Claude sends blocks (image + text) when there are attachments; Antigravity sends text.
       responsePrompt =
         typeof content === "string"
           ? content

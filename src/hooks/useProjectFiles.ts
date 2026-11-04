@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { beagleApi } from "../api/beagleApi";
 
-/** Arquivos do projeto que combinam com o `@trecho` digitado; consulta só enquanto há uma menção aberta. */
+/** Project files matching the typed `@fragment`; only queries while a mention is open. */
 export function useProjectFiles(cwd: string | undefined, query: string | null) {
   const [state, setState] = useState<{ query: string; files: string[]; error?: string } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -11,7 +11,7 @@ export function useProjectFiles(cwd: string | undefined, query: string | null) {
     if (!active || !cwd || query === null) return;
     let cancelled = false;
     setLoading(true);
-    // Um pequeno intervalo evita uma consulta por tecla.
+    // A short delay avoids one query per keystroke.
     const timer = setTimeout(() => {
       beagleApi
         .searchProjectFiles({ cwd, query })

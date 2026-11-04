@@ -35,29 +35,29 @@ export interface WorkspaceItem {
   hasAIMemory: boolean;
 }
 
-/** Cadastro mais o estado atual da pasta no disco, para a tela de manutenção. */
+/** Registered workspace plus the folder's current state on disk, for the maintenance screen. */
 export interface WorkspaceStatus extends WorkspaceItem {
   exists: boolean;
   isGitRepo: boolean;
   conversations: number;
 }
 
-/** Quanto da janela de contexto do modelo está ocupado (e a última compactação). */
+/** How much of the model's context window is used (and the last compaction). */
 export interface ContextInfo {
   source?: string;
   used: number | null;
-  /** Cache de prompt da última chamada: lido (barato) e escrito (caro, cache expirado ou prefixo novo). */
+  /** Prompt cache of the last call: read (cheap) and written (expensive: expired cache or new prefix). */
   cache?: { read?: number; write?: number };
-  /** Horário (ms) da última chamada ao modelo: cada chamada lê o cache e renova sua validade. */
+  /** Time (ms) of the last model call: each call reads the cache and renews its validity. */
   lastCallAt?: number;
-  /** Validade do cache informada pela CLI (Claude Code: 1 h ou 5 min). Ausente quando a CLI não informa. */
+  /** Cache validity reported by the CLI (Claude Code: 1 h or 5 min). Absent when the CLI doesn't report it. */
   cacheTtlMs?: number;
-  /** Modelo da última chamada, como escolhido no app ("" = padrão da CLI). O cache é por modelo. */
+  /** Model of the last call, as chosen in the app ("" = CLI default). The cache is per model. */
   model?: string;
-  /** Quanto o contexto cresceu na última resposta (sem compactação no meio). Só desta execução do app. */
+  /** How much the context grew in the last reply (with no compaction in between). This app run only. */
   turnGrowth?: number;
   window: number | null;
-  /** A janela veio da CLI (true) ou é uma estimativa pelo nome do modelo (false). */
+  /** The window came from the CLI (true) or is an estimate from the model name (false). */
   windowKnown?: boolean;
   compacting?: boolean;
   compactions?: number;
@@ -79,15 +79,17 @@ export interface ChatSession {
   cwd: string;
   ptyLog?: string[];
   ptyRaw?: string;
-  /** Saída de cada comando ou ferramenta, por id do evento da linha do tempo. */
+  /** Output of each command or tool, by timeline event id. */
   shellRaw?: Record<string, string>;
   nativeSessionId?: string;
-  /** Fora da lista principal, com o histórico preservado. */
+  /** Out of the main list, with its history kept. */
   archived?: boolean;
-  /** Último contexto conhecido, restaurado ao reabrir. */
+  /** Last known context, restored on reopening. */
   context?: ContextInfo;
-  /** O nome foi dado pela pessoa: o título automático nunca o substitui. */
+  /** The name was given by the person: the automatic title never replaces it. */
   titleLocked?: boolean;
+  /** Last message sent or reply started/finished (ms since epoch): sidebar sort key. */
+  lastMessageAt?: number;
 }
 
 export interface ModelOption {
@@ -115,8 +117,8 @@ export interface AIProviderStatus {
   cliPath?: string;
   cliVersion?: string;
   quota: {
-    window5hPercent: number | null; // 0% a 100% de uso
-    weeklyPercent: number | null; // 0% a 100% de uso semanal
+    window5hPercent: number | null; // 0% to 100% used
+    weeklyPercent: number | null; // 0% to 100% of weekly usage
     remainingResetMinutes?: number | null;
     updatedAt?: string | null;
     stale?: boolean;
@@ -181,7 +183,7 @@ export type ChatEventKind =
   | "status"
   | "step";
 
-/** Uma etapa da resposta (raciocínio, comando, ferramenta…), no mesmo formato para as três CLIs. */
+/** A step of the reply (reasoning, command, tool…), in the same shape for the three CLIs. */
 export interface ChatEvent {
   id: string;
   kind: ChatEventKind;
@@ -193,9 +195,9 @@ export interface ChatEvent {
   endedAt?: number;
   durationMs?: number;
   exitCode?: number;
-  /** Etapa feita por um agente: o id da etapa do agente que a lançou. */
+  /** Step done by an agent: the id of the step of the agent that started it. */
   parentId?: string;
-  /** Dados do agente: tipo, tokens, ferramentas usadas, última ferramenta. */
+  /** Agent data: type, tokens, tools used, last tool. */
   meta?: {
     taskId?: string;
     subagentType?: string;
@@ -205,10 +207,12 @@ export interface ChatEvent {
     durationMs?: number;
     model?: string;
     threads?: number;
-    /** Aviso sobre a etapa (ex.: o comando só mostra a saída ao terminar). */
+    /** Note about the step (e.g. the command only shows output when it finishes). */
     note?: string;
-    /** Agente lançado em segundo plano: segue trabalhando depois do fim do turno. */
+    /** Agent started in the background: keeps working after the turn ends. */
     background?: boolean;
+    /** A plan the AI proposes for approval (Claude Code ExitPlanMode, Codex plan mode): shown in full. */
+    proposal?: boolean;
   };
 }
 
@@ -226,34 +230,34 @@ export interface ChatMessage {
   attachments?: ChatAttachment[];
   embeddedPtyLog?: string[];
   isStreaming?: boolean;
-  /** Resposta que ainda espera na fila: id da mensagem da pessoa que a originou. */
+  /** Reply still waiting in the queue: id of the person's message that originated it. */
   queuedFor?: string;
   /**
-   * Mensagem já entregue à CLI no meio da resposta, que a IA ainda não leu (Claude Code e Codex leem
-   * na próxima etapa, depois do comando em execução): id da mensagem da pessoa.
+   * Message already delivered to the CLI mid-reply that the AI hasn't read yet (Claude Code and Codex
+   * read it at the next step, after the running command): id of the person's message.
    */
   deliveredFor?: string;
   activity?: string;
-  /** Complemento da atividade atual (comando, trecho do raciocínio…). */
+  /** Detail of the current activity (command, reasoning excerpt…). */
   detail?: string;
   startedAt?: number;
-  /** Quando a atividade atual começou. */
+  /** When the current activity started. */
   activitySince?: number;
-  /** Último evento recebido da CLI, de qualquer tipo (inclusive sinal de vida). */
+  /** Last event received from the CLI, of any kind (including keep-alives). */
   lastEventAt?: number;
-  /** Último evento que trouxe progresso real (texto, etapa ou atividade nova). */
+  /** Last event that brought real progress (text, step or new activity). */
   lastProgressAt?: number;
   events?: ChatEvent[];
 }
 
 export interface VoiceDictationSettings {
-  /** "local": Parakeet na própria máquina (padrão); "api": API compatível com OpenAI. */
+  /** "local": Parakeet on this machine (default); "api": an OpenAI-compatible API. */
   engine?: "api" | "local";
   baseUrl?: string;
   model?: string;
-  /** Código ISO do idioma falado ("pt", "en"…) ou "auto". */
+  /** ISO code of the spoken language ("pt", "en"…) or "auto". */
   language?: string;
-  /** Termos com grafia própria e trocas "errado => certo", separados por vírgula ou linha. */
+  /** Terms with their own spelling and "wrong => right" replacements, separated by commas or lines. */
   vocabulary?: string;
 }
 
@@ -264,31 +268,33 @@ export interface AppSettings {
   anthropicApiKey?: string;
   openaiApiKey?: string;
   geminiApiKey?: string;
-  /** Chave da API de transcrição do ditado por voz (OpenAI ou compatível). */
+  /** API key for voice dictation transcription (OpenAI or compatible). */
   transcriptionApiKey?: string;
   customEndpoint?: string;
   voiceDictation?: VoiceDictationSettings;
   defaultProvider: AIProviderId;
   theme: "cream" | "dark" | "system";
-  /** Fator de zoom da interface (0,7 a 1,6). */
+  /** Interface language (default: English). */
+  language?: "en" | "es" | "pt-BR";
+  /** Interface zoom factor (0.7 to 1.6). */
   zoomFactor?: number;
-  /** Manter o app na bandeja ao fechar a janela (padrão: ligado). */
+  /** Keep the app in the tray when the window closes (default: on). */
   runInBackground?: boolean;
-  /** Iniciar junto com o sistema, já na bandeja (Linux). */
+  /** Start with the system, straight to the tray (Linux). */
   launchAtLogin?: boolean;
-  /** Fecha sozinha a aba de um comando concluído com sucesso (padrão: ligado). */
+  /** Closes the tab of a successfully finished command on its own (default: on). */
   shellAutoClose?: boolean;
-  /** Segundos desde a última vez que a aba esteve na tela (padrão: 120). */
+  /** Seconds since the tab was last on screen (default: 120). */
   shellAutoCloseSeconds?: number;
-  /** Contexto (em tokens) a partir do qual a conversa é compactada sozinha; 0 desliga (padrão: 200 mil). */
+  /** Context size (tokens) from which the conversation compacts on its own; 0 turns it off (default: 200k). */
   autoCompactTokens?: number | null;
-  /** Apaga projetos temporários do ai-memory parados há mais destes dias; 0 desliga (padrão: 7). */
+  /** Deletes temporary ai-memory projects idle for more than these days; 0 turns it off (default: 7). */
   aiMemoryTempCleanupDays?: number;
-  /** Chats novos começam com o modelo, o nível e a permissão escolhidos por último na mesma CLI. */
+  /** New chats start with the model, level and permission last chosen in the same CLI. */
   rememberSessionChoices?: boolean;
-  /** Como as conversas abrem: no chat do BeagleDock (padrão) ou na interface própria da CLI. */
+  /** How conversations open: in the BeagleDock chat (default) or in the CLI's own interface. */
   conversationMode?: "chat" | "terminal";
-  /** Última escolha de modelo, nível e permissão de cada CLI. */
+  /** Last choice of model, level and permission for each CLI. */
   lastSessionChoices?: Partial<Record<AIProviderId, { model: string; effort: string; permission: PermissionLevel }>>;
   workspaces: WorkspaceItem[];
 }
@@ -315,7 +321,7 @@ export interface SkillItem {
 
 export interface HistorySessionItem {
   id: string;
-  /** `beagledock`: conversa salva no BeagleDock; `native`: só existe nos arquivos da CLI. */
+  /** `beagledock`: conversation saved in BeagleDock; `native`: only exists in the CLI's files. */
   source: "beagledock" | "native";
   provider: AIProviderId;
   providerName: string;
@@ -324,7 +330,7 @@ export interface HistorySessionItem {
   project: string;
   date: string;
   timestampMs: number;
-  /** ID nativo da CLI, quando conhecido. */
+  /** The CLI's native ID, when known. */
   sessionId?: string;
   beagleSessionId?: string;
   closed?: boolean;

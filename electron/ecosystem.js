@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const https = require("https");
 const { findBinary, execCli } = require("./platform");
+const { t } = require("./i18n");
 const IDS = ["claude", "codex", "antigravity"];
 const NAMES = {
   claude: "Claude Code",
@@ -20,7 +21,7 @@ function getJson(url) {
       (res) => {
         if (res.statusCode !== 200) {
           res.resume();
-          reject(new Error("Fonte de versões indisponível."));
+          reject(new Error(t("ecosystem.sourceUnavailable")));
           return;
         }
         let body = "",
@@ -35,14 +36,14 @@ function getJson(url) {
           try {
             resolve(JSON.parse(body));
           } catch {
-            reject(new Error("Versão publicada inválida."));
+            reject(new Error(t("ecosystem.invalidVersion")));
           }
         });
         res.on("error", reject);
       },
     );
     req.on("timeout", () =>
-      req.destroy(new Error("Tempo limite na consulta de versões.")),
+      req.destroy(new Error(t("ecosystem.timeout"))),
     );
     req.on("error", reject);
   });
@@ -112,7 +113,7 @@ function updateCommand(id, bin, find = findBinary) {
   if (brew && /(?:Cellar|Caskroom|homebrew).*codex/i.test(real))
     return { bin: brew, args: ["upgrade", "codex"] };
   throw new Error(
-    "Instalação não reconhecida. Atualize o Codex pelo gerenciador usado na instalação.",
+    t("ecosystem.unknownInstall"),
   );
 }
 function createEcosystem({
@@ -162,15 +163,15 @@ function createEcosystem({
         notify(
           `installed:${id}:${now()}`,
           "cli_update",
-          `${NAMES[id]} detectada`,
-          "Uma nova CLI foi encontrada nesta máquina.",
+          t("ecosystem.detected", { name: NAMES[id] }),
+          t("ecosystem.detectedBody"),
         );
       if (old?.version && tool.version && newer(tool.version, old.version))
         notify(
           `installed-version:${id}:${tool.version}`,
           "cli_update",
-          `${NAMES[id]} atualizada`,
-          `Versão instalada: ${tool.version}.`,
+          t("ecosystem.updated", { name: NAMES[id] }),
+          t("ecosystem.installedVersion", { version: tool.version }),
         );
       const options = tool.modelOptions || [];
       const describe = (modelId) => {
@@ -201,7 +202,7 @@ function createEcosystem({
               .sort()
               .join(",")}`,
             "new_model",
-            `Novos modelos em ${NAMES[id]}`,
+            t("ecosystem.newModels", { name: NAMES[id] }),
             added.map((m) => m.label).join(", "),
             { models: added },
           );
@@ -229,8 +230,8 @@ function createEcosystem({
         notify(
           `release:${id}:${latest}`,
           "cli_update",
-          `${NAMES[id]} ${latest} disponível`,
-          `Instalada: ${tool.version}. Atualize em Configurações.`,
+          t("ecosystem.available", { name: NAMES[id], version: latest }),
+          t("ecosystem.availableBody", { version: tool.version }),
         );
     }
     persist();
@@ -266,12 +267,12 @@ function createEcosystem({
             const raw = id === "antigravity" ? result.version : result.tag_name;
             const version = raw?.replace(/^(?:rust-)?v/, "");
             if (!/^\d+\.\d+\.\d+$/.test(version || ""))
-              throw new Error("Versão publicada inválida.");
+              throw new Error(t("ecosystem.invalidVersion"));
             state.releases[id] = { version, error: null };
           } catch (e) {
             state.releases[id] = {
               ...state.releases[id],
-              error: "Não foi possível verificar novas versões.",
+              error: t("ecosystem.checkFailed"),
             };
           }
         }),
@@ -282,10 +283,10 @@ function createEcosystem({
     return checking;
   }
   async function update(id) {
-    if (!IDS.includes(id)) throw new Error("CLI inválida.");
-    if (updating.has(id)) throw new Error("Atualização já em andamento.");
+    if (!IDS.includes(id)) throw new Error(t("ecosystem.invalidCli"));
+    if (updating.has(id)) throw new Error(t("ecosystem.updateRunning"));
     const bin = find(id === "antigravity" ? "agy" : id);
-    if (!bin) throw new Error("CLI não encontrada.");
+    if (!bin) throw new Error(t("ecosystem.cliNotFound"));
     const command = updateCommand(id, bin, find);
     updating.add(id);
     try {
@@ -307,7 +308,7 @@ function createEcosystem({
       return {
         ok: false,
         error:
-          "Não foi possível atualizar. Verifique conexão, permissões de instalação e o gerenciador da CLI. Nenhuma elevação automática foi executada.",
+          t("ecosystem.updateFailed"),
       };
     } finally {
       updating.delete(id);

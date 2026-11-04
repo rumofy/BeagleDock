@@ -5,10 +5,11 @@ import { CompanyIcon } from "../../components/CompanyIcon";
 import type { HistorySessionItem } from "../../types";
 import { useConversationHistory } from "./useConversationHistory";
 
+import { t } from "../../i18n";
 function statusLabel(item: HistorySessionItem) {
-  if (item.source === "native") return { text: "Só no terminal", tone: "bg-[#ede9de] text-[#6b6251]" };
-  if (item.closed) return { text: "Fechada", tone: "bg-[#ede9de] text-[#6b6251]" };
-  return { text: "Aberta", tone: "bg-emerald-50 text-emerald-800" };
+  if (item.source === "native") return { text: t("history.terminalOnly"), tone: "bg-[#ede9de] text-[#6b6251]" };
+  if (item.closed) return { text: t("history.closed"), tone: "bg-[#ede9de] text-[#6b6251]" };
+  return { text: t("history.open"), tone: "bg-emerald-50 text-emerald-800" };
 }
 
 export function HistoryModal() {
@@ -25,7 +26,7 @@ export function HistoryModal() {
     showHistoryModal,
     historySearch.trim(),
   );
-  // A confirmação expira sozinha: um clique perdido não deixa o botão armado.
+  // The confirmation expires on its own: a stray click doesn't leave the button armed.
   useEffect(() => {
     if (!confirming) return;
     const id = setTimeout(() => setConfirming(null), 4000);
@@ -49,7 +50,7 @@ export function HistoryModal() {
               <input
                 type="text"
                 autoFocus
-                placeholder="Buscar por título, pasta ou texto das conversas..."
+                placeholder={t("history.searchPlaceholder")}
                 value={historySearch}
                 onChange={(e) => setHistorySearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#d6cfbe] bg-[#ffffff] text-xs outline-none focus:border-[#968d7a]"
@@ -57,12 +58,12 @@ export function HistoryModal() {
             </div>
           </div>
           <span className="font-mono text-[10px] bg-[#ede9de] px-2 py-1 rounded text-[#6b6251]">
-            ESC para fechar
+            {t("history.escToClose")}
           </span>
           <button
             onClick={() => setShowHistoryModal(false)}
             className="p-1 hover:bg-[#ede9de] rounded-lg text-[#6d6657]"
-            aria-label="Fechar histórico"
+            aria-label={t("history.close")}
           >
             <X size={16} />
           </button>
@@ -70,15 +71,15 @@ export function HistoryModal() {
 
         <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
           <div className="text-[11px] font-bold text-[#8c8270] uppercase tracking-wider mb-1 flex items-center justify-between gap-2">
-            <span>Conversas do BeagleDock e do terminal (Claude Code, Codex CLI e Antigravity)</span>
-            {loading && <span className="text-[10px] normal-case font-normal">Carregando…</span>}
+            <span>{t("history.subtitle")}</span>
+            {loading && <span className="text-[10px] normal-case font-normal">{t("common.loading")}</span>}
           </div>
           {error && <p className="text-xs text-rose-700">{error}</p>}
 
           {items.length === 0 && !loading ? (
             <div className="p-8 text-center text-xs text-[#8c8270] space-y-2">
               <History size={28} className="mx-auto text-[#c5bea9]" />
-              <p>{historySearch ? "Nada encontrado para essa busca." : "Nenhuma conversa no histórico."}</p>
+              <p>{historySearch ? t("history.noMatches") : t("history.empty")}</p>
             </div>
           ) : (
             items.map((item) => {
@@ -128,14 +129,14 @@ export function HistoryModal() {
                         type="button"
                         onClick={(e) => handleSelectHistoryPrompt(item, e)}
                         className="px-2 py-1 rounded-lg bg-[#ede9de] hover:bg-[#dfdacd] text-[#443e33] font-mono text-[10px] font-bold transition flex items-center gap-1"
-                        title="Copiar apenas este prompt para o input"
+                        title={t("history.copyPromptHint")}
                       >
                         <span>Prompt</span>
                         <Copy size={11} />
                       </button>
                     )}
                     <span className="px-2.5 py-1 rounded-lg bg-indigo-50 group-hover:bg-indigo-600 group-hover:text-white font-mono text-[10px] font-bold text-indigo-800 transition flex items-center gap-1 shadow-2xs">
-                      <span>{item.source === "beagledock" && !item.closed ? "Ir para" : "Abrir"}</span>
+                      <span>{item.source === "beagledock" && !item.closed ? t("history.goTo") : t("history.openAction")}</span>
                       <ChevronRight size={12} />
                     </span>
                     {armed ? (
@@ -146,9 +147,9 @@ export function HistoryModal() {
                           void remove(item);
                         }}
                         className="px-2 py-1 rounded-lg bg-rose-600 text-white text-[10px] font-bold"
-                        title="Apaga as mensagens, as imagens e o arquivo da conversa na CLI. Não dá para desfazer."
+                        title={t("history.deleteHint")}
                       >
-                        Apagar de vez?
+                        {t("history.deleteConfirm")}
                       </button>
                     ) : (
                       <button
@@ -158,8 +159,8 @@ export function HistoryModal() {
                           setConfirming(item.id);
                         }}
                         className="p-1 rounded-lg text-[#8c8270] hover:text-rose-600 hover:bg-rose-50"
-                        title="Apagar definitivamente"
-                        aria-label="Apagar conversa definitivamente"
+                        title={t("history.delete")}
+                        aria-label={t("history.deleteLabel")}
                       >
                         <Trash2 size={13} />
                       </button>
@@ -173,8 +174,8 @@ export function HistoryModal() {
 
         <div className="p-3 bg-[#faf8f4] border-t border-[#eeeae0] text-center text-xs text-[#7d7565]">
           Atalho global: pressione{" "}
-          <kbd className="font-bold bg-[#ede9de] px-1.5 py-0.5 rounded text-[#332f28]">Ctrl + H</kbd>{" "}
-          para abrir o histórico de qualquer tela.
+          {t("history.footerBefore")}{" "}<kbd className="font-bold bg-[#ede9de] px-1.5 py-0.5 rounded text-[#332f28]">Ctrl + H</kbd>{" "}
+          {t("history.footerAfter")}
         </div>
       </div>
     </div>

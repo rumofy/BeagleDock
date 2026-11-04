@@ -1,14 +1,14 @@
-// Busca de texto da conversa (Ctrl+F): sem diferenciar maiúsculas nem acentos, devolvendo posições
-// no texto original para o realce cair exatamente sobre o que está na tela.
+// Conversation text search (Ctrl+F): case- and accent-insensitive, returning positions in the
+// original text so the highlight lands exactly on what is on screen.
 
-/** Forma comparável de um caractere: minúsculo e sem acento ("Ç" → "c"). */
+/** Comparable form of a character: lowercase and without accents ("Ç" → "c"). */
 function foldChar(ch: string): string {
   return ch.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 }
 
 /**
- * Texto dobrado e o índice original de cada caractere dobrado. Um caractere pode virar mais de um
- * ("ß" → "ss") ou nenhum (acento solto); o mapa mantém o realce alinhado ao texto original.
+ * Folded text and the original index of each folded character. A character may become several
+ * ("ß" → "ss") or none (a lone accent); the map keeps the highlight aligned with the original text.
  */
 export function foldText(text: string): { folded: string; map: number[] } {
   let folded = "";
@@ -26,7 +26,7 @@ export function foldText(text: string): { folded: string; map: number[] } {
 
 export type TextMatch = { start: number; end: number };
 
-/** Ocorrências de `query` em `text`, sem sobreposição, como intervalos [start, end) do texto original. */
+/** Non-overlapping occurrences of `query` in `text`, as [start, end) ranges of the original text. */
 export function findMatches(text: string, query: string): TextMatch[] {
   const needle = foldText(query.trim()).folded;
   if (!needle) return [];
@@ -37,7 +37,7 @@ export function findMatches(text: string, query: string): TextMatch[] {
     const at = folded.indexOf(needle, from);
     if (at < 0) break;
     const start = map[at];
-    // Fim: início do caractere seguinte ao último casado, para cobrir o caractere original inteiro.
+    // End: start of the character after the last match, to cover the whole original character.
     let endIdx = at + needle.length;
     while (endIdx < map.length - 1 && map[endIdx] === map[endIdx - 1]) endIdx++;
     matches.push({ start, end: map[endIdx] });
@@ -46,7 +46,7 @@ export function findMatches(text: string, query: string): TextMatch[] {
   return matches;
 }
 
-/** Próximo índice ao navegar (Enter/Shift+Enter), dando a volta nas pontas. */
+/** Next index when navigating (Enter/Shift+Enter), wrapping around at the ends. */
 export function stepMatch(current: number, total: number, delta: number): number {
   if (total <= 0) return -1;
   if (current < 0) return delta < 0 ? total - 1 : 0;

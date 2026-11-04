@@ -1,6 +1,6 @@
 import type { ChatEvent } from "../types";
 
-/** Agrupa as etapas de agentes sob o agente que as lançou; etapas órfãs ou cíclicas ficam na raiz. */
+/** Groups agent steps under the agent that started them; orphan or cyclic steps stay at the root. */
 export function buildEventTree(events: ChatEvent[]): {
   roots: ChatEvent[];
   tree: Map<string, ChatEvent[]>;

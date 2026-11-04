@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
+import { t } from "../i18n";
 function colors(text: string) {
   if (text.includes("\x1b")) return text;
   return text
@@ -84,7 +85,7 @@ export function LiveShell({
   return (
     <div
       data-testid="live-shell"
-      aria-label="Saída ao vivo da CLI"
+      aria-label={t("liveShell.label")}
       ref={host}
       className="flex-1 min-h-0 overflow-hidden p-2 bg-[#18181b]"
     />

@@ -3,7 +3,7 @@ import { splitMessage } from "../lib/codeBlocks";
 import { CodeBlock } from "./CodeBlock";
 import { LinkedText, type FileTarget } from "./LinkedText";
 
-/** Texto da resposta: blocos de código com destaque e copiar; o resto, com links de arquivo. */
+/** Reply text: code blocks with highlighting and copy; the rest with file links. */
 export const MessageBody = memo(function MessageBody({
   text,
   onOpenFile,

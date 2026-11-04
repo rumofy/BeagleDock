@@ -7,18 +7,18 @@ const UNRELEASED = "## [Unreleased]";
 export function releaseChangelog(text, version, date) {
   const lines = text.split("\n");
   const start = lines.findIndex((l) => l.trim() === UNRELEASED);
-  if (start < 0) throw new Error("CHANGELOG.md não tem a seção `## [Unreleased]`.");
+  if (start < 0) throw new Error("CHANGELOG.md has no `## [Unreleased]` section.");
   let end = lines.findIndex((l, i) => i > start && (/^## \[/.test(l) || /^\[[^\]]+\]: /.test(l)));
   if (end < 0) end = lines.length;
   const body = lines.slice(start + 1, end);
   if (!body.some((l) => /^\s*[-*] \S/.test(l)))
     throw new Error(
-      "A seção `## [Unreleased]` do CHANGELOG.md está sem entradas. Registre as mudanças antes de lançar a versão.",
+      "The `## [Unreleased]` section of CHANGELOG.md has no entries. Record the changes before releasing the version.",
     );
   const trimmed = body.join("\n").replace(/^\n+|\n+$/g, "");
   const before = lines.slice(0, start).join("\n");
   const rest = lines.slice(end);
-  // Rodapé de links
+  // Links footer
   const linkIdx = rest.findIndex((l) => /^\[Unreleased\]: /.test(l));
   let footer = rest;
   if (linkIdx >= 0) {
@@ -52,9 +52,9 @@ function main() {
     const oa = syncOpenapi(readFileSync(oaPath, "utf8"), version);
     writeFileSync(clPath, cl);
     writeFileSync(oaPath, oa);
-    console.log(`Versão ${version} registrada em CHANGELOG.md e docs/openapi.json.`);
+    console.log(`Version ${version} recorded in CHANGELOG.md and docs/openapi.json.`);
   } catch (e) {
-    console.error(`Erro: ${e.message}`);
+    console.error(`Error: ${e.message}`);
     process.exit(1);
   }
 }

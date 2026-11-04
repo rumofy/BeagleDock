@@ -1,35 +1,36 @@
-// Segundo plano: fechar a janela leva o app para a bandeja e as sessões continuam rodando.
-// Só o item "Sair" da bandeja encerra o app (com confirmação se houver sessão em execução).
+const { t, tn } = require("./i18n");
+// Background: closing the window sends the app to the tray and the sessions keep running.
+// Only the tray's "Quit" item closes the app (with a confirmation if a session is running).
 
-// O Codex informa o método do protocolo (ex.: item/commandExecution/requestApproval).
+// Codex reports the protocol method (e.g. item/commandExecution/requestApproval).
 function friendlyTool(tool) {
   const name = String(tool || "");
-  if (/commandExecution\/requestApproval$/.test(name)) return "executar um comando";
-  if (/fileChange\/requestApproval$/.test(name)) return "editar arquivos";
-  if (/permissions\/requestApproval$/.test(name)) return "uma permissão adicional";
-  if (/requestApproval$/.test(name)) return "uma ação";
-  return name || "uma ferramenta";
+  if (/commandExecution\/requestApproval$/.test(name)) return t("tray.toolCommand");
+  if (/fileChange\/requestApproval$/.test(name)) return t("tray.toolFiles");
+  if (/permissions\/requestApproval$/.test(name)) return t("tray.toolPermission");
+  if (/requestApproval$/.test(name)) return t("tray.toolAction");
+  return name || t("tray.toolGeneric");
 }
 
 function describeState({ running = 0, waiting = 0, sessions = [] } = {}) {
   const parts = [];
   if (running > 0)
-    parts.push(`${running} ${running === 1 ? "sessão rodando" : "sessões rodando"}`);
+    parts.push(tn("tray.running", running));
   if (waiting > 0)
     parts.push(
-      `${waiting} ${waiting === 1 ? "aguardando permissão" : "aguardando permissão"}`,
+      tn("tray.waiting", waiting),
     );
   const status = waiting > 0 ? "waiting" : running > 0 ? "running" : "idle";
   return {
     status,
-    summary: parts.length ? parts.join(" · ") : "Nenhuma sessão em execução",
+    summary: parts.length ? parts.join(" · ") : t("tray.idle"),
     tooltip: parts.length ? `BeagleDock · ${parts.join(" · ")}` : "BeagleDock",
     sessions,
   };
 }
 
-// Selo de estado no canto do ícone da bandeja: âmbar rodando, vermelho aguardando permissão.
-// `bitmap` é BGRA (o formato do nativeImage no Linux); ocioso fica sem selo.
+// State badge in the corner of the tray icon: amber running, red waiting for permission.
+// `bitmap` is BGRA (nativeImage's format on Linux); idle has no badge.
 const BADGES = { running: [245, 158, 11], waiting: [225, 29, 72] };
 function drawBadge(bitmap, size, status) {
   const color = BADGES[status];
@@ -43,7 +44,7 @@ function drawBadge(bitmap, size, status) {
       const distance = Math.hypot(x - cx, y - cy);
       if (distance > radius + 1) continue;
       const offset = (y * size + x) * 4;
-      // Contorno branco de 1 px e miolo colorido, para o selo aparecer em qualquer fundo de painel.
+      // 1 px white outline and a colored core, so the badge shows on any panel background.
       const [r, g, b] = distance > radius - 0.5 ? [255, 255, 255] : color;
       out[offset] = b;
       out[offset + 1] = g;
@@ -54,7 +55,7 @@ function drawBadge(bitmap, size, status) {
 }
 
 const SESSION_LIMIT = 8;
-// Itens do menu para as sessões em andamento, com a que aguarda permissão primeiro.
+// Menu items for the sessions in progress, the one waiting for permission first.
 function sessionMenuItems(sessions, open) {
   const ordered = [...sessions].sort((a, b) => Number(!!b.waiting) - Number(!!a.waiting));
   const items = ordered.slice(0, SESSION_LIMIT).map((s) => ({
@@ -62,15 +63,15 @@ function sessionMenuItems(sessions, open) {
     click: () => open(s.id),
   }));
   if (ordered.length > SESSION_LIMIT)
-    items.push({ label: `… e mais ${ordered.length - SESSION_LIMIT}`, enabled: false });
+    items.push({ label: t("tray.more", { count: ordered.length - SESSION_LIMIT }), enabled: false });
   return items;
 }
 
-// Fechar nunca encerra o app. Sem bandeja funcional (alguns desktops Linux não a exibem),
-// minimiza em vez de esconder, para a janela não ficar inalcançável.
+// Closing never quits the app. Without a working tray (some Linux desktops don't show it),
+// it minimizes instead of hiding, so the window doesn't become unreachable.
 function closeAction({ quitting, trayReady, runInBackground = true }) {
   if (quitting) return "allow";
-  // Com o segundo plano desligado, fechar a janela é pedir para sair (com confirmação se houver sessão).
+  // With the background off, closing the window means asking to quit (with confirmation if a session is running).
   if (!runInBackground) return "quit";
   return trayReady ? "hide" : "minimize";
 }
@@ -92,9 +93,9 @@ function createBackgroundController({
   iconPath,
   runningCount,
   approvalsList,
-  // Sessões em andamento para o menu: [{ id, title, providerName }].
+  // Sessions in progress for the menu: [{ id, title, providerName }].
   runningSessions = () => [],
-  // Avisa a interface para abrir uma conversa (clique no menu ou na notificação).
+  // Tells the interface to open a conversation (click on the menu or the notification).
   openSession = () => {},
   bypass = false,
   onQuit = () => {},
@@ -122,13 +123,13 @@ function createBackgroundController({
     win.show();
     win.focus();
   };
-  // Traz a janela e leva a interface até a conversa.
+  // Brings the window up and takes the interface to the conversation.
   const showSession = (sessionId) => {
     showWindow();
     if (sessionId) openSession(sessionId);
   };
 
-  // Ícone por estado, gerado do ícone do app com o selo; guardado para não redesenhar.
+  // Icon per state, generated from the app icon with the badge; cached so it isn't redrawn.
   function iconFor(status) {
     if (!baseImage) return null;
     if (!iconCache.has(status)) {
@@ -153,13 +154,13 @@ function createBackgroundController({
       win && !win.isDestroyed() ? win : undefined,
       {
         type: "warning",
-        buttons: ["Continuar rodando", "Sair e interromper"],
+        buttons: [t("tray.keepRunning"), t("tray.quitAndStop")],
         defaultId: 0,
         cancelId: 0,
-        title: "Sair do BeagleDock",
-        message: `${running} ${running === 1 ? "sessão está" : "sessões estão"} em execução.`,
+        title: t("tray.quitTitle"),
+        message: tn("tray.quitMessage", running),
         detail:
-          "Sair interrompe as CLIs em andamento. As conversas continuam salvas.",
+          t("tray.quitDetail"),
       },
     );
     return choice === 1;
@@ -179,7 +180,7 @@ function createBackgroundController({
       waiting: approvals.length,
       sessions,
     });
-    // Enquanto há sessão rodando, o sistema não suspende o app (a tela pode apagar).
+    // While a session is running, the system doesn't suspend the app (the screen may turn off).
     if (state.status !== "idle" && blockerId === null)
       blockerId = powerSaveBlocker.start("prevent-app-suspension");
     if (state.status === "idle" && blockerId !== null) {
@@ -195,12 +196,12 @@ function createBackgroundController({
     const items = sessionMenuItems(sessions, showSession);
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: "Abrir BeagleDock", click: showWindow },
+        { label: t("tray.open"), click: showWindow },
         { type: "separator" },
         { label: state.summary, enabled: false },
         ...items,
         { type: "separator" },
-        { label: "Sair", click: requestQuit },
+        { label: t("tray.quit"), click: requestQuit },
       ]),
     );
     return state;
@@ -217,8 +218,8 @@ function createBackgroundController({
       seenApprovals.add(approval.id);
       if (visible || !Notification.isSupported()) continue;
       const note = new Notification({
-        title: "BeagleDock · permissão pendente",
-        body: `${approval.providerId} quer ${/^(executar|editar|uma)/.test(friendlyTool(approval.tool)) ? friendlyTool(approval.tool) : `usar ${friendlyTool(approval.tool)}`}`,
+        title: t("tray.approvalTitle"),
+        body: t("tray.approvalBody", { provider: approval.providerId, tool: friendlyTool(approval.tool) }),
       });
       note.on("click", () => showSession(approval.sessionId));
       note.show();
@@ -229,8 +230,8 @@ function createBackgroundController({
     start() {
       try {
         const image = nativeImage.createFromPath(iconPath);
-        // Sem imagem (ex.: dist/ não gerado) a bandeja ficaria invisível: não conta como pronta.
-        if (image.isEmpty()) throw new Error("ícone da bandeja ausente");
+        // Without an image (e.g. dist/ not built) the tray would be invisible: it doesn't count as ready.
+        if (image.isEmpty()) throw new Error("tray icon missing");
         baseImage = image;
         tray = new Tray(iconFor("idle"));
         tray.on("click", showWindow);
@@ -253,9 +254,9 @@ function createBackgroundController({
         else win.minimize();
       });
     },
-    // before-quit: só segue se o encerramento veio da bandeja (ou do sistema/ambiente de teste).
-    // Sem bandeja funcional não há "Sair" para usar: o app se comporta como um app comum, com
-    // confirmação se houver sessão rodando.
+    // before-quit: only goes on if the quit came from the tray (or from the system/test environment).
+    // Without a working tray there's no "Quit" to use: the app behaves like a regular app, with
+    // confirmation if a session is running.
     beforeQuit(event) {
       if (quitAction({ quitting, bypass }) === "allow") {
         quitting = true;
@@ -281,7 +282,7 @@ function createBackgroundController({
       return !!win && !win.isDestroyed() && win.isVisible() && !win.isMinimized();
     },
     onApprovalsChanged: notifyNewApprovals,
-    // Resposta espontânea da CLI: avisa só se a janela não está à frente.
+    // Spontaneous CLI reply: notify only if the window isn't in front.
     notifyTurnFinished({ title, body, sessionId }) {
       const win = getWindow();
       const visible = win && !win.isDestroyed() && win.isVisible() && win.isFocused();
@@ -292,7 +293,11 @@ function createBackgroundController({
     },
     showWindow,
     showSession,
-    // Preferência "manter na bandeja ao fechar a janela".
+    // "Keep in the tray when closing the window" preference.
+    // The interface language changed: rebuild the tray menu and tooltip in the new language.
+    refreshMenu() {
+      refresh(true);
+    },
     setRunInBackground(value) {
       runInBackground = value !== false;
     },

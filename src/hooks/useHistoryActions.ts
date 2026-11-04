@@ -10,6 +10,7 @@ import type {
 import type { AppTab } from "./useUi";
 import type { useSessions } from "./useSessions";
 
+import { t, tn } from "../i18n";
 interface Params {
   sessions: ReturnType<typeof useSessions>;
   setProviders: React.Dispatch<React.SetStateAction<AIProviderStatus[]>>;
@@ -20,7 +21,7 @@ interface Params {
   setShowHistoryModal: (show: boolean) => void;
 }
 
-/** Ações dos modais de skills e histórico que preenchem o chat ou importam conversas. */
+/** Actions of the skills and history modals that fill the chat or import conversations. */
 export function useHistoryActions({
   sessions,
   setProviders,
@@ -58,8 +59,8 @@ export function useHistoryActions({
     setInputMessage(item.prompt);
   };
 
-  // Conversa do BeagleDock: reabre a própria sessão. Conversa só do terminal: importa o .jsonl
-  // da CLI para uma sessão do BeagleDock, ligada ao mesmo ID nativo.
+  // BeagleDock conversation: reopen its own session. Terminal-only conversation: import the CLI's
+  // .jsonl into a BeagleDock session, linked to the same native ID.
   const handleOpenFullConversation = async (item: HistorySessionItem) => {
     setShowHistoryModal(false);
     if (item.source === "beagledock" && item.beagleSessionId) {
@@ -98,7 +99,7 @@ export function useHistoryActions({
             id: newSessionId,
             providerId: item.provider,
             title: item.title,
-            // Reimportar uma conversa que já existe mantém o modelo, o nível e a permissão dela.
+            // Re-importing an existing conversation keeps its model, level and permission.
             currentModel: existingSession?.currentModel || conversation.model || "",
             nativeSessionId: conversation.nativeSessionId,
             reasoningEffort: existingSession?.reasoningEffort || "",
@@ -107,16 +108,18 @@ export function useHistoryActions({
               : {}),
             status: "idle",
             createdAt: item.date,
-            lastActive: "Histórico",
+            lastActive: t("session.fromHistory"),
+            // Just opened from the history: it goes to the top of the sidebar.
+            lastMessageAt: Date.now(),
             cwd: conversation.cwd,
             ptyLog: [
-              `$ Sessão restaurada do histórico (${fullMsgs.length} mensagens)`,
+              tn("session.restored", fullMsgs.length),
             ],
           };
 
           const saved = await beagleApi.saveSession(newSessionObj);
           if (!saved?.success)
-            throw new Error(saved?.error || "Falha ao salvar sessão.");
+            throw new Error(saved?.error || t("session.saveFailed"));
           const imported = fullMsgs.map((msg) => ({
             ...msg,
             sessionId: newSessionId,
@@ -127,7 +130,7 @@ export function useHistoryActions({
           );
           if (!importedResult?.success)
             throw new Error(
-              importedResult?.error || "Falha ao importar histórico.",
+              importedResult?.error || t("history.importFailed"),
             );
           setProviders((prev) =>
             prev.map((p) => {
@@ -151,7 +154,7 @@ export function useHistoryActions({
             [newSessionId]: imported,
           }));
 
-          // Salvar configurações para ficar permanente
+          // Save the settings so it's permanent
 
           setActiveSessionId(newSessionId);
           setActiveTab("chat");
@@ -164,13 +167,13 @@ export function useHistoryActions({
 
     setInputMessage(item.prompt);
   };
-  // Apagar definitivamente: mensagens, anexos e a conversa nativa da CLI. Devolve se apagou.
+  // Delete permanently: messages, attachments and the CLI's native conversation. Returns whether it did.
   const handleDeleteConversation = async (item: HistorySessionItem) => {
     if (
       item.beagleSessionId &&
       (pendingTurns.current.get(item.beagleSessionId) || 0) > 0
     ) {
-      setAppError("Pare a execução desta conversa antes de apagá-la.");
+      setAppError(t("session.stopBeforeDelete"));
       return false;
     }
     try {
@@ -180,7 +183,7 @@ export function useHistoryActions({
         nativeId: item.beagleSessionId ? undefined : item.sessionId,
       });
       if (!result?.success)
-        throw new Error(result?.error || "Não foi possível apagar a conversa.");
+        throw new Error(result?.error || t("session.deleteFailed"));
       if (item.beagleSessionId) forgetSession(item.beagleSessionId);
       return true;
     } catch (err) {

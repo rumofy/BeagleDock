@@ -6,6 +6,7 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { beagleApi } from "../../api/beagleApi";
 import { CompanyIcon } from "../../components/CompanyIcon";
 
+import { t } from "../../i18n";
 export function CliSettingsCard() {
   const {
     updateInfo,
@@ -30,12 +31,10 @@ export function CliSettingsCard() {
                       </div>
                       <div>
                         <h2 className="font-bold text-lg text-[#1c1b18]">
-                          Binários Locais, Banco SQLite & MCPs
+                          {t("cliSettings.title")}
                         </h2>
                         <p className="text-xs text-[#7d7565]">
-                          Banco SQLite ativo em `~/.beagledock/beagledock.db` •
-                          Identidade OS: `{userProfile.fullName}` (`
-                          {userProfile.email}`)
+                          {t("cliSettings.subtitle", { name: userProfile.fullName, email: userProfile.email })}
                         </p>
                       </div>
                     </div>
@@ -65,21 +64,21 @@ export function CliSettingsCard() {
                                 {p.cliPath}
                               </span>
                               <button
-                                aria-label={`Atualizar ${p.name}`}
+                                aria-label={t("cliSettings.updateLabel", { name: p.name })}
                                 disabled={!!cliUpdating || hasRunningPrompts}
                                 className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#ded8cb] disabled:opacity-50"
                                 onClick={async () => {
                                   setCliUpdating(p.id);
                                   setCliFeedback((prev) => ({
                                     ...prev,
-                                    [p.id]: "Atualizando…",
+                                    [p.id]: t("cliSettings.updating"),
                                   }));
                                   try {
                                     const result = await beagleApi.updateCli(p.id);
                                     setCliFeedback((prev) => ({
                                       ...prev,
                                       [p.id]: result.ok
-                                        ? `CLI atualizada${result.version ? " para " + result.version : ""}.`
+                                        ? result.version ? t("cliSettings.updatedTo", { version: result.version }) : t("cliSettings.updated")
                                         : result.error,
                                     }));
                                   } catch (e) {
@@ -93,15 +92,15 @@ export function CliSettingsCard() {
                                 }}
                               >
                                 {cliUpdating === p.id
-                                  ? "Atualizando…"
-                                  : "Atualizar CLI"}
+                                  ? t("cliSettings.updating")
+                                  : t("cliSettings.update")}
                               </button>
                             </div>
                           </div>
 
                           {updateInfo.releases?.[p.id]?.version && (
                             <p className="text-xs text-[#7d7565]">
-                              Última versão publicada:{" "}
+                              {t("cliSettings.latest")}{" "}
                               {updateInfo.releases[p.id].version}
                             </p>
                           )}
@@ -121,14 +120,10 @@ export function CliSettingsCard() {
                                 className="mt-3 pt-3 border-t border-[#f0ebd9] space-y-2"
                               >
                                 <p className="font-semibold text-xs">
-                                  Permissões globais da CLI
+                                  {t("cliSettings.globalPermissions")}
                                 </p>
                                 <p className="text-[11px] text-[#7d7565]">
-                                  Aplicadas nas próximas execuções com “Global
-                                  da CLI”. Regras do projeto e políticas
-                                  gerenciadas também podem se aplicar. Ações que
-                                  exigem confirmação aparecem no painel de
-                                  permissões do chat.
+                                  {t("cliSettings.globalPermissionsHint")}
                                 </p>
                                 {policy.error && (
                                   <p
@@ -148,7 +143,7 @@ export function CliSettingsCard() {
                                         {field.label}
                                       </span>
                                       <select
-                                        aria-label={`${p.name}: ${field.label} global`}
+                                        aria-label={t("cliSettings.globalFieldLabel", { name: p.name, field: field.label })}
                                         value={
                                           policyDrafts[p.id]?.[field.key] ??
                                           field.value
@@ -165,7 +160,7 @@ export function CliSettingsCard() {
                                         }
                                       >
                                         <option value="" disabled>
-                                          Padrão da CLI / configuração avançada
+                                          {t("cliSettings.policyDefault")}
                                         </option>
                                         {field.value &&
                                           !field.values.includes(
@@ -208,7 +203,7 @@ export function CliSettingsCard() {
                                           }));
                                           setCliFeedback((prev) => ({
                                             ...prev,
-                                            [p.id]: "Permissão global salva.",
+                                            [p.id]: t("cliSettings.policySaved"),
                                           }));
                                         } catch (e) {
                                           setCliFeedback((prev) => ({
@@ -218,7 +213,7 @@ export function CliSettingsCard() {
                                         }
                                       }}
                                     >
-                                      Salvar permissão global
+                                      {t("cliSettings.policySave")}
                                     </button>
                                   )}
                                 </div>

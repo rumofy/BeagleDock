@@ -1,7 +1,7 @@
 import { LiveShell } from "../../components/LiveShell";
 import { useApp } from "../../hooks/AppStateProvider";
 
-/** Shell da conversa: um fluxo único com toda a saída, sempre acompanhando o fim. */
+/** Conversation shell: a single stream with all the output, always following the end. */
 export function SessionShell({ sessionId }: { sessionId: string }) {
   const { currentSession } = useApp();
   const raw = currentSession?.ptyRaw || (currentSession?.ptyLog || []).join("\r\n");

@@ -73,6 +73,6 @@ test("reading global rules never writes settings or imports unrelated values/gra
   fs.writeFileSync(file, "{invalid");
   assert.throws(
     () => readInheritedPermissions({ home, env: {} }),
-    /política global/,
+    /global policy/,
   );
 });

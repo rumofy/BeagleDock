@@ -1,34 +1,35 @@
 import type { AIProviderStatus, PermissionLevel } from "../types";
 import { quotaForGeminiModels } from "./agyQuota";
 
-// Remove códigos ANSI de cores do terminal para leitura limpa
+import { getLocale, t } from "../i18n";
+// Strips terminal ANSI color codes for clean reading
 export function stripAnsi(str: string): string {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, "");
 }
 
 export const formatQuota = (value: number | null) =>
-  value === null ? "N/D" : `${Math.round(value)}%`;
+  value === null ? t("common.na") : `${Math.round(value)}%`;
 
 const sameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
   a.getMonth() === b.getMonth() &&
   a.getDate() === b.getDate();
 
-// "15:20" se o reinício é hoje; "07/11 02:00" nos demais dias.
+// "15:20" when the reset is today; "07/11 02:00" (in the interface language's order) otherwise.
 export function formatReset(iso?: string | null, now = new Date()): string {
-  if (!iso) return "N/D";
+  if (!iso) return t("common.na");
   const date = new Date(iso);
-  if (!Number.isFinite(date.getTime())) return "N/D";
-  const time = date.toLocaleTimeString("pt-BR", {
+  if (!Number.isFinite(date.getTime())) return t("common.na");
+  const time = date.toLocaleTimeString(getLocale(), {
     hour: "2-digit",
     minute: "2-digit",
   });
   return sameDay(date, now)
     ? time
-    : `${date.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${time}`;
+    : `${date.toLocaleDateString(getLocale(), { day: "2-digit", month: "2-digit" })} ${time}`;
 }
 
-// Fuso da máquina no formato "UTC-3" / "UTC+5:30".
+// The machine's time zone as "UTC-3" / "UTC+5:30".
 export function localUtcLabel(now = new Date()): string {
   const minutes = -now.getTimezoneOffset();
   const sign = minutes < 0 ? "-" : "+";

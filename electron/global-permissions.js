@@ -4,10 +4,11 @@ const path = require("path");
 const { parse } = require("smol-toml");
 const { isDeepStrictEqual } = require("util");
 const { settingsPath } = require("./agy-permissions");
+const { t } = require("./i18n");
 const FIELDS = {
   claude: {
     mode: {
-      label: "Modo padrão",
+      label: "globalPermissions.defaultMode",
       values: [
         "default",
         "acceptEdits",
@@ -20,14 +21,14 @@ const FIELDS = {
   },
   codex: {
     sandbox_mode: {
-      label: "Sandbox",
+      label: "globalPermissions.sandbox",
       values: ["read-only", "workspace-write", "danger-full-access"],
     },
-    approval_policy: { label: "Aprovações", values: ["on-request", "never"] },
+    approval_policy: { label: "globalPermissions.approvals", values: ["on-request", "never"] },
   },
   antigravity: {
     toolPermission: {
-      label: "Política de ferramentas",
+      label: "globalPermissions.toolPolicy",
       values: [
         "request-review",
         "proceed-in-sandbox",
@@ -36,28 +37,28 @@ const FIELDS = {
       ],
     },
     agentMode: {
-      label: "Modo padrão",
+      label: "globalPermissions.defaultMode",
       values: ["plan", "accept-edits", "auto"],
     },
   },
 };
 const VALUE_LABELS = {
-  default: "Solicitar aprovação",
-  acceptEdits: "Aceitar edições",
-  plan: "Planejar",
-  auto: "Automático",
-  dontAsk: "Negar ações que exigem aprovação",
-  bypassPermissions: "Acesso total sem confirmação",
-  "read-only": "Somente leitura",
-  "workspace-write": "Escrita no projeto",
-  "danger-full-access": "Acesso total sem sandbox",
-  "on-request": "Solicitar quando necessário",
-  never: "Sem aprovações interativas",
-  "request-review": "Solicitar revisão",
-  "proceed-in-sandbox": "Permitir comandos no sandbox",
-  strict: "Solicitar para todas as ações",
-  "always-proceed": "Permitir sem confirmação",
-  "accept-edits": "Aceitar edições",
+  default: "globalPermissions.value.default",
+  acceptEdits: "globalPermissions.value.acceptEdits",
+  plan: "globalPermissions.value.plan",
+  auto: "globalPermissions.value.auto",
+  dontAsk: "globalPermissions.value.dontAsk",
+  bypassPermissions: "globalPermissions.value.bypassPermissions",
+  "read-only": "globalPermissions.value.readOnly",
+  "workspace-write": "globalPermissions.value.workspaceWrite",
+  "danger-full-access": "globalPermissions.value.dangerFullAccess",
+  "on-request": "globalPermissions.value.onRequest",
+  never: "globalPermissions.value.never",
+  "request-review": "globalPermissions.value.requestReview",
+  "proceed-in-sandbox": "globalPermissions.value.proceedInSandbox",
+  strict: "globalPermissions.value.strict",
+  "always-proceed": "globalPermissions.value.alwaysProceed",
+  "accept-edits": "globalPermissions.value.acceptEdits",
 };
 function createGlobalPermissions({
   home = os.homedir(),
@@ -75,22 +76,22 @@ function createGlobalPermissions({
     antigravity: settingsPath({ home, env }),
   };
   function load(id) {
-    if (!FIELDS[id]) throw new Error("CLI inválida.");
+    if (!FIELDS[id]) throw new Error(t("ecosystem.invalidCli"));
     let text = "";
     try {
       text = fs.readFileSync(files[id], "utf8");
     } catch (e) {
       if (e.code !== "ENOENT")
-        throw new Error("Não foi possível ler a configuração global.");
+        throw new Error(t("globalPermissions.readFailed"));
     }
     try {
       const data = id === "codex" ? parse(text) : text ? JSON.parse(text) : {};
       if (!data || typeof data !== "object" || Array.isArray(data))
-        throw new Error("Configuração inválida.");
+        throw new Error(t("globalPermissions.invalidConfig"));
       return { text, data };
     } catch {
       throw new Error(
-        "Configuração global inválida; corrija o arquivo antes de salvar.",
+        t("globalPermissions.invalidGlobal"),
       );
     }
   }
@@ -103,9 +104,9 @@ function createGlobalPermissions({
         providerId: id,
         fields: Object.entries(FIELDS[id]).map(([key, field]) => ({
           key,
-          ...field,
+          ...field, label: t(field.label),
           valueLabels: Object.fromEntries(
-            field.values.map((value) => [value, VALUE_LABELS[value] || value]),
+            field.values.map((value) => [value, VALUE_LABELS[value] ? t(VALUE_LABELS[value]) : value]),
           ),
           value: typeof values[key] === "string" ? values[key] : "",
         })),
@@ -122,10 +123,10 @@ function createGlobalPermissions({
       Array.isArray(changes) ||
       !Object.keys(changes).length
     )
-      throw new Error("Política inválida.");
+      throw new Error(t("globalPermissions.invalidPolicy"));
     for (const [key, value] of Object.entries(changes))
       if (!FIELDS[id][key]?.values.includes(value))
-        throw new Error("Permissão global inválida.");
+        throw new Error(t("globalPermissions.invalidPermission"));
     const { text, data } = load(id);
     let output;
     if (id === "codex") {
@@ -140,7 +141,7 @@ function createGlobalPermissions({
         );
         if (data[key] !== undefined && index < 0)
           throw new Error(
-            "Esse campo usa uma tabela avançada; edite-o diretamente no arquivo da CLI.",
+            t("globalPermissions.advancedTable"),
           );
         const entry = `${key} = ${JSON.stringify(value)}`;
         if (index >= 0) lines[index] = entry;
@@ -157,7 +158,7 @@ function createGlobalPermissions({
         )
       )
         throw new Error(
-          "Formato avançado de TOML: edite esse campo diretamente na CLI.",
+          t("globalPermissions.advancedToml"),
         );
     } else {
       if (id === "claude")
@@ -177,7 +178,7 @@ function createGlobalPermissions({
       }
       if (current !== text)
         throw new Error(
-          "Configuração alterada por outro processo. Recarregue e tente novamente.",
+          t("globalPermissions.changedElsewhere"),
         );
       fs.renameSync(temp, files[id]);
     } finally {

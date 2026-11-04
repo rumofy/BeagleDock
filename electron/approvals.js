@@ -1,14 +1,15 @@
 const { randomUUID } = require("crypto");
 const { ALLOW_ONCE, DENY } = require("./approval-options");
+const { t } = require("./i18n");
 
-// timeout 0 = a aprovação espera a decisão da pessoa (como no terminal); só cancelar a sessão a nega.
+// timeout 0 = the approval waits for the person's decision (as in the terminal); only cancelling the session denies it.
 function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
   const requests = new Map();
   const list = () => [...requests.values()].map((r) => r.public);
   const publish = () => emit("cli-approvals", list());
 
-  // `request.options` são as opções nativas da CLI (públicas); `request.native` guarda, por id,
-  // o que devolver à CLI e nunca vai para a interface.
+  // `request.options` are the CLI's native options (public); `request.native` keeps, by id,
+  // what to return to the CLI and never goes to the interface.
   function askDetailed(request) {
     return new Promise((resolve) => {
       const id = randomUUID(),
@@ -21,6 +22,7 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
           id,
           sessionId: request.sessionId,
           providerId: request.providerId,
+          ...(request.kind === "plan" || request.kind === "question" ? { kind: request.kind } : {}),
           tool: String(request.tool || "Ferramenta").slice(0, 200),
           input: (typeof request.input === "string"
             ? request.input
@@ -59,14 +61,14 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
     return true;
   }
   return {
-    // Compatível: quem só precisa de sim/não continua recebendo um booleano.
+    // Compatible: callers that only need yes/no keep getting a boolean.
     ask: (request) => askDetailed(request).then((r) => r.allow),
     askDetailed,
     list,
-    // `decision`: "allow" | "deny" (primeira opção desse tipo) ou o id de uma opção oferecida.
+    // `decision`: "allow" | "deny" (first option of that type) or the id of an offered option.
     resolve(id, decision, { message } = {}) {
       if (typeof id !== "string" || typeof decision !== "string")
-        throw new Error("Resposta de permissão inválida.");
+        throw new Error(t("errors.invalidApprovalAnswer"));
       const entry = requests.get(id);
       if (!entry) return { ok: false };
       const option =
@@ -74,7 +76,7 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
         (decision === "allow" || decision === "deny"
           ? entry.options.find((o) => o.kind === decision)
           : undefined);
-      if (!option) throw new Error("Opção de permissão inválida.");
+      if (!option) throw new Error(t("errors.invalidApprovalOption"));
       return {
         ok: finish(id, {
           optionId: option.id,
@@ -85,12 +87,13 @@ function createApprovalBroker({ emit = () => {}, timeout = 0 } = {}) {
         }),
       };
     },
-    // A conversa passou para "Acesso total": o que estava esperando é autorizado uma vez, como se a
-    // pessoa clicasse em permitir (nunca uma opção que grava regra permanente).
+    // The conversation switched to "Full access": what was waiting is allowed once, as if the
+    // person clicked allow (never an option that saves a permanent rule).
+    // Plans and questions are not permissions: full access never approves a plan or answers for you.
     approveSession(id) {
       let count = 0;
       for (const [key, r] of requests) {
-        if (r.public.sessionId !== id) continue;
+        if (r.public.sessionId !== id || r.public.kind) continue;
         const option =
           r.options.find((o) => o.kind === "allow" && !o.persistent && o.id === ALLOW_ONCE.id) ||
           r.options.find((o) => o.kind === "allow" && !o.persistent);

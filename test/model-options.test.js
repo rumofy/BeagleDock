@@ -90,7 +90,7 @@ test("models without capability metadata offer no invented levels", () => {
   );
   assert.throws(
     () => resolveModelSelection(options, "unknown-capabilities", "medium"),
-    /nível/,
+    /level/,
   );
   assert.deepEqual(resolveModelSelection([], "configured-model", ""), {
     model: "configured-model",
@@ -98,7 +98,7 @@ test("models without capability metadata offer no invented levels", () => {
   });
   assert.throws(
     () => resolveModelSelection([], "configured-model", "medium"),
-    /informou/,
+    /hasn't reported/,
   );
 });
 test("a refreshed catalogue replaces removed levels and adds new model capabilities", () => {
@@ -116,7 +116,7 @@ test("a refreshed catalogue replaces removed levels and adds new model capabilit
   );
   assert.throws(
     () => resolveModelSelection(refreshed, "fixture-orbit", "research"),
-    /nível/,
+    /level/,
   );
   assert.equal(refreshed[0].efforts.length, 1);
 });

@@ -1,9 +1,10 @@
 import type { ContextInfo } from "../types";
 
-/** Tempo de vida do cache de prompt observado (Claude Code: ephemeral_1h). Vale quando a CLI não
- *  informa a validade da última escrita; depois disso o contexto inteiro é reprocessado. */
+import { t, tn } from "../i18n";
+/** Observed prompt cache lifetime (Claude Code: ephemeral_1h). Used when the CLI doesn't report
+ *  the validity of the last write; after that the whole context is processed again. */
 export const CACHE_TTL_MS = 60 * 60 * 1000;
-/** Abaixo disso o reprocessamento é barato demais para valer um aviso. */
+/** Below this, reprocessing is too cheap to be worth a warning. */
 export const STALE_MIN_TOKENS = 100_000;
 
 export interface StaleContext {
@@ -13,18 +14,18 @@ export interface StaleContext {
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
-/** Momento da última chamada ao modelo; contextos salvos antes desse campo usam `updatedAt`. */
+/** Time of the last model call; contexts saved before this field existed use `updatedAt`. */
 function lastCall(info: ContextInfo): number | null {
   if (finite(info.lastCallAt)) return info.lastCallAt;
   return finite(info.updatedAt) ? info.updatedAt : null;
 }
 
-/** Validade do cache: a informada pela CLI ou a estimativa observada de 1 h. */
+/** Cache validity: the one reported by the CLI or the observed 1 h estimate. */
 function cacheTtl(info: ContextInfo): number {
   return finite(info.cacheTtlMs) && info.cacheTtlMs > 0 ? info.cacheTtlMs : CACHE_TTL_MS;
 }
 
-/** Conversa parada além do cache com contexto grande: a próxima mensagem sai cara. */
+/** Conversation idle past the cache with a large context: the next message will be expensive. */
 export function staleContext(info: ContextInfo | undefined, now: number): StaleContext | null {
   if (!info || info.compacting) return null;
   const used = info.used;
@@ -36,9 +37,9 @@ export function staleContext(info: ContextInfo | undefined, now: number): StaleC
 }
 
 /**
- * Estado do cache de prompt da conversa, para o indicador da barra de contexto.
- * - `warm`/`expired`: a CLI informou a validade (Claude Code), há contagem regressiva real.
- * - `unknown`: a CLI não informa a validade (Codex, AGY); só o tempo desde a última chamada é real.
+ * State of the conversation's prompt cache, for the context bar indicator.
+ * - `warm`/`expired`: the CLI reported the validity (Claude Code); the countdown is real.
+ * - `unknown`: the CLI doesn't report it (Codex, AGY); only the time since the last call is real.
  */
 export type CacheStatus =
   | { kind: "warm"; remainingMs: number; ttlMs: number; idleMs: number }
@@ -56,18 +57,18 @@ export function cacheStatus(info: ContextInfo | undefined, now: number): CacheSt
   return remainingMs > 0 ? { kind: "warm", remainingMs, ttlMs, idleMs } : { kind: "expired", ttlMs, idleMs };
 }
 
-/** "12 min", "4 h 20 min", "2 dias". */
+/** "12 min", "4 h 20 min", "2 days" (in the interface language). */
 export function formatIdle(ms: number): string {
   const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return "menos de 1 min";
+  if (minutes < 1) return t("time.lessThanMinute");
   if (minutes < 60) return `${minutes} min`;
   const hours = Math.floor(minutes / 60);
-  if (hours >= 48) return `${Math.floor(hours / 24)} dias`;
+  if (hours >= 48) return tn("time.days", Math.floor(hours / 24));
   const rest = minutes % 60;
   return rest ? `${hours} h ${rest} min` : `${hours} h`;
 }
 
-/** Tempo restante arredondado para cima: "42 min", "1 h", "30 s" no último minuto. */
+/** Remaining time rounded up: "42 min", "1 h", "30 s" in the last minute. */
 export function formatRemaining(ms: number): string {
   if (ms < 60_000) return `${Math.max(1, Math.ceil(ms / 1000))} s`;
   const minutes = Math.ceil(ms / 60_000);
@@ -78,9 +79,9 @@ export function formatRemaining(ms: number): string {
 }
 
 /**
- * Troca de modelo numa conversa grande. O cache de prompt é separado por modelo, então a próxima
- * mensagem reprocessa o contexto inteiro mesmo com o cache quente. `model` no contexto é o modelo
- * da última chamada, como escolhido no app; `selected` é o que vai ser enviado agora.
+ * Model switch in a large conversation. The prompt cache is per model, so the next message
+ * processes the whole context again even with a warm cache. `model` in the context is the model of
+ * the last call, as chosen in the app; `selected` is what will be sent now.
  */
 export function modelSwitch(
   info: ContextInfo | undefined,
@@ -92,10 +93,10 @@ export function modelSwitch(
   return info.model === selected ? null : { from: info.model, to: selected, used };
 }
 
-/** A partir disso a resposta é destacada: algo grande entrou no contexto (arquivo, log, saída). */
+/** From this size the reply is highlighted: something big entered the context (file, log, output). */
 export const GROWTH_ALERT = 50_000;
 
-/** Ponto de comparação entre turnos: contexto ao fim de uma resposta e a última compactação vista. */
+/** Comparison point between turns: context at the end of a reply and the last compaction seen. */
 export interface TurnMark {
   used: number;
   compactedAt?: number;
@@ -107,22 +108,22 @@ export function turnMark(info: Partial<ContextInfo> | undefined): TurnMark | nul
   return { used: info.used, ...(finite(at) ? { compactedAt: at } : {}) };
 }
 
-/** Quanto o contexto cresceu numa resposta. Sem referência ou com compactação no meio: null. */
+/** How much the context grew in a reply. Null without a reference or with a compaction in between. */
 export function turnGrowth(before: TurnMark | null | undefined, after: TurnMark | null): number | null {
   if (!before || !after) return null;
   if (after.compactedAt !== undefined && after.compactedAt !== before.compactedAt) return null;
   return after.used - before.used;
 }
 
-/** Abaixo disso compactar antes de o cache expirar não compensa: custa quase o mesmo que reprocessar. */
+/** Below this, compacting before the cache expires doesn't pay off: it costs about as much as reprocessing. */
 export const PRECOMPACT_MIN_TOKENS = 200_000;
-/** Janela antes do fim do cache em que a compactação preventiva roda. */
+/** Window before the cache ends in which the preventive compaction runs. */
 export const PRECOMPACT_WINDOW_MS = 5 * 60_000;
 
 /**
- * Conversa parada com contexto grande e cache (cuja validade a CLI informa) prestes a expirar:
- * compactar agora lê o contexto do cache, que é barato; depois de expirar, a próxima mensagem
- * reprocessaria tudo a preço cheio. Devolve o momento da última chamada (chave de "já feito").
+ * Idle conversation with a large context and a cache (whose validity the CLI reports) about to expire:
+ * compacting now reads the context from the cache, which is cheap; once it expires, the next message
+ * would process everything again at full price. Returns the time of the last call (the "already done" key).
  */
 export function precompactDue(info: ContextInfo | undefined, now: number): number | null {
   if (!info || info.compacting) return null;

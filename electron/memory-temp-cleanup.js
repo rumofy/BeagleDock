@@ -1,10 +1,10 @@
-// Limpeza automática dos projetos temporários do ai-memory.
+// Automatic cleanup of ai-memory's temporary projects.
 //
-// O ai-memory cria um projeto para cada pasta onde um CLI abre. Testes com CLI real em pastas
-// temporárias (/tmp/tmp.XXXX, /tmp/issue58…) viram projetos soltos que ninguém apaga. Aqui só
-// entram projetos em que TODAS as sessões conhecidas vieram de uma pasta temporária: projeto
-// com sessão sem pasta registrada, com pasta fora do temporário, sem sessões ou com mais
-// sessões do que o servidor devolve numa consulta nunca é apagado.
+// ai-memory creates a project for every folder where a CLI opens. Real-CLI tests in temporary
+// folders (/tmp/tmp.XXXX, /tmp/issue58…) become loose projects nobody deletes. Only projects
+// where ALL known sessions came from a temporary folder count here: a project
+// with a session without a recorded folder, with a folder outside temp, without sessions or with more
+// sessions than the server returns in one query is never deleted.
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -13,7 +13,7 @@ const { canPurgeProject } = require("../shared/memory-rules.mjs");
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_DAYS = 7;
 const MAX_DAYS = 365;
-// O endpoint de sessões do ai-memory devolve no máximo 100 por consulta.
+// ai-memory's sessions endpoint returns at most 100 per query.
 const SESSION_PAGE_LIMIT = 100;
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 const FIRST_CHECK_MS = 60 * 1000;
@@ -61,16 +61,16 @@ function lastSeen(project, sessions) {
   return last;
 }
 
-// Decide, sem I/O, se o projeto é temporário e está parado há mais de `days` dias.
+// Decides, without I/O, whether the project is temporary and idle for more than `days` days.
 function classifyProject({ project, sessions, roots, days, now }) {
   if (!canPurgeProject(project.workspace, project.project))
     return { temp: false, reason: "protegido" };
   if (!Array.isArray(sessions) || !sessions.length)
-    return { temp: false, reason: "sem sessões" };
+    return { temp: false, reason: "no sessions" };
   if (sessions.length >= SESSION_PAGE_LIMIT || sessions.length < project.sessionCount)
-    return { temp: false, reason: "sessões incompletas" };
+    return { temp: false, reason: "incomplete sessions" };
   if (!sessions.every((s) => isTempCwd(s.cwd, roots)))
-    return { temp: false, reason: "pasta fora do temporário" };
+    return { temp: false, reason: "folder outside temp" };
   const last = lastSeen(project, sessions);
   if (!last) return { temp: true, stale: false, lastSeen: null };
   return {
@@ -97,7 +97,7 @@ function createTempCleanup({
     const projects = await api.listProjects();
     const found = [];
     for (const project of projects) {
-      // Só vale a pena consultar sessões de quem pode ser apagado.
+      // Only worth querying the sessions of projects that could be deleted.
       if (!canPurgeProject(project.workspace, project.project) || !project.sessionCount) continue;
       if (project.sessionCount >= SESSION_PAGE_LIMIT) continue;
       let sessions;
@@ -127,7 +127,7 @@ function createTempCleanup({
     return { days, lastRun, projects };
   }
 
-  // `all`: apaga todos os temporários agora (botão), ignorando o prazo.
+  // `all`: deletes all temporary projects now (button), ignoring the age.
   function run({ all = false } = {}) {
     if (running) return running;
     running = (async () => {
@@ -143,7 +143,7 @@ function createTempCleanup({
       }
       lastRun = { at: new Date(now()).toISOString(), removed: removed.length, failed: failed.length };
       if (removed.length || failed.length)
-        log(`ai-memory: limpeza de temporários removeu ${removed.length}, falhou ${failed.length}`);
+        log(`ai-memory: temporary cleanup removed ${removed.length}, failed ${failed.length}`);
       return { ok: !failed.length, days, removed, failed };
     })().finally(() => {
       running = null;
@@ -153,7 +153,7 @@ function createTempCleanup({
 
   function start() {
     stop();
-    const tick = () => run().catch((err) => log(`ai-memory: limpeza de temporários: ${err.message}`));
+    const tick = () => run().catch((err) => log(`ai-memory: temporary cleanup: ${err.message}`));
     firstTimer = setTimeout(tick, FIRST_CHECK_MS);
     timer = setInterval(tick, CHECK_EVERY_MS);
     firstTimer.unref?.();

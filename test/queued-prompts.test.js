@@ -30,7 +30,7 @@ function setup({ inject = () => false } = {}) {
 const p = (n, extra = {}) => ({ sessionId: "s1", providerId: "claude", responseMessageId: `r${n}`, prompt: `m${n}` , ...extra });
 const tick = () => new Promise((r) => setImmediate(r));
 
-test("mensagem da fila removida antes de a CLI recebê-la nunca chega à CLI e é apagada do histórico", async () => {
+test("a queued message removed before the CLI receives it never reaches the CLI and is deleted from the history", async () => {
   const t = setup();
   const first = t.service.execute(p(1));
   await tick();
@@ -44,12 +44,12 @@ test("mensagem da fila removida antes de a CLI recebê-la nunca chega à CLI e �
   assert.equal((await first).ok, true);
   assert.equal((await second).discarded, true);
   await tick(); await tick();
-  assert.deepEqual(t.started, ["r1", "r3"], "a mensagem removida foi pulada");
+  assert.deepEqual(t.started, ["r1", "r3"], "the removed message was skipped");
   t.gates.shift()({ ok: true, output: "três" });
   assert.equal((await third).output, "três");
 });
 
-test("não remove da fila uma mensagem que a CLI já recebeu", async () => {
+test("doesn't remove from the queue a message the CLI already received", async () => {
   const t = setup();
   const first = t.service.execute(p(1));
   await tick(); await tick();
@@ -60,7 +60,7 @@ test("não remove da fila uma mensagem que a CLI já recebeu", async () => {
   await first;
 });
 
-test("enviar agora interrompe só a execução atual e a mensagem da fila é a próxima", async () => {
+test("send now interrupts only the current run and the queued message is next", async () => {
   const t = setup();
   const first = t.service.execute(p(1));
   await tick();
@@ -72,12 +72,12 @@ test("enviar agora interrompe só a execução atual e a mensagem da fila é a p
   const stopped = await first;
   assert.equal(stopped.cancelled, true);
   await tick(); await tick();
-  assert.deepEqual(t.started, ["r1", "r2"], "a segunda não foi cancelada junto");
+  assert.deepEqual(t.started, ["r1", "r2"], "the second one wasn't cancelled along");
   t.gates.shift()({ ok: true, output: "dois" });
   assert.equal((await second).output, "dois");
 });
 
-test("durante uma execução do Claude, a mensagem é entregue ao turno atual em vez de esperar o fim", async () => {
+test("during a Claude run, the message is delivered to the current turn instead of waiting for the end", async () => {
   const injected = [];
   const t = setup({ inject: (payload) => (injected.push(payload.prompt), true) });
   const first = t.service.execute(p(1));
@@ -90,16 +90,16 @@ test("durante uma execução do Claude, a mensagem é entregue ao turno atual em
   await first;
 });
 
-test("com mensagem já esperando na fila, a seguinte não fura a ordem entrando no turno atual", async () => {
+test("with a message already waiting in the queue, the next one doesn't jump the order into the current turn", async () => {
   let allow = false;
   const injected = [];
   const t = setup({ inject: (payload) => allow && (injected.push(payload.prompt), true) });
   const first = t.service.execute(p(1));
   await tick();
-  const second = t.service.execute(p(2)); // CLI não aceitou: espera na fila
+  const second = t.service.execute(p(2)); // the CLI didn't accept it: waits in the queue
   await tick();
   allow = true;
-  const third = t.service.execute(p(3)); // há uma na frente: também espera
+  const third = t.service.execute(p(3)); // there's one ahead: also waits
   await tick();
   assert.deepEqual(injected, []);
   t.gates.shift()({ ok: true, output: "um" });
@@ -113,7 +113,7 @@ test("com mensagem já esperando na fila, a seguinte não fura a ordem entrando 
   assert.deepEqual(t.started, ["r1", "r2", "r3"]);
 });
 
-test("enviar agora só vale para a próxima da fila; mensagem já concluída não pode ser removida nem forçada", async () => {
+test("send now only applies to the next in the queue; an already finished message can't be removed or forced", async () => {
   const t = setup();
   const first = t.service.execute(p(1));
   await tick();
@@ -122,7 +122,7 @@ test("enviar agora só vale para a próxima da fila; mensagem já concluída nã
   const third = t.service.execute(p(3));
   await tick();
   const forceThird = await t.service.forceQueued({ sessionId: "s1", responseMessageId: "r3", userMessageId: "u3" });
-  assert.equal(forceThird.ok, false, "r2 está na frente de r3");
+  assert.equal(forceThird.ok, false, "r2 is ahead of r3");
   assert.deepEqual(t.kills, []);
   t.gates.shift()({ ok: true, output: "um" });
   await first;
@@ -134,13 +134,13 @@ test("enviar agora só vale para a próxima da fila; mensagem já concluída nã
   const staleForce = await t.service.forceQueued({ sessionId: "s1", responseMessageId: "r2", userMessageId: "u2" });
   assert.equal(staleRemove.ok, false);
   assert.equal(staleForce.ok, false);
-  assert.deepEqual(t.deleted, [], "o histórico de r2 não foi apagado");
-  assert.deepEqual(t.kills, [], "o turno de r3 não foi derrubado");
+  assert.deepEqual(t.deleted, [], "r2's history wasn't deleted");
+  assert.deepEqual(t.kills, [], "r3's turn wasn't brought down");
   t.gates.shift()({ ok: true, output: "três" });
   await third;
 });
 
-test("mensagem removida da fila não é recriada por um salvamento que chega depois", async () => {
+test("a message removed from the queue isn't recreated by a save that arrives later", async () => {
   const t = setup();
   const first = t.service.execute(p(1));
   await tick();
@@ -154,7 +154,7 @@ test("mensagem removida da fila não é recriada por um salvamento que chega dep
   await second;
 });
 
-test("mensagem em decisão de injeção não pode ser removida", async () => {
+test("a message in an injection decision can't be removed", async () => {
   let release;
   const t = setup({ inject: () => new Promise((r) => (release = r)) });
   const first = t.service.execute(p(1));
@@ -169,7 +169,7 @@ test("mensagem em decisão de injeção não pode ser removida", async () => {
   await first;
 });
 
-test("mensagem entregue no meio do turno: a resposta a ela é gravada depois dela e a ordem do histórico acompanha a tela", async () => {
+test("a message delivered mid-turn: the reply to it is saved after it and the history's order follows the screen", async () => {
   const at = Date.UTC(2026, 10, 1, 12, 0, 20, 123);
   const t = setup({ inject: () => ({ from: "r1", at }) });
   const first = t.service.execute(p(1));
@@ -177,18 +177,18 @@ test("mensagem entregue no meio do turno: a resposta a ela é gravada depois del
   const second = await t.service.execute(p(2, { userMessageId: "u2" }));
   assert.equal(second.injected, true);
   assert.equal(second.rotatedFrom, "r1");
-  assert.deepEqual(t.times, [["s1", "u2", "2026-11-01 12:00:20.123"]], "a mensagem do usuário passa a valer desde a entrega");
+  assert.deepEqual(t.times, [["s1", "u2", "2026-11-01 12:00:20.123"]], "the user's message counts from the delivery");
   t.gates.shift()({ ok: true, output: "antes", followUps: [{ responseMessageId: "r2", at, text: "depois" }] });
   const result = await first;
   assert.deepEqual(result.followUps, [{ responseMessageId: "r2", text: "depois" }]);
   const byId = Object.fromEntries(t.saved.map((m) => [m.id, m]));
   assert.equal(byId.r1.text, "antes");
-  assert.equal(byId.r1.createdAt, "2026-11-01 12:00:20.122", "a primeira resposta fica logo antes da mensagem");
+  assert.equal(byId.r1.createdAt, "2026-11-01 12:00:20.122", "the first reply sits right before the message");
   assert.equal(byId.r2.text, "depois");
-  assert.ok(byId.r2.createdAt > byId.r1.createdAt, "a última resposta termina depois da mensagem entregue");
+  assert.ok(byId.r2.createdAt > byId.r1.createdAt, "the last reply ends after the delivered message");
 });
 
-test("resposta à mensagem entregue sem texto não é gravada e vai vazia para a tela", async () => {
+test("a reply to the delivered message without text isn't saved and goes empty to the screen", async () => {
   const at = Date.now();
   const t = setup({ inject: () => ({ from: "r1", at }) });
   const first = t.service.execute(p(1));
@@ -200,7 +200,7 @@ test("resposta à mensagem entregue sem texto não é gravada e vai vazia para a
   assert.deepEqual(t.saved.map((m) => m.id), ["r1"]);
 });
 
-test("resposta à mensagem entregue só com etapas é gravada com elas", async () => {
+test("a reply to the delivered message with only steps is saved with them", async () => {
   const at = Date.now();
   const t = setup({ inject: () => ({ from: "r1", at }) });
   const first = t.service.execute(p(1));
@@ -214,10 +214,10 @@ test("resposta à mensagem entregue só com etapas é gravada com elas", async (
   assert.deepEqual(r2?.events, events);
 });
 
-test("responder agora vai ao runner só com resposta em andamento e só no Claude e no Codex", async () => {
+test("answer now goes to the runner only with a reply in progress and only in Claude and Codex", async () => {
   const calls = [];
   const t = setup({ inject: async () => ({ at: Date.now() }) });
-  // O runner do setup não tem answerNow: sem ele, recusa.
+  // The setup's runner has no answerNow: without it, it refuses.
   const first = t.service.execute(p(1));
   await tick(); await tick();
   const req = { sessionId: "s1", responseMessageId: "r2", userMessageId: "u2", providerId: "claude", mode: "background" };
@@ -235,10 +235,10 @@ test("responder agora vai ao runner só com resposta em andamento e só no Claud
     store: { sessionExists: async () => true, saveChatMessage: async () => {}, setMessageTime: async () => {} },
     runner,
   });
-  assert.equal((await service.answerNow(req)).ok, false, "sem resposta em andamento");
+  assert.equal((await service.answerNow(req)).ok, false, "no reply in progress");
   void service.execute(p(1));
   await tick(); await tick();
-  assert.equal((await service.answerNow({ ...req, providerId: "antigravity" })).ok, false, "AGY usa a fila");
+  assert.equal((await service.answerNow({ ...req, providerId: "antigravity" })).ok, false, "AGY uses the queue");
   assert.equal((await service.answerNow({ ...req, sessionId: "../x" })).ok, false);
   assert.deepEqual(await service.answerNow({ ...req, mode: "qualquer" }), { ok: true, mode: "background" });
   assert.deepEqual(await service.answerNow({ ...req, providerId: "codex", mode: "interrupt" }), { ok: true, mode: "interrupt" });

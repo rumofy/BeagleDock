@@ -1,10 +1,11 @@
 const fs = require("fs");
 const path = require("path");
 const { findBinary, spawnCli } = require("./platform");
+const { t } = require("./i18n");
 
 const EDITORS = ["code", "code-insiders", "codium"];
 
-// O alvo vem de texto da IA: só abre o que existe e está dentro do projeto da conversa.
+// The target comes from AI text: only open what exists and is inside the conversation's project.
 function resolveInsideProject(cwd, target) {
   const root = fs.realpathSync(cwd);
   const wanted = path.resolve(root, String(target || "."));
@@ -12,11 +13,11 @@ function resolveInsideProject(cwd, target) {
   try {
     real = fs.realpathSync(wanted);
   } catch {
-    throw new Error("Arquivo não encontrado no projeto.");
+    throw new Error(t("errors.fileNotFound"));
   }
   const relative = path.relative(root, real);
   if (relative.startsWith("..") || path.isAbsolute(relative))
-    throw new Error("O arquivo está fora do projeto desta conversa.");
+    throw new Error(t("errors.fileOutsideProject"));
   return { root, real, isDirectory: fs.statSync(real).isDirectory() };
 }
 
@@ -41,7 +42,7 @@ async function openInEditor(
   const editor = EDITORS.find((name) => find(name));
   if (!editor)
     throw new Error(
-      "VS Code não encontrado. Instale-o e deixe o comando `code` no PATH.",
+      t("errors.vsCodeMissing"),
     );
   const args = buildArgs(resolved, line, column);
   await new Promise((resolve, reject) => {

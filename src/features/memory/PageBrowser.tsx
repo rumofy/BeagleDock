@@ -11,6 +11,7 @@ import { GROUP_CAP } from "./useMemoryExplorer";
 import type { HealthKey } from "./useMemoryExplorer";
 import { PaneMessage } from "./PaneMessage";
 
+import { t, tn } from "../../i18n";
 export function PageBrowser() {
   const {
     sel,
@@ -64,7 +65,7 @@ export function PageBrowser() {
           ? "bg-emerald-50 border-emerald-200 text-emerald-700"
           : "bg-amber-50 border-amber-300 text-amber-800"
       } ${healthFilter === key && key ? "ring-2 ring-amber-400" : ""} ${key && count ? "hover:bg-amber-100 cursor-pointer" : "cursor-default"}`}
-      title={key && count ? "Filtrar páginas" : undefined}
+      title={key && count ? t("pages.filterHint") : undefined}
     >
       {label} {count}
     </button>
@@ -72,11 +73,11 @@ export function PageBrowser() {
 
   return (
       <section
-        aria-label="Páginas do projeto"
+        aria-label={t("pages.label")}
         className="w-64 xl:w-80 shrink-0 border-r border-[#dfdacd] flex flex-col min-h-0"
       >
         {!sel ? (
-          <PaneMessage>Selecione um projeto.</PaneMessage>
+          <PaneMessage>{t("pages.selectProject")}</PaneMessage>
         ) : (
           <>
             <div className="p-2.5 border-b border-[#eeeae0] space-y-2">
@@ -84,16 +85,16 @@ export function PageBrowser() {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-bold truncate">{sel.p}</div>
                   <div className="text-[10px] text-[#8c8270] truncate">
-                    {sel.ws} · {pages.length} páginas
-                    {selected ? ` · ${selected.sessionCount} sessões` : ""}
+                    {sel.ws} · {tn("pages.count", pages.length)}
+                    {selected ? ` · ${tn("pages.sessions", selected.sessionCount)}` : ""}
                   </div>
                 </div>
                 <button
                   onClick={() => setMaintOpen(true)}
-                  title="Manutenção assistida"
+                  title={t("maintenance.title")}
                   className="px-2 py-1 rounded-lg text-[11px] font-bold bg-[#1c1b18] text-white hover:bg-[#32302b] flex items-center gap-1"
                 >
-                  <Wand2 size={12} /> Manutenção
+                  <Wand2 size={12} /> {t("pages.maintenance")}
                 </button>
                 <button
                   onClick={() => {
@@ -104,8 +105,8 @@ export function PageBrowser() {
                   disabled={!canPurgeProject(sel.ws, sel.p)}
                   title={
                     canPurgeProject(sel.ws, sel.p)
-                      ? "Excluir projeto"
-                      : "Projeto protegido"
+                      ? t("purge.title")
+                      : t("pages.protectedProject")
                   }
                   className="p-1.5 rounded-lg text-rose-700 hover:bg-rose-50 disabled:opacity-30 disabled:cursor-not-allowed"
                 >
@@ -114,10 +115,10 @@ export function PageBrowser() {
               </div>
               {overview && (
                 <div className="flex flex-wrap gap-1">
-                  {badge("órfãs", overview.health.orphans, "orphans")}
-                  {badge("duplicadas", overview.health.duplicates, "duplicates")}
-                  {badge("obsoletas", overview.health.stale, "stale")}
-                  {badge("contradições", overview.health.contradictions, null)}
+                  {badge(t("pages.orphans"), overview.health.orphans, "orphans")}
+                  {badge(t("pages.duplicates"), overview.health.duplicates, "duplicates")}
+                  {badge(t("pages.stale"), overview.health.stale, "stale")}
+                  {badge(t("pages.contradictions"), overview.health.contradictions, null)}
                 </div>
               )}
               {healthFilter && (
@@ -125,7 +126,7 @@ export function PageBrowser() {
                   onClick={() => setHealthFilter(null)}
                   className="text-[10px] underline text-amber-800"
                 >
-                  Limpar filtro de saúde
+                  {t("pages.clearHealthFilter")}
                 </button>
               )}
               <div className="relative">
@@ -136,7 +137,7 @@ export function PageBrowser() {
                 <input
                   value={filter}
                   onChange={(e) => setFilter(e.target.value)}
-                  placeholder="Filtrar por título ou caminho"
+                  placeholder={t("pages.filterPlaceholder")}
                   className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-[#d6cfbe] bg-[#fcfbfa] text-xs outline-none focus:border-[#968d7a]"
                 />
               </div>
@@ -145,14 +146,14 @@ export function PageBrowser() {
                   <input
                     value={serverQuery}
                     onChange={(e) => setServerQuery(e.target.value)}
-                    placeholder="Buscar no servidor"
+                    placeholder={t("pages.serverSearch")}
                     className="flex-1 min-w-0 px-2 py-1.5 rounded-lg border border-[#d6cfbe] bg-[#fcfbfa] text-xs outline-none focus:border-[#968d7a]"
                   />
                   <button
                     type="submit"
                     className="px-2 rounded-lg bg-[#ede9de] hover:bg-[#e2dcce] text-xs font-bold"
                   >
-                    Buscar
+                    {t("pages.search")}
                   </button>
                 </div>
                 <label className="flex items-center gap-1.5 text-[10px] text-[#6d6657]">
@@ -161,18 +162,18 @@ export function PageBrowser() {
                     checked={serverAll}
                     onChange={(e) => setServerAll(e.target.checked)}
                   />
-                  todos os projetos
+                  {t("pages.allProjects")}
                 </label>
               </form>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto">
-              {serverLoading && <PaneMessage>Buscando…</PaneMessage>}
+              {serverLoading && <PaneMessage>{t("pages.searching")}</PaneMessage>}
               {serverError && <PaneMessage tone="error">{serverError}</PaneMessage>}
               {serverResults && (
                 <div>
                   <div className="px-2.5 py-1.5 flex items-center justify-between text-[11px] font-bold bg-[#f4f1e8]">
-                    <span>Resultados da busca ({serverResults.length})</span>
+                    <span>{t("pages.results", { count: serverResults.length })}</span>
                     <button
                       className="underline font-normal"
                       onClick={() => setServerResults(null)}
@@ -181,7 +182,7 @@ export function PageBrowser() {
                     </button>
                   </div>
                   {!serverResults.length && (
-                    <PaneMessage>Nenhum resultado.</PaneMessage>
+                    <PaneMessage>{t("pages.noResults")}</PaneMessage>
                   )}
                   {serverResults.map((r, i) => (
                     <button
@@ -212,7 +213,7 @@ export function PageBrowser() {
               )}
               {!serverResults && (
                 <>
-                  {pagesLoading && <PaneMessage>Carregando páginas…</PaneMessage>}
+                  {pagesLoading && <PaneMessage>{t("pages.loading")}</PaneMessage>}
                   {pagesError && (
                     <PaneMessage tone="error">
                       {pagesError}
@@ -220,15 +221,15 @@ export function PageBrowser() {
                         className="block mt-2 underline"
                         onClick={() => sel && void loadProject(sel)}
                       >
-                        Tentar novamente
+                        {t("common.retry")}
                       </button>
                     </PaneMessage>
                   )}
                   {!pagesLoading && !pagesError && !filteredPages.length && (
                     <PaneMessage>
                       {pages.length
-                        ? "Nenhuma página corresponde ao filtro."
-                        : "Este projeto ainda não tem páginas."}
+                        ? t("pages.noMatch")
+                        : t("pages.empty")}
                     </PaneMessage>
                   )}
                   {groups.map((g) => {

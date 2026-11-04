@@ -3,6 +3,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t, tn } from "../../i18n";
 export function TerminalHeader() {
   const {
     setActiveTab,
@@ -19,13 +20,13 @@ export function TerminalHeader() {
                 <div>
                   <div className="text-sm font-bold text-[#1c1b18]">
                     {open
-                      ? `Terminais das CLIs (${open} ${open === 1 ? "aberto" : "abertos"})`
-                      : `Shell PTY Interativo (${currentSession?.cwd})`}
+                      ? tn("terminalHeader.open", open)
+                      : t("terminalHeader.pty", { cwd: currentSession?.cwd })}
                   </div>
                   <div className="text-[11px] text-[#7e7565]">
                     {open
-                      ? "Cada CLI com a própria interface, lado a lado"
-                      : "Terminal do sistema operacional"}
+                      ? t("terminalHeader.openHint")
+                      : t("terminalHeader.ptyHint")}
                   </div>
                 </div>
               </div>
@@ -34,7 +35,7 @@ export function TerminalHeader() {
                 onClick={() => setActiveTab("chat")}
                 className="px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] text-[#36322b] transition"
               >
-                Voltar ao Chat
+                {t("settingsHeader.back")}
               </button>
             </div>
   );

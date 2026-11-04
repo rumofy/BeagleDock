@@ -1,4 +1,4 @@
-/** Padrão e opções da compactação automática do contexto (0 = desligada). */
+/** Default and choices for automatic context compaction (0 = off). */
 export const DEFAULT_AUTO_COMPACT_TOKENS = 200_000;
 export const AUTO_COMPACT_CHOICES = [100_000, 150_000, 200_000, 300_000, 400_000, 600_000, 1_000_000];
 const AUTO_COMPACT_FRACTION = 0.4;
@@ -7,9 +7,9 @@ const chosen = (value: number | undefined | null): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
 /**
- * Sem valor escolhido o limite acompanha a janela do modelo (40% dela, de 100 mil a 1 milhão);
- * janela de até 200 mil ou desconhecida mantém o padrão. Um valor escolhido vale como está
- * (limitado ao intervalo aceito pelas CLIs) e 0 desliga. Espelha `electron/auto-compact.js`.
+ * Without a chosen value the limit follows the model's window (40% of it, from 100k to 1M); a
+ * window up to 200k, or an unknown one, keeps the default. A chosen value is used as is (clamped
+ * to the range the CLIs accept) and 0 turns it off. Mirrors `electron/auto-compact.js`.
  */
 export function resolveAutoCompact(
   value: number | undefined | null,
@@ -25,5 +25,5 @@ export function resolveAutoCompact(
   return Math.min(1_000_000, Math.max(100_000, derived));
 }
 
-/** O usuário escolheu um valor (inclusive 0)? Senão vale o automático. */
+/** Did the user choose a value (including 0)? Otherwise the automatic one applies. */
 export const isAutoCompactChosen = chosen;

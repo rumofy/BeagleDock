@@ -1,4 +1,6 @@
-// Pedido enviado à CLI pelo atalho /handoff. Não começa com "/" para que o Claude Code
-// não o trate como comando; a skill de handoff do ai-memory faz o trabalho de fato.
-export const HANDOFF_PROMPT =
-  "Use a skill de handoff do ai-memory (ai-memory-handoff) para salvar agora um handoff desta sessão com memory_handoff_begin: resumo do que foi feito, arquivos alterados, próximos passos e perguntas em aberto. Confirme o id do handoff criado ao final.";
+import { t } from "../i18n";
+
+// Request sent to the CLI by the /handoff shortcut. It doesn't start with "/" so Claude Code doesn't
+// treat it as a command; the ai-memory handoff skill does the actual work. Written in the interface
+// language, so the AI answers in it.
+export const handoffPrompt = () => t("prompt.handoff");

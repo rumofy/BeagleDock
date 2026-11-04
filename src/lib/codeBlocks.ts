@@ -5,8 +5,8 @@ export type MessagePart =
 const FENCE = /^\s{0,3}```\s*([\w+#.-]*)[^\n]*$/;
 
 /**
- * Separa o texto da resposta em trechos comuns e blocos de código cercados por ```.
- * Um bloco ainda aberto (streaming) aparece como código com `closed: false`.
+ * Splits the reply text into plain parts and ``` fenced code blocks.
+ * A block still open (streaming) comes out as code with `closed: false`.
  */
 export function splitMessage(text: string): MessagePart[] {
   if (!text.includes("```")) return [{ type: "text", value: text }];

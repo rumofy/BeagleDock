@@ -1,7 +1,8 @@
 const { redact } = require("./redact");
+const { t } = require("./i18n");
 
-// Rótulos de atividade exibidos ao vivo no chat. Só descrevem o que a CLI realmente emitiu;
-// tipos desconhecidos retornam null em vez de inventar um estado.
+// Activity labels shown live in the chat. They only describe what the CLI actually emitted;
+// unknown types return null instead of making up a state.
 const oneLine = (value, max = 140) => {
   const text = redact(String(value ?? ""))
     .replace(/\s+/g, " ")
@@ -18,24 +19,35 @@ const argsSummary = (args) => {
   }
 };
 
-// Comandos que guardam a saída até o fim: o shell só mostra algo quando terminam.
+// Commands that hold their output until the end: the shell only shows something when they finish.
 const BUFFERING = /\|\s*(tail|head|sort|wc|tac|uniq)\b/;
 function bufferingNote(command) {
   const match = String(command ?? "").match(BUFFERING);
   return match
-    ? `a saída só aparece quando o comando termina (| ${match[1]} guarda tudo até o fim)`
+    ? t("activity.bufferingNote", { tool: match[1] })
     : null;
 }
+
+const AGENT_TOOLS = {
+  wait: "activity.agentWait",
+  sendMessage: "activity.agentMessage",
+  sendInput: "activity.agentInput",
+  followupTask: "activity.agentTask",
+  closeAgent: "activity.agentClose",
+  listAgents: "activity.agentList",
+  interruptAgent: "activity.agentInterrupt",
+  resumeAgent: "activity.agentResume",
+};
 
 function codexItemActivity(item) {
   switch (item?.type) {
     case "reasoning":
-      return { kind: "reasoning", title: "Raciocínio", activity: "Raciocinando…" };
+      return { kind: "reasoning", title: t("activity.reasoning"), activity: t("activity.reasoningNow") };
     case "commandExecution":
       return {
         kind: "command",
-        title: "Comando",
-        activity: "Executando comando…",
+        title: t("activity.command"),
+        activity: t("activity.commandNow"),
         detail: oneLine(item.command),
         note: bufferingNote(item.command),
       };
@@ -56,8 +68,8 @@ function codexItemActivity(item) {
     case "fileChange":
       return {
         kind: "file",
-        title: "Edição de arquivos",
-        activity: "Editando arquivos…",
+        title: t("activity.fileEdit"),
+        activity: t("activity.fileEditNow"),
         detail: oneLine(
           (Array.isArray(item.changes) ? item.changes : [])
             .map((c) => c?.path)
@@ -69,30 +81,30 @@ function codexItemActivity(item) {
     case "webSearch":
       return {
         kind: "web",
-        title: "Pesquisa na web",
-        activity: "Pesquisando na web…",
+        title: t("activity.webSearch"),
+        activity: t("activity.webSearchNow"),
         detail: oneLine(item.query),
       };
     case "plan":
-      return { kind: "plan", title: "Plano", activity: "Atualizando o plano…" };
+      return { kind: "plan", title: t("activity.plan"), activity: t("activity.planNow") };
     case "collabAgentToolCall":
       if (!["spawnAgent", "spawn_agent"].includes(item.tool))
         return {
           kind: "tool",
-          title: ({ wait: "Aguardando agente", sendMessage: "Mensagem ao agente", sendInput: "Instrução ao agente", followupTask: "Nova tarefa do agente", closeAgent: "Encerrando agente", listAgents: "Consultando agentes", interruptAgent: "Interrompendo agente", resumeAgent: "Retomando agente" })[item.tool] || `Agente: ${item.tool || "operação"}`,
-          activity: "Coordenando agentes…",
+          title: (AGENT_TOOLS[item.tool] ? t(AGENT_TOOLS[item.tool]) : null) || t("activity.agentOp", { op: item.tool || t("activity.operation") }),
+          activity: t("activity.coordinating"),
           detail: oneLine(item.prompt),
         };
       return {
         kind: "agent",
-        title: `Agente ${item.tool || ""}`.trim(),
-        activity: `Agente ${item.tool || ""}`.trim(),
+        title: t("activity.agent", { name: item.tool || "" }).trim(),
+        activity: t("activity.agent", { name: item.tool || "" }).trim(),
         detail: oneLine(item.prompt),
       };
     case "subAgentActivity":
-      return { kind: "agent", title: "Subagente", activity: "Subagente em atividade" };
+      return { kind: "agent", title: t("activity.subagent"), activity: t("activity.subagentNow") };
     case "contextCompaction":
-      return { kind: "compaction", title: "Compactação de contexto", activity: "Compactando o contexto…" };
+      return { kind: "compaction", title: t("activity.compaction"), activity: t("activity.compactionNow") };
     default:
       return null;
   }
@@ -101,6 +113,18 @@ function codexItemActivity(item) {
 function claudeToolActivity(block) {
   const input = block?.input || {};
   const name = block?.name || "";
+  // The plan Claude Code proposes when leaving plan mode: shown in full in the conversation (and
+  // kept in the history), not just as a step name.
+  if (name === "ExitPlanMode" && typeof input.plan === "string" && input.plan.trim())
+    return {
+      kind: "plan",
+      title: t("activity.proposedPlan"),
+      activity: t("activity.proposedPlanNow"),
+      detail: "",
+      text: input.plan,
+      proposal: true,
+      note: null,
+    };
   return {
     kind: /^(bash|shell)$/i.test(name)
       ? "command"
@@ -114,9 +138,9 @@ function claudeToolActivity(block) {
               ? "mcp"
               : "tool",
     title: /^(task|agent)$/i.test(name)
-      ? `Agente ${input.subagent_type || ""}`.trim()
+      ? t("activity.agent", { name: input.subagent_type || "" }).trim()
       : name,
-    activity: `Ferramenta ${block?.name || ""}`.trim(),
+    activity: t("activity.tool", { name: block?.name || "" }).trim(),
     note: /^(bash|shell)$/i.test(name) ? bufferingNote(input.command) : null,
     detail: oneLine(
       input.command ||
@@ -131,7 +155,7 @@ function claudeToolActivity(block) {
   };
 }
 
-// Janela de repasse do raciocínio: o texto cresce a cada token; o rótulo só precisa do final.
+// Reasoning relay window: the text grows with every token; the label only needs the end.
 function reasoningTail(text, max = 160) {
   const clean = redact(String(text || "")).replace(/\s+/g, " ").trim();
   return clean.length > max ? "…" + clean.slice(-max + 1) : clean;

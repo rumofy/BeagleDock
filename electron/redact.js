@@ -1,23 +1,23 @@
-// Mascara segredos comuns antes de exibir ou gravar a linha do tempo (comandos, argumentos de
-// ferramentas e raciocínio podem conter tokens). Heurístico: reduz o risco, não o elimina.
+// Masks common secrets before showing or saving the timeline (commands, tool arguments
+// and reasoning may contain tokens). Heuristic: it reduces the risk, it doesn't remove it.
 const MASK = "***";
 
 const PATTERNS = [
-  // Chaves privadas PEM (inclusive um bloco ainda incompleto, durante o streaming)
+  // PEM private keys (including a still incomplete block, during streaming)
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g, MASK],
-  // Authorization: <esquema> <valor> — mascara o valor, não só o esquema
+  // Authorization: <scheme> <value> — masks the value, not just the scheme
   [/(\bauthorization["']?\s*[:=]\s*["']?(?:bearer|basic|token|digest)\s+)[^\s"',;&)]+/gi, `$1${MASK}`],
-  // Flags de linha de comando com o valor separado por espaço: --password segredo
+  // Command-line flags with the value separated by a space: --password secret
   [/(--?(?:password|passwd|pwd|token|secret|api[-_]?key|access[-_]?key|auth)\s+)(?!-)[^\s"']+/gi, `$1${MASK}`],
-  // Cabeçalhos e credenciais em URLs
+  // Headers and credentials in URLs
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{6,}/gi, `$1 ${MASK}`],
   [/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, `$1${MASK}@`],
-  // chave: valor / chave=valor, inclusive JSON ("api_key": "...") e variáveis de ambiente
+  // key: value / key=value, including JSON ("api_key": "...") and environment variables
   [
     /(["']?\b[\w.-]*(?:api[-_]?key|apikey|access[-_]?key|secret|token|passw(?:or)?d|pwd|authorization|credential)[\w.-]*["']?\s*[:=]\s*)("[^"]*"|'[^']*'|[^\s"',;&)]+)/gi,
     `$1${MASK}`,
   ],
-  // Formatos conhecidos de chaves
+  // Known key formats
   [/\bsk-[A-Za-z0-9_-]{16,}/g, MASK],
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, MASK],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, MASK],

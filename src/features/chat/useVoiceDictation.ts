@@ -8,12 +8,13 @@ import {
   toBase64,
 } from "../../lib/wav";
 
+import { t } from "../../i18n";
 export type DictationState = "idle" | "recording" | "transcribing";
 
-/** Gravação mais longa aceita (cabe no limite de 25 MB da API em WAV 16 kHz). */
+/** Longest accepted recording (fits the API's 25 MB limit as 16 kHz WAV). */
 const MAX_SECONDS = 10 * 60;
 
-/** O ditado depende do backend do aplicativo desktop (a bridge do navegador não o expõe). */
+/** Dictation depends on the desktop app's backend (the browser bridge doesn't expose it). */
 export const dictationAvailable = (): boolean =>
   typeof window.beagleAPI?.transcribeAudio === "function" &&
   typeof navigator.mediaDevices?.getUserMedia === "function" &&
@@ -22,21 +23,21 @@ export const dictationAvailable = (): boolean =>
 function microphoneError(error: unknown): string {
   const name = (error as DOMException)?.name;
   if (name === "NotAllowedError" || name === "SecurityError")
-    return "Acesso ao microfone negado. Libere o microfone para o BeagleDock nas configurações do sistema.";
+    return t("dictation.micDenied");
   if (name === "NotFoundError" || name === "OverconstrainedError")
-    return "Nenhum microfone encontrado.";
-  if (name === "NotReadableError") return "O microfone está em uso por outro programa.";
-  return `Não foi possível usar o microfone: ${(error as Error)?.message || error}`;
+    return t("dictation.noMic");
+  if (name === "NotReadableError") return t("dictation.micBusy");
+  return t("dictation.micFailed", { error: (error as Error)?.message || String(error) });
 }
 
-/** Converte a gravação (webm/opus) em WAV mono 16 kHz com volume normalizado. */
+/** Converts the recording (webm/opus) into 16 kHz mono WAV with normalized volume. */
 async function toWav(blob: Blob): Promise<Uint8Array | null> {
   const decoder = new AudioContext();
   try {
     const decoded = await decoder.decodeAudioData(await blob.arrayBuffer());
     const frames = Math.ceil(decoded.duration * DICTATION_SAMPLE_RATE);
     if (frames <= 0) return null;
-    // O destino mono faz a mistura dos canais; o OfflineAudioContext faz a reamostragem.
+    // The mono destination mixes the channels; the OfflineAudioContext resamples.
     const offline = new OfflineAudioContext(1, frames, DICTATION_SAMPLE_RATE);
     const source = offline.createBufferSource();
     source.buffer = decoded;
@@ -51,8 +52,8 @@ async function toWav(blob: Blob): Promise<Uint8Array | null> {
 }
 
 /**
- * Ditado por voz no composer: grava o microfone, transcreve no processo principal e
- * entrega o texto em `onText`. `context` são termos da sessão que ajudam a acertar a grafia.
+ * Voice dictation in the composer: records the microphone, transcribes in the main process and
+ * delivers the text to `onText`. `context` holds session terms that help with spelling.
  */
 export function useVoiceDictation({
   onText,
@@ -62,7 +63,7 @@ export function useVoiceDictation({
 }: {
   onText: (text: string) => void;
   onError: (message: string) => void;
-  /** O modelo local ainda não foi baixado: a interface oferece o download. */
+  /** The local model hasn't been downloaded yet: the interface offers the download. */
   onModelMissing?: () => void;
   context: () => string[];
 }) {
@@ -95,7 +96,7 @@ export function useVoiceDictation({
     try {
       const wav = await toWav(blob);
       if (!wav) {
-        callbacks.current.onError("Não ouvi nada na gravação. Verifique o microfone e tente de novo.");
+        callbacks.current.onError(t("dictation.silence"));
         return;
       }
       const result = await beagleApi.transcribeAudio({
@@ -106,9 +107,9 @@ export function useVoiceDictation({
         callbacks.current.onModelMissing();
         return;
       }
-      if (!result?.success) throw new Error(result?.error || "Falha ao transcrever o áudio.");
+      if (!result?.success) throw new Error(result?.error || t("dictation.transcribeFailed"));
       if (result.text) callbacks.current.onText(result.text);
-      else callbacks.current.onError("A transcrição voltou vazia.");
+      else callbacks.current.onError(t("dictation.empty"));
     } catch (error) {
       callbacks.current.onError((error as Error).message);
     } finally {
@@ -173,7 +174,7 @@ export function useVoiceDictation({
       setSeconds(elapsed);
       if (elapsed >= MAX_SECONDS) stop();
     }, 250);
-    // Medidor de nível: mostra que o microfone está captando.
+    // Level meter: shows the microphone is picking up sound.
     try {
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
@@ -189,11 +190,11 @@ export function useVoiceDictation({
       };
       meter.current = { ctx, frame: requestAnimationFrame(tick) };
     } catch {
-      /* medidor é opcional */
+      /* the meter is optional */
     }
   }, [release, state, stop, transcribe]);
 
-  // Sair da tela no meio da gravação descarta o áudio e libera o microfone.
+  // Leaving the screen mid-recording discards the audio and releases the microphone.
   useEffect(
     () => () => {
       discard.current = true;

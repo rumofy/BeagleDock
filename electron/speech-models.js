@@ -1,11 +1,12 @@
-// Modelos de voz para o ditado local: catálogo, download verificado (SHA-256) e status.
+// Voice models for local dictation: catalog, verified download (SHA-256) and status.
 const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { Readable } = require("stream");
+const { t } = require("./i18n");
 
-// Parakeet TDT 0.6B v3 (NVIDIA, CC-BY-4.0) convertido para o whisper.cpp: fala português, pontua
-// sozinho e roda em ~1 s para alguns segundos de fala numa CPU comum (o Whisper levava 30 s+).
+// Parakeet TDT 0.6B v3 (NVIDIA, CC-BY-4.0) converted for whisper.cpp: it speaks Portuguese, punctuates
+// on its own and runs in ~1 s for a few seconds of speech on a regular CPU (Whisper took 30 s+).
 const MODELS = Object.freeze([
   {
     id: "parakeet-tdt-0.6b-v3-q8_0",
@@ -23,7 +24,7 @@ function findCatalogModel(id, catalog = MODELS) {
 }
 
 /**
- * Gerencia os arquivos de modelo em `dir`. Só um download por vez; o progresso vai para
+ * Manages the model files in `dir`. Only one download at a time; progress goes to
  * `onProgress({ id, received, total, done, error })`.
  */
 function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = () => {}, catalog = MODELS }) {
@@ -57,7 +58,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
     if (installed(model.id)) return { ok: true, path: modelPath(model.id) };
     if (active) {
       if (active.id === model.id) return active.promise;
-      throw new Error("Já há um modelo de voz sendo baixado.");
+      throw new Error(t("dictation.alreadyDownloading"));
     }
     const controller = new AbortController();
     const target = modelPath(model.id);
@@ -71,7 +72,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
         redirect: "follow",
       });
       if (!response.ok || !response.body)
-        throw new Error(`Download do modelo de voz falhou (HTTP ${response.status}).`);
+        throw new Error(t("dictation.downloadHttpFailed", { status: response.status }));
       const hash = crypto.createHash("sha256");
       const out = fsApi.createWriteStream(partial, { mode: 0o600 });
       let lastReport = 0;
@@ -79,7 +80,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
         for await (const chunk of Readable.fromWeb(response.body)) {
           hash.update(chunk);
           job.received += chunk.length;
-          if (job.received > model.size) throw new Error("O modelo baixado é maior que o esperado.");
+          if (job.received > model.size) throw new Error(t("dictation.downloadTooLarge"));
           if (!out.write(chunk)) await new Promise((resolve) => out.once("drain", resolve));
           const now = Date.now();
           if (now - lastReport > 250) {
@@ -91,7 +92,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
         await new Promise((resolve) => out.end(resolve));
       }
       if (job.received !== model.size || hash.digest("hex") !== model.sha256)
-        throw new Error("O modelo de voz baixado está corrompido. Tente de novo.");
+        throw new Error(t("dictation.downloadCorrupt"));
       fsApi.renameSync(partial, target);
       return { ok: true, path: target };
     })()
@@ -105,7 +106,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
         } catch {}
         const message =
           error?.name === "AbortError"
-            ? "Download do modelo de voz cancelado."
+            ? t("dictation.downloadCancelled")
             : error.message || String(error);
         onProgress({ id: model.id, received: job.received, total: model.size, done: true, error: message });
         throw new Error(message);
@@ -123,7 +124,7 @@ function createSpeechModels({ dir, fetchImpl = fetch, fsApi = fs, onProgress = (
 
   function remove(id) {
     const model = findModel(id);
-    if (active?.id === model.id) throw new Error("Aguarde o download terminar ou cancele antes.");
+    if (active?.id === model.id) throw new Error(t("dictation.waitDownload"));
     fsApi.rmSync(modelPath(model.id), { force: true });
     return { ok: true };
   }

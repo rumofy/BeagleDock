@@ -1,18 +1,18 @@
-// Contexto da sessão: quanto da janela do modelo está ocupado, e quando houve compactação.
-// Fontes reais: Claude Code (usage do evento assistant + contextWindow do result + compact_boundary)
-// e Codex (thread/tokenUsage/updated). O AGY informa o uso de cada chamada (usage.input_tokens da
-// etapa agent_response), mas não a janela do modelo.
+// Session context: how much of the model's window is used, and when a compaction happened.
+// Real sources: Claude Code (usage of the assistant event + contextWindow of the result + compact_boundary)
+// and Codex (thread/tokenUsage/updated). AGY reports the usage of each call (usage.input_tokens of the
+// agent_response step), but not the model's window.
 const num = (v) => (Number.isFinite(v) && v >= 0 ? v : 0);
 
-// Contexto ocupado numa chamada = entrada + cache lido + cache criado (a saída entra na próxima).
+// Context used in a call = input + cache read + cache created (the output goes into the next one).
 function claudeContextUsed(usage) {
   if (!usage || typeof usage !== "object") return null;
   const used = num(usage.input_tokens) + num(usage.cache_creation_input_tokens) + num(usage.cache_read_input_tokens);
   return used > 0 ? used : null;
 }
 
-// Escolhe a janela do modelo da conversa principal. A chave de modelUsage pode ter sufixo (ex.: [1m])
-// ou haver modelos de subagente/título: casa pelo nome e, na dúvida, vale o modelo mais usado.
+// Picks the main conversation's model window. The modelUsage key may have a suffix (e.g. [1m])
+// or there may be subagent/title models: match by name and, when in doubt, the most used model wins.
 function pickModelWindow(modelUsage, preferredModel) {
   if (!modelUsage || typeof modelUsage !== "object") return null;
   const entries = Object.entries(modelUsage).filter(([, v]) => Number.isFinite(v?.contextWindow));
@@ -27,8 +27,8 @@ function pickModelWindow(modelUsage, preferredModel) {
   return entries.sort((a, b) => volume(b[1]) - volume(a[1]))[0][1].contextWindow;
 }
 
-// Cache de prompt da última chamada: o que foi lido (barato) e o que foi escrito (caro, acontece
-// quando o cache expirou ou o prefixo mudou). Só entra quando a CLI informa algum dos dois.
+// Prompt cache of the last call: what was read (cheap) and what was written (expensive, happens
+// when the cache expired or the prefix changed). Only included when the CLI reports one of them.
 function cacheUsage(read, write) {
   const hasRead = Number.isFinite(read) && read >= 0;
   const hasWrite = Number.isFinite(write) && write >= 0;
@@ -41,8 +41,8 @@ function claudeCacheUsage(usage) {
   return cacheUsage(usage.cache_read_input_tokens, usage.cache_creation_input_tokens);
 }
 
-// Validade do cache que a chamada escreveu. O Claude Code informa por TTL (verificado com a CLI real,
-// 2.1.316: cache_creation.ephemeral_1h_input_tokens). Uma chamada só de leitura não diz nada: null.
+// Lifetime of the cache the call wrote. Claude Code reports it by TTL (verified with the real CLI,
+// 2.1.316: cache_creation.ephemeral_1h_input_tokens). A read-only call says nothing: null.
 const CACHE_TTL_1H = 60 * 60 * 1000;
 const CACHE_TTL_5M = 5 * 60 * 1000;
 function claudeCacheTtl(usage) {
@@ -53,8 +53,8 @@ function claudeCacheTtl(usage) {
   return null;
 }
 
-// AGY 1.4.12: usage.cache_read_tokens da etapa agent_response (subconjunto de input_tokens).
-// Não informa escrita nem validade do cache.
+// AGY 1.4.12: usage.cache_read_tokens of the agent_response step (a subset of input_tokens).
+// It doesn't report cache writes or lifetime.
 function agyCacheUsage(usage) {
   if (!usage || typeof usage !== "object") return null;
   return cacheUsage(usage.cache_read_tokens, undefined);
@@ -68,13 +68,13 @@ function codexContext(tokenUsage) {
   return { used, window, ...(cache ? { cache } : {}) };
 }
 
-// `model` é o modelo como escolhido no app (antes de resolver aliases): o cache de prompt é separado
-// por modelo, então trocar a escolha reprocessa o contexto inteiro.
+// `model` is the model as chosen in the app (before resolving aliases): the prompt cache is separate
+// per model, so changing the choice reprocesses the whole context.
 function createContextTracker({ emit = () => {}, sessionId, source, model, now = Date.now }) {
   const state = {
     used: null,
     cache: null,
-    // Última chamada ao modelo (lê e renova o cache) e validade do cache, quando a CLI informa.
+    // Last model call (reads and renews the cache) and cache lifetime, when the CLI reports it.
     lastCallAt: null,
     cacheTtlMs: null,
     window: null,
@@ -113,7 +113,7 @@ function createContextTracker({ emit = () => {}, sessionId, source, model, now =
         state.window = window;
         state.windowKnown = windowKnown !== false;
       }
-      // Sem janela informada pela CLI não há estimativa: a barra mostra só os tokens reais em uso.
+      // Without a window reported by the CLI there's no estimate: the bar shows only the real tokens in use.
       publish();
     },
     setWindow(window, known = true) {
@@ -128,7 +128,7 @@ function createContextTracker({ emit = () => {}, sessionId, source, model, now =
       publish();
     },
     compacted({ pre, post, trigger } = {}) {
-      // O Codex pode avisar a mesma compactação por mais de um evento: conta uma só vez.
+      // Codex may report the same compaction through more than one event: count it once.
       if (!state.compacting && state.last && now() - state.last.at < 2000) {
         state.last = {
           ...state.last,

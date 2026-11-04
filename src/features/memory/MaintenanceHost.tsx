@@ -1,6 +1,7 @@
 import { useMemoryExplorerState } from "./MemoryExplorerContext";
 import { MaintenanceDialog } from "./MaintenanceDialog";
 
+import { t } from "../../i18n";
 export function MaintenanceHost() {
   const {
     providers,
@@ -22,7 +23,7 @@ export function MaintenanceHost() {
             maintTarget.current = sel;
             const id = await onStartMaintenance({
               ...args,
-              title: `Manutenção ai-memory · ${sel.ws}/${sel.p}`,
+              title: t("maintenance.sessionTitle", { project: `${sel.ws}/${sel.p}` }),
             });
             if (id) {
               setMaintOpen(false);

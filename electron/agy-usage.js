@@ -1,4 +1,5 @@
 const { findBinary, execCli } = require("./platform");
+const { t } = require("./i18n");
 function maximum(values) {
   const known = values.filter(Number.isFinite);
   return known.length ? Math.max(...known) : null;
@@ -8,14 +9,14 @@ function parseUsageReport(stdout, now = Date.now()) {
   try {
     report = JSON.parse(stdout);
   } catch {
-    throw new Error("O AGY retornou um relatório de cotas inválido.");
+    throw new Error(t("usage.agyInvalidReport"));
   }
   if (
     report.status !== "SUCCESS" ||
     report.command?.name !== "usage" ||
     !Array.isArray(report.command.data?.groups)
   )
-    throw new Error("O AGY não retornou um relatório /usage válido.");
+    throw new Error(t("usage.agyInvalidUsage"));
   const groups = report.command.data.groups
     .filter((g) => g && typeof g.name === "string" && Array.isArray(g.buckets))
     .map((group) => {
@@ -54,7 +55,7 @@ function parseUsageReport(stdout, now = Date.now()) {
     !groups.some((g) => g.window5hPercent !== null || g.weeklyPercent !== null)
   )
     throw new Error(
-      "O relatório do AGY não contém cotas conhecidas e vigentes.",
+      t("usage.agyNoQuotas"),
     );
   return {
     groups,
@@ -63,8 +64,8 @@ function parseUsageReport(stdout, now = Date.now()) {
     updatedAt: new Date(now).toISOString(),
     stale: false,
     quotaError: null,
-    sourceLabel: "AGY /usage · cotas do provedor",
-    groupLabel: "Maior uso entre grupos",
+    sourceLabel: t("usage.agySource"),
+    groupLabel: t("usage.agyGroup"),
   };
 }
 function expireSnapshot(snapshot, now) {
@@ -118,7 +119,7 @@ function createAgyUsage({
     pending = (async () => {
       try {
         const bin = find("agy") || find("antigravity");
-        if (!bin) throw new Error("CLI do AGY não encontrada.");
+        if (!bin) throw new Error(t("errors.agyNotFound"));
         const options = {
           timeout: 20000,
           maxBuffer: 1024 * 1024,
@@ -135,7 +136,7 @@ function createAgyUsage({
           Number(version[1]) < 1
         )
           throw new Error(
-            "Atualize o AGY para consultar /usage em JSON (1.1.11 ou superior).",
+            t("usage.agyUpdate"),
           );
         let result;
         try {
@@ -146,7 +147,7 @@ function createAgyUsage({
           );
         } catch {
           throw new Error(
-            "Não foi possível consultar /usage. Confira a autenticação do AGY no terminal.",
+            t("usage.agyFailed"),
           );
         }
         snapshot = parseUsageReport(result.stdout, now());

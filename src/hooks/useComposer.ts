@@ -5,9 +5,10 @@ import { optimizeImage, webpName } from "../lib/imageOptimize";
 import { modelSwitch, staleContext } from "../lib/staleContext";
 import type { ChatAttachment, ChatSession, ContextInfo } from "../types";
 
+import { t } from "../i18n";
 /**
- * Mensagem retida até a pessoa decidir o que fazer numa conversa grande cujo contexto seria
- * reprocessado inteiro: cache expirado (`idleMs`) e/ou modelo trocado (`switched`).
+ * Message held until the person decides what to do in a large conversation whose context would be
+ * reprocessed in full: expired cache (`idleMs`) and/or switched model (`switched`).
  */
 export interface StaleNotice {
   used: number;
@@ -20,7 +21,7 @@ export interface StaleNotice {
 
 interface Params {
   currentSession: ChatSession | undefined;
-  /** Modelo que vai ser enviado na conversa atual, já normalizado pelo catálogo. */
+  /** Model that will be sent in the current conversation, already normalized by the catalog. */
   currentModel: string;
   pendingTurns: React.MutableRefObject<Map<string, number>>;
   setAppError: (message: string) => void;
@@ -35,7 +36,7 @@ interface Params {
   ) => Promise<void>;
 }
 
-/** Texto digitado, anexos e envio da mensagem do chat. */
+/** Typed text, attachments and sending of the chat message. */
 export function useComposer({
   currentSession,
   currentModel,
@@ -48,8 +49,8 @@ export function useComposer({
   sendPrompt,
 }: Params) {
   const [staleNotice, setStaleNotice] = useState<StaleNotice | null>(null);
-  // O hook roda a cada quadro do stream (vive no provedor do app): nada de ler o armazenamento
-  // nem interpretar JSON nas renderizações. Carrega uma vez, e grava com atraso.
+  // The hook runs on every stream frame (it lives in the app provider): no reading storage
+  // or parsing JSON while rendering. It loads once and saves with a delay.
   const storageRef = useRef<Storage | undefined | null>(null);
   const getStorage = () => {
     if (storageRef.current === null) {
@@ -70,7 +71,7 @@ export function useComposer({
     if (drafts.current) saveDrafts(drafts.current, getStorage());
   };
   useEffect(() => {
-    // Não perde o último trecho digitado ao fechar o app ou esconder a janela.
+    // Don't lose the last typed bit when closing the app or hiding the window.
     const onHide = () => flushDrafts();
     window.addEventListener("beforeunload", onHide);
     document.addEventListener("visibilitychange", onHide);
@@ -94,7 +95,7 @@ export function useComposer({
     drafts.current = updateDraft(getDrafts(), sessionId, value);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(flushDrafts, 400);
-    // A lista de rascunhos só muda quando uma conversa ganha ou perde rascunho.
+    // The draft list only changes when a conversation gains or loses a draft.
     const ids = Object.keys(drafts.current);
     setDraftIds((prev) =>
       prev.length === ids.length && prev.every((id, i) => id === ids[i])
@@ -102,7 +103,7 @@ export function useComposer({
         : ids,
     );
   };
-  // Ao trocar de conversa, mostra o rascunho dela (o da anterior já foi guardado ao digitar).
+  // When switching conversations, show its draft (the previous one was saved while typing).
   useEffect(() => {
     if (loadedFor.current === sessionId) return;
     loadedFor.current = sessionId;
@@ -113,7 +114,7 @@ export function useComposer({
   const attachmentCount = useRef(0);
   attachmentCount.current = attachments.length;
 
-  // Imagens e arquivos entram igual por colar, soltar ou escolher: viram data URL e seguem para a CLI.
+  // Images and files come in the same way by paste, drop or picker: they become data URLs for the CLI.
   const addFiles = (files: File[]) => {
     let planned = attachmentCount.current;
     for (const file of files) {
@@ -127,7 +128,7 @@ export function useComposer({
     }
   };
 
-  // Imagens passam pela otimização (WebP, no máximo 2576 px no maior lado) antes de virar anexo.
+  // Images are optimized (WebP, at most 2576 px on the longest side) before becoming attachments.
   const readAttachment = async (file: File) => {
     const isImage = file.type.startsWith("image/");
     const baseName =
@@ -136,7 +137,7 @@ export function useComposer({
     const optimized = isImage ? await optimizeImage(file) : null;
     const content: Blob = optimized || file;
     const reader = new FileReader();
-    reader.onerror = () => setAppError(`Não foi possível ler “${baseName}”.`);
+    reader.onerror = () => setAppError(t("composer.readFileFailed", { name: baseName }));
     reader.onload = (loadEvent) => {
       setAttachments((prev) => [
         ...prev,
@@ -170,7 +171,7 @@ export function useComposer({
     setAttachments((prev) => prev.filter((a) => a.id !== attId));
   };
 
-  // Envia mensagem no Chat, persiste no SQLite e dispara o processo real da CLI!
+  // Sends the chat message, persists it in SQLite and starts the real CLI process.
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputMessage.trim() || !currentSession) return;
@@ -190,8 +191,8 @@ export function useComposer({
       await handleTriggerHandoff();
       return;
     }
-    // Conversa grande que seria reprocessada inteira (cache expirado ou modelo trocado): avisa antes
-    // de gastar, só quando não há fila nem /compact.
+    // Large conversation that would be reprocessed in full (expired cache or switched model): warn before
+    // spending, only when there's no queue and no /compact.
     const check =
       promptText !== "/compact" && !((pendingTurns.current.get(currentSession.id) || 0) > 0);
     const info = contextBySession[currentSession.id];
@@ -214,8 +215,8 @@ export function useComposer({
     await sendPrompt(currentSession, promptText, sending);
   };
 
-  // Decisão sobre a mensagem retida: enviar assim mesmo, compactar antes de enviar, voltar ao modelo
-  // anterior (cache ainda quente) ou voltar a editar.
+  // Decision on the held message: send anyway, compact before sending, go back to the previous model
+  // (cache still warm) or go back to editing.
   const resolveStaleNotice = async (choice: "send" | "compact" | "previous" | "cancel") => {
     const notice = staleNotice;
     if (!notice) return;
@@ -230,7 +231,7 @@ export function useComposer({
       await sendPrompt(previous, notice.text, notice.attachments);
       return;
     }
-    // Com troca de modelo, compacta no modelo anterior: o novo só lê o resumo.
+    // With a model switch, compact on the previous model: the new one only reads the summary.
     if (choice === "compact") await compactContext(previous);
     await sendPrompt(notice.session, notice.text, notice.attachments);
   };

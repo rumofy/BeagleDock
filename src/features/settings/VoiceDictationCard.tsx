@@ -5,6 +5,7 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
 import type { AppSettings, VoiceDictationSettings } from "../../types";
 
+import { t } from "../../i18n";
 const DEFAULTS: Required<VoiceDictationSettings> = {
   engine: "local",
   baseUrl: "https://api.openai.com/v1",
@@ -13,17 +14,17 @@ const DEFAULTS: Required<VoiceDictationSettings> = {
   vocabulary: "",
 };
 
-const MODELS = [
-  { id: "gpt-4o-transcribe", label: "gpt-4o-transcribe — máxima precisão (OpenAI)" },
-  { id: "gpt-4o-mini-transcribe", label: "gpt-4o-mini-transcribe — mais barato (OpenAI)" },
+const models = () => [
+  { id: "gpt-4o-transcribe", label: "gpt-4o-transcribe — " + t("dictationSettings.modelBest") + " (OpenAI)" },
+  { id: "gpt-4o-mini-transcribe", label: "gpt-4o-mini-transcribe — " + t("dictationSettings.modelCheaper") + " (OpenAI)" },
   { id: "whisper-large-v3", label: "whisper-large-v3 — Groq" },
 ];
 
-const LANGUAGES = [
-  { id: "pt", label: "Português" },
-  { id: "en", label: "Inglês" },
-  { id: "es", label: "Espanhol" },
-  { id: "auto", label: "Detectar automaticamente" },
+const languages = () => [
+  { id: "pt", label: t("dictationSettings.langPt") },
+  { id: "en", label: t("dictationSettings.langEn") },
+  { id: "es", label: t("dictationSettings.langEs") },
+  { id: "auto", label: t("dictationSettings.langAuto") },
 ];
 
 const field =
@@ -32,7 +33,7 @@ const label = "block text-xs font-bold text-[#443e33] uppercase tracking-wider m
 const smallButton =
   "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition disabled:opacity-50";
 
-/** Ditado por voz no composer: motor (local ou API), modelo de voz e vocabulário. */
+/** Voice dictation in the composer: engine (local or API), voice model and vocabulary. */
 export function VoiceDictationCard() {
   const { settings, setSettings, setAppError } = useApp();
   const [draft, setDraft] = useState<Required<VoiceDictationSettings>>({
@@ -54,7 +55,7 @@ export function VoiceDictationCard() {
       const payload: Partial<AppSettings> = { voiceDictation: draft };
       if (apiKey.trim()) payload.transcriptionApiKey = apiKey.trim();
       const result = await beagleApi.saveAppSettings(payload as AppSettings);
-      if (!result?.success) throw new Error(result?.error || "Falha ao salvar o ditado por voz.");
+      if (!result?.success) throw new Error(result?.error || t("dictationSettings.saveFailed"));
       setSettings((prev) => ({ ...prev, ...result.settings }));
       setApiKey("");
       setSaved(true);
@@ -67,16 +68,15 @@ export function VoiceDictationCard() {
 
   return (
     <div className="bg-[#ffffff] border border-[#ded8cb] rounded-2xl p-6 shadow-xs">
-      <h2 className="font-bold text-lg text-[#1c1b18] mb-1">Ditado por voz</h2>
+      <h2 className="font-bold text-lg text-[#1c1b18] mb-1">{t("dictationSettings.title")}</h2>
       <p className="text-xs text-[#7d7565] mb-5">
-        O botão de microfone no campo de mensagem (ou Ctrl+Shift+M) grava sua fala e escreve o texto no campo para você
-        revisar antes de enviar. Vale para Claude Code, Codex CLI e Antigravity.
+        {t("dictationSettings.intro")}
       </p>
 
       <div className="space-y-4">
         <div>
           <label className={label} htmlFor="dictation-engine">
-            Motor de transcrição
+            {t("dictationSettings.engine")}
           </label>
           <select
             id="dictation-engine"
@@ -84,22 +84,19 @@ export function VoiceDictationCard() {
             onChange={(e) => set({ engine: e.target.value === "api" ? "api" : "local" })}
             className={field}
           >
-            <option value="local">No computador (Parakeet) — sem conta, sem chave, offline</option>
-            <option value="api">API na nuvem (OpenAI ou compatível)</option>
+            <option value="local">{t("dictationSettings.engineLocal")}</option>
+            <option value="api">{t("dictationSettings.engineApi")}</option>
           </select>
         </div>
 
         {draft.engine === "local" ? (
           <div className="rounded-xl border border-[#e4dec9] bg-[#faf8f4] p-4 text-xs text-[#443e33] space-y-3">
             <p>
-              Usa o <strong>Parakeet TDT 0.6B v3</strong> (NVIDIA), que entende português, pontua sozinho e transcreve
-              alguns segundos de fala em cerca de 1 s. Ocupa ~800 MB de memória só enquanto transcreve; parado, nada
-              fica rodando. O idioma é detectado sozinho.
+              {t("dictationSettings.localIntro")}
             </p>
             {speech.status && !speech.status.engineAvailable && (
               <p className="text-rose-700 font-semibold">
-                O motor local não foi compilado nesta instalação. Rode <code>npm run build:speech</code> (ou{" "}
-                <code>npm run build</code>) e reinstale.
+                {t("dictationSettings.notBuilt")}
               </p>
             )}
             {model && (
@@ -108,12 +105,12 @@ export function VoiceDictationCard() {
                   {model.installed ? (
                     <span className="text-emerald-700 font-semibold flex items-center gap-1.5">
                       <CheckCircle2 size={14} />
-                      Modelo baixado ({formatMegabytes(model.size)})
+                      {t("dictationSettings.modelInstalled", { size: formatMegabytes(model.size) })}
                     </span>
                   ) : speech.download ? (
-                    `Baixando… ${formatMegabytes(speech.download.received)} de ${formatMegabytes(speech.download.total || model.size)}`
+                    t("dictationSettings.downloading", { received: formatMegabytes(speech.download.received), total: formatMegabytes(speech.download.total || model.size) })
                   ) : (
-                    `Modelo ainda não baixado (${formatMegabytes(model.size)}, uma vez só)`
+                    t("dictationSettings.modelMissing", { size: formatMegabytes(model.size) })
                   )}
                 </span>
                 {model.installed ? (
@@ -123,7 +120,7 @@ export function VoiceDictationCard() {
                     className={`${smallButton} text-[#665e4f] hover:bg-[#eae4d5]`}
                   >
                     <Trash2 size={13} />
-                    Apagar modelo
+                    {t("dictationSettings.deleteModel")}
                   </button>
                 ) : speech.download ? (
                   <button
@@ -133,7 +130,7 @@ export function VoiceDictationCard() {
                   >
                     <Loader2 size={13} className="animate-spin" />
                     <X size={13} />
-                    Cancelar
+                    {t("common.cancel")}
                   </button>
                 ) : (
                   <button
@@ -142,7 +139,7 @@ export function VoiceDictationCard() {
                     className={`${smallButton} bg-[#1c1b18] text-white hover:bg-[#32302b]`}
                   >
                     <Download size={13} />
-                    Baixar modelo
+                    {t("dictationSettings.downloadModel")}
                   </button>
                 )}
               </div>
@@ -153,7 +150,7 @@ export function VoiceDictationCard() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className={label} htmlFor="dictation-model">
-                  Modelo
+                  {t("header.model")}
                 </label>
                 <input
                   id="dictation-model"
@@ -163,7 +160,7 @@ export function VoiceDictationCard() {
                   className={`${field} font-mono`}
                 />
                 <datalist id="dictation-models">
-                  {MODELS.map((m) => (
+                  {models().map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label}
                     </option>
@@ -172,7 +169,7 @@ export function VoiceDictationCard() {
               </div>
               <div>
                 <label className={label} htmlFor="dictation-url">
-                  Endereço da API
+                  {t("dictationSettings.apiUrl")}
                 </label>
                 <input
                   id="dictation-url"
@@ -184,7 +181,7 @@ export function VoiceDictationCard() {
               </div>
               <div>
                 <label className={label} htmlFor="dictation-language">
-                  Idioma falado
+                  {t("dictationSettings.spokenLanguage")}
                 </label>
                 <select
                   id="dictation-language"
@@ -192,7 +189,7 @@ export function VoiceDictationCard() {
                   onChange={(e) => set({ language: e.target.value })}
                   className={field}
                 >
-                  {LANGUAGES.map((l) => (
+                  {languages().map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.label}
                     </option>
@@ -202,18 +199,18 @@ export function VoiceDictationCard() {
             </div>
             <div>
               <label className={label} htmlFor="dictation-key">
-                Chave da API de transcrição
+                {t("dictationSettings.apiKey")}
               </label>
               <input
                 id="dictation-key"
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder={keyConfigured ? "Chave já cadastrada; digite para substituir" : "sk-…"}
+                placeholder={keyConfigured ? t("dictationSettings.keyConfigured") : "sk-…"}
                 className={`${field} font-mono`}
               />
               <p className="mt-1.5 text-[11px] text-[#7d7565]">
-                Guardada no cofre do sistema. O áudio é enviado para o endereço acima só quando você conclui o ditado.
+                {t("dictationSettings.keyNote")}
                 Para Groq use https://api.groq.com/openai/v1; servidores em localhost dispensam a chave.
               </p>
             </div>
@@ -222,7 +219,7 @@ export function VoiceDictationCard() {
 
         <div>
           <label className={label} htmlFor="dictation-vocabulary">
-            Vocabulário e correções
+            {t("dictationSettings.vocabulary")}
           </label>
           <textarea
             id="dictation-vocabulary"
@@ -233,10 +230,7 @@ export function VoiceDictationCard() {
             className={`${field} font-mono`}
           />
           <p className="mt-1.5 text-[11px] text-[#7d7565]">
-            Um por linha ou separados por vírgula. Um termo sozinho fixa a grafia (“supabase” vira “Supabase”); “errado
-            =&gt; certo” troca o que costuma sair errado. Termos cadastrados com maiúscula, como “BeagleDock”, são
-            reconhecidos mesmo quando saem parecidos (“Bigodok” vira “BeagleDock”). O nome do projeto aberto e o
-            da CLI da conversa entram sozinhos.
+            {t("dictationSettings.vocabularyHint")}
           </p>
         </div>
 
@@ -244,7 +238,7 @@ export function VoiceDictationCard() {
           {saved ? (
             <span className="text-xs font-bold text-emerald-700 flex items-center gap-1.5">
               <CheckCircle2 size={15} />
-              Ditado por voz salvo.
+              {t("dictationSettings.saved")}
             </span>
           ) : (
             <span />
@@ -254,7 +248,7 @@ export function VoiceDictationCard() {
             onClick={() => void save()}
             className="px-5 py-2.5 rounded-xl bg-[#1c1b18] hover:bg-[#32302b] text-white text-xs font-bold transition"
           >
-            Salvar ditado por voz
+            {t("dictationSettings.save")}
           </button>
         </div>
       </div>

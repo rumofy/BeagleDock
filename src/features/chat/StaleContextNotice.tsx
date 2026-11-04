@@ -3,11 +3,12 @@ import { useApp } from "../../hooks/AppStateProvider";
 import { formatIdle } from "../../lib/staleContext";
 import { formatTokens } from "../../lib/tokens";
 
-const modelName = (model: string) => model || "padrão da CLI";
+import { t } from "../../i18n";
+const modelName = (model: string) => model || t("stale.cliDefault");
 
 /**
- * Aviso antes de enviar numa conversa grande cujo contexto seria reprocessado inteiro: o cache
- * expirou (conversa parada) e/ou o modelo foi trocado (o cache é separado por modelo).
+ * Warning before sending in a large conversation whose whole context would be reprocessed: the
+ * cache expired (idle conversation) and/or the model was switched (the cache is per model).
  */
 export function StaleContextNotice() {
   const { staleNotice, resolveStaleNotice, activeSessionId } = useApp();
@@ -17,13 +18,13 @@ export function StaleContextNotice() {
   const button = "px-3 py-1.5 rounded-lg border font-bold disabled:opacity-40";
   const title = switched
     ? idleMs !== undefined
-      ? `Modelo trocado numa conversa parada há ${formatIdle(idleMs)} com ${tokens} tokens de contexto.`
-      : `Modelo trocado numa conversa com ${tokens} tokens de contexto.`
-    : `Esta conversa está parada há ${formatIdle(idleMs ?? 0)} e tem ${tokens} tokens de contexto.`;
+      ? t("stale.titleSwitchedIdle", { idle: formatIdle(idleMs), tokens })
+      : t("stale.titleSwitched", { tokens })
+    : t("stale.titleIdle", { idle: formatIdle(idleMs ?? 0), tokens });
   return (
     <div
       role="alertdialog"
-      aria-label={switched ? "Modelo trocado numa conversa grande" : "Conversa grande e parada"}
+      aria-label={switched ? t("stale.labelSwitched") : t("stale.labelIdle")}
       className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-950"
       data-testid="stale-context-notice"
     >
@@ -33,19 +34,15 @@ export function StaleContextNotice() {
           <p className="font-bold">{title}</p>
           {switched ? (
             <p>
-              O cache de prompt é separado por modelo: enviar com <b>{modelName(switched.to)}</b> reprocessa o contexto
-              inteiro (cerca de {tokens} tokens) e pode consumir bastante cota.
+              {t("stale.switchedBody", { model: modelName(switched.to), tokens })}
               {idleMs === undefined
-                ? ` Voltar para ${modelName(switched.from)} aproveita o cache, que ainda está quente.`
+                ? ` ${t("stale.switchedBack", { model: modelName(switched.from) })}`
                 : ""}{" "}
-              Compactar antes, ainda em {modelName(switched.from)}, faz o novo modelo ler só o resumo, mas resume o
-              histórico antigo.
+              {t("stale.switchedCompact", { model: modelName(switched.from) })}
             </p>
           ) : (
             <p>
-              O cache de prompt provavelmente expirou: a próxima mensagem reprocessa o contexto inteiro (cerca de{" "}
-              {tokens} tokens) e pode consumir bastante cota. Depois dela o cache volta a ficar quente. Compactar antes
-              paga essa leitura uma vez e deixa as próximas mensagens muito mais baratas, mas resume o histórico antigo.
+              {t("stale.idleBody", { tokens })}
             </p>
           )}
         </div>
@@ -56,7 +53,7 @@ export function StaleContextNotice() {
           onClick={() => void resolveStaleNotice("send")}
           className={`${button} border-amber-400 bg-white hover:bg-amber-100`}
         >
-          Enviar assim mesmo
+          {t("stale.sendAnyway")}
         </button>
         {switched && idleMs === undefined && (
           <button
@@ -64,7 +61,7 @@ export function StaleContextNotice() {
             onClick={() => void resolveStaleNotice("previous")}
             className={`${button} border-amber-400 bg-white hover:bg-amber-100`}
           >
-            Enviar com {modelName(switched.from)}
+            {t("stale.sendWith", { model: modelName(switched.from) })}
           </button>
         )}
         <button
@@ -72,14 +69,14 @@ export function StaleContextNotice() {
           onClick={() => void resolveStaleNotice("compact")}
           className={`${button} border-amber-600 bg-amber-600 text-white hover:bg-amber-700`}
         >
-          Compactar e enviar
+          {t("stale.compactAndSend")}
         </button>
         <button
           type="button"
           onClick={() => void resolveStaleNotice("cancel")}
           className={`${button} border-transparent text-amber-900 hover:underline`}
         >
-          Voltar e editar
+          {t("stale.backToEdit")}
         </button>
       </div>
     </div>

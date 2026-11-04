@@ -91,7 +91,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   cliTerminalResize: (request) => ipcRenderer.invoke("cli-terminal-resize", request),
   cliTerminalClose: (sessionId) => ipcRenderer.invoke("cli-terminal-close", sessionId),
   cliTerminalList: () => ipcRenderer.invoke("cli-terminal-list"),
-  // Caminho real de um arquivo arrastado para o terminal (o renderer não vê caminhos).
+  // Real path of a file dragged into the terminal (the renderer can't see paths).
   pathForFile: (file) => {
     try {
       return webUtils.getPathForFile(file) || "";
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
       return "";
     }
   },
-  // Ctrl+V no terminal: com imagem, a própria CLI lê a área de transferência; com texto, cola.
+  // Ctrl+V in the terminal: with an image, the CLI itself reads the clipboard; with text, it pastes.
   cliTerminalClipboard: () => ipcRenderer.invoke("cli-terminal-clipboard"),
   interruptCliSession: (id) => ipcRenderer.invoke("interrupt-cli-session", id),
   cancelQueuedPrompt: (request) => ipcRenderer.invoke("cancel-queued-prompt", request),
@@ -128,7 +128,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "dictation-model-progress",
       ].includes(channel)
     )
-      throw new Error("Evento não permitido.");
+      throw new Error("Event not allowed.");
     const subscription = (_event, ...args) => callback(...args);
     ipcRenderer.on(channel, subscription);
     return () => ipcRenderer.removeListener(channel, subscription);

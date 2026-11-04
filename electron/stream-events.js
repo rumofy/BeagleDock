@@ -1,17 +1,19 @@
-// Linha do tempo de eventos de uma resposta (raciocínio, comandos, ferramentas, MCP, arquivos,
-// plano, agentes, compactação…), no mesmo formato para Claude Code, Codex e AGY.
+// Timeline of a reply's events (reasoning, commands, tools, MCP, files,
+// plan, agents, compaction…), in the same format for Claude Code, Codex and AGY.
 //
-// Agentes lançados em segundo plano continuam trabalhando depois que o turno termina (e até depois
-// de outro turno começar). Os eventos deles pertencem à resposta que os lançou: o rastreador os
-// mantém "soltos" nessa resposta e avisa `onLate` (com atraso) para a tela e o histórico se atualizarem.
+// Agents launched in the background keep working after the turn ends (and even after
+// another turn starts). Their events belong to the reply that launched them: the tracker keeps them
+// "loose" in that reply and notifies `onLate` (with a delay) so the screen and the history update.
 const { redact } = require("./redact");
+const { t } = require("./i18n");
 
 const MAX_EVENTS = 300;
 const MAX_TEXT = 4000;
+const MAX_PLAN_TEXT = 60000;
 const TEXT_THROTTLE_MS = 120;
 const LATE_DEBOUNCE_MS = 400;
 
-// Agentes e comandos lançados em segundo plano seguem rodando depois que o turno termina.
+// Agents and commands launched in the background keep running after the turn ends.
 const isBackgroundAgent = (event) =>
   (event.kind === "agent" || event.kind === "command") &&
   event.meta?.background === true;
@@ -21,7 +23,7 @@ function createEventTracker({
   sessionId,
   pid = () => undefined,
   now = Date.now,
-  // Atualizações fora do turno ativo: ({ sessionId, responseMessageId, events }).
+  // Updates outside the active turn: ({ sessionId, responseMessageId, events }).
   onLate = () => {},
   setTimer = (fn, ms) => {
     const t = setTimeout(fn, ms);
@@ -30,24 +32,24 @@ function createEventTracker({
   },
   clearTimer = clearTimeout,
 }) {
-  // Um grupo de eventos por resposta: o atual e os "soltos" (agentes em segundo plano).
+  // One group of events per reply: the current one and the "loose" ones (background agents).
   const groups = new Map();
   let currentId;
   let active = false;
-  // Respostas anteriores do turno em andamento: uma mensagem entregue no meio do turno abre uma
-  // resposta nova (ver `rotate`), e o que já estava rodando continua na resposta de antes.
+  // Earlier replies of the turn in progress: a message delivered mid-turn opens a
+  // new reply (see `rotate`), and what was already running stays in the reply before.
   const turnIds = new Set();
   const lastPublished = new Map();
   const lateTimers = new Map();
-  // Texto bruto do raciocínio: mascarar só a cópia publicada, senão um segredo cortado entre dois
-  // trechos escaparia (o primeiro vira ***, o resto da chave chega depois).
+  // Raw reasoning text: mask only the published copy, otherwise a secret split between two
+  // chunks would slip through (the first becomes ***, the rest of the key arrives later).
   const raw = new Map();
 
   const group = (responseId) => {
     if (!groups.has(responseId)) groups.set(responseId, new Map());
     return groups.get(responseId);
   };
-  // Em que resposta está um evento: a atual, uma solta que já o tem, ou a do pai (filho tardio).
+  // Which reply an event is in: the current one, a loose one that already has it, or the parent's (late child).
   function locate(id, parentId) {
     if (group(currentId).has(id)) return currentId;
     for (const [responseId, events] of groups)
@@ -80,7 +82,7 @@ function createEventTracker({
         responseMessageId: responseId,
         events: [...events.values()],
       });
-    // Resposta solta sem nada em andamento: pode ser esquecida.
+    // A loose reply with nothing in progress: it can be forgotten.
     if (
       events &&
       responseId !== currentId &&
@@ -116,10 +118,13 @@ function createEventTracker({
     }
     const next = { ...event, ...patch };
     if (patch.meta) next.meta = { ...event.meta, ...patch.meta };
-    // Nada sensível sai daqui: o mesmo evento é exibido ao vivo e gravado no histórico.
+    // Nothing sensitive leaves here: the same event is shown live and saved in the history.
     for (const key of ["title", "detail", "text"])
       if (typeof next[key] === "string") next[key] = redact(next[key]);
-    if (typeof next.text === "string" && next.text.length > MAX_TEXT)
+    // A proposed plan is read in full; other steps keep only the tail of their text.
+    if (next.meta?.proposal && typeof next.text === "string" && next.text.length > MAX_PLAN_TEXT)
+      next.text = next.text.slice(0, MAX_PLAN_TEXT - 1) + "…";
+    else if (!next.meta?.proposal && typeof next.text === "string" && next.text.length > MAX_TEXT)
       next.text = "…" + next.text.slice(-MAX_TEXT + 1);
     events.set(id, next);
     if (!quiet) publish(next, responseId);
@@ -152,8 +157,8 @@ function createEventTracker({
   }
 
   const api = {
-    // Começa a resposta `id`. Agentes em segundo plano ainda rodando (e o que é deles) ficam soltos
-    // na resposta de origem, em vez de sumir.
+    // Starts reply `id`. Background agents still running (and what's theirs) stay loose
+    // in the original reply, instead of disappearing.
     start(id) {
       for (const previous of [...turnIds, currentId]) {
         if (previous === undefined) continue;
@@ -184,18 +189,18 @@ function createEventTracker({
       groups.set(id, new Map());
       active = true;
       lastPublished.clear();
-      // O texto bruto de eventos soltos é mantido; o resto é descartado.
+      // The raw text of loose events is kept; the rest is discarded.
       for (const key of [...raw.keys()]) if (!api.get(key)) raw.delete(key);
     },
-    // Mensagem entregue no meio do turno: as etapas novas vão para a resposta `id`; as que já
-    // existiam (um comando ainda rodando, por exemplo) continuam e terminam na resposta de antes.
+    // Message delivered mid-turn: new steps go to reply `id`; the ones that already
+    // existed (a command still running, for example) continue and finish in the reply before.
     rotate(id) {
       if (!id || id === currentId) return;
       if (currentId !== undefined) turnIds.add(currentId);
       currentId = id;
       groups.set(id, new Map());
     },
-    // O turno terminou; o que ainda mudar a partir daqui é atualização tardia.
+    // The turn ended; whatever still changes from here is a late update.
     endTurn() {
       active = false;
     },
@@ -209,7 +214,7 @@ function createEventTracker({
         text.length > MAX_TEXT * 2 ? text.slice(-MAX_TEXT * 2) : text,
       );
       const next = upsert(id, { ...patch, text: raw.get(id) }, { quiet: true });
-      // O primeiro trecho sai na hora; os seguintes, no máximo a cada 120 ms.
+      // The first chunk goes out right away; the next ones, at most every 120 ms.
       if (
         next &&
         (!current?.text ||
@@ -217,7 +222,7 @@ function createEventTracker({
       )
         publish(next, locate(id, patch.parentId));
     },
-    // Substitui o texto inteiro (ex.: raciocínio montado a partir de partes), com a mesma regra.
+    // Replaces the whole text (e.g. reasoning assembled from parts), with the same rule.
     setText(id, text, patch = {}) {
       const current = api.get(id);
       raw.set(id, String(text ?? ""));
@@ -240,14 +245,14 @@ function createEventTracker({
         durationMs: patch.durationMs ?? endedAt - current.startedAt,
       });
     },
-    // Encerra o que ainda roda no turno, MENOS agentes em segundo plano (e as etapas deles): esses
-    // seguem trabalhando e terminam sozinhos, pelo evento final da própria CLI.
-    // Com `all`, encerra também os em segundo plano (a CLI acabou: nada mais vai avisar o fim deles).
+    // Closes what's still running in the turn, EXCEPT background agents (and their steps): those
+    // keep working and finish on their own, through the CLI's own final event.
+    // With `all`, it also closes the background ones (the CLI ended: nothing else will report their end).
     finishRunning(status = "done", { all = false } = {}) {
       for (const responseId of [...turnIds, currentId]) finishGroup(responseId, status, all);
     },
-    // A CLI encerrou: nada mais vai avisar o fim do que ainda constava como rodando.
-    finishAll(status = "error", note = "a CLI encerrou antes de avisar o fim") {
+    // The CLI exited: nothing else will report the end of what was still listed as running.
+    finishAll(status = "error", note = t("activity.cliExitedEarly")) {
       for (const events of [...groups.values()])
         for (const event of [...events.values()])
           if (event.status === "running")
@@ -260,11 +265,11 @@ function createEventTracker({
         if (events.has(id)) return events.get(id);
       return undefined;
     },
-    // Eventos da resposta atual (o que o turno devolve ao terminar).
+    // Events of the current reply (what the turn returns when it ends).
     snapshot: () => [...group(currentId).values()],
-    // Eventos de uma resposta do turno (a original ou a de uma mensagem entregue no meio).
+    // Events of one reply of the turn (the original or that of a message delivered midway).
     snapshotFor: (id) => [...(groups.get(id)?.values() || [])],
-    // Procura em todas as respostas (uma mensagem entregue no meio do turno abre outra resposta).
+    // Searches all replies (a message delivered mid-turn opens another reply).
     find(predicate) {
       for (const events of groups.values())
         for (const event of events.values()) if (predicate(event)) return event;
@@ -276,7 +281,7 @@ function createEventTracker({
         for (const event of events.values()) if (predicate(event)) found.push(event);
       return found;
     },
-    // Entrega já as atualizações tardias pendentes (encerramento do app, testes).
+    // Delivers pending late updates right away (app shutdown, tests).
     flushLate() {
       for (const responseId of [...lateTimers.keys()]) flushLateFor(responseId);
     },

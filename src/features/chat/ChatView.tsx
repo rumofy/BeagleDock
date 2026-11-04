@@ -13,6 +13,7 @@ import { ContinuationBanner } from "./ContinueInCli";
 import { ChatFindBar } from "./ChatFindBar";
 import { useChatFind } from "./useChatFind";
 
+import { t } from "../../i18n";
 export function ChatView() {
   const {
     activeTab,
@@ -47,7 +48,7 @@ export function ChatView() {
     (m: ChatMessage, mode: "background" | "interrupt") => void answerNowPrompt(m, mode),
     [answerNowPrompt],
   );
-  // Identidade estável: a lista de mensagens é memoizada e só re-renderiza o que mudou.
+  // Stable identity: the message list is memoized and only re-renders what changed.
   const openFile = useCallback(
     async (target: FileTarget) => {
       if (!sessionCwd) return;
@@ -59,7 +60,7 @@ export function ChatView() {
           column: target.column,
         });
         if (!result?.ok)
-          setAppError(result?.error || "Não foi possível abrir o arquivo.");
+          setAppError(result?.error || t("chat.openFileFailed"));
       } catch (error) {
         setAppError((error as Error).message);
       }
@@ -67,7 +68,7 @@ export function ChatView() {
     [sessionCwd, setAppError],
   );
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  // Acompanha o fim só enquanto a pessoa está no fim; ao subir para ler, não puxa de volta.
+  // Follows the end only while the person is at the end; scrolling up to read doesn't pull back.
   const stickRef = useRef(true);
   const lastSessionRef = useRef(activeSessionId);
   const lastCountRef = useRef(currentMessages.length);
@@ -76,7 +77,7 @@ export function ChatView() {
   const find = useChatFind(chatScrollRef, messagesRef);
   const [findFocus, setFindFocus] = useState(0);
   const { setOpen: setFindOpen, setQuery: setFindQuery } = find;
-  // Ctrl+F abre a busca na conversa; com texto selecionado (uma linha), já busca por ele.
+  // Ctrl+F opens the conversation search; with selected text (one line), it searches for it.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "f") return;
@@ -125,13 +126,11 @@ export function ChatView() {
         className="flex-1 overflow-y-auto p-6 flex flex-col justify-between"
       >
         <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between space-y-4">
-          {/* LISTA DE MENSAGENS */}
+          {/* MESSAGE LIST */}
           <div ref={messagesRef} data-testid="chat-messages" className="space-y-6 pt-2 flex-1">
             {currentMessages.length === 0 ? (
               <div className="text-center py-16 text-[#8c8270] text-sm">
-                Crie uma conversa no botão + de uma CLI instalada ou abra o
-                histórico (Ctrl+H). O catálogo é importado das ferramentas desta
-                máquina.
+                {t("chat.empty")}
               </div>
             ) : (
               <ChatMessageList
@@ -189,7 +188,7 @@ export function ChatView() {
           className="absolute bottom-28 right-8 z-10 flex items-center gap-1.5 rounded-full bg-[#262420] text-amber-50 text-xs font-bold px-3 py-1.5 shadow-lg"
           data-testid="chat-jump-to-end"
         >
-          <ArrowDown size={13} /> Ir para o fim
+          <ArrowDown size={13} /> {t("chat.jumpToEnd")}
         </button>
       )}
     </>

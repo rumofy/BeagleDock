@@ -1,34 +1,35 @@
-// Modo terminal: a CLI roda com a própria interface (TUI) num pty, sem o protocolo estruturado do
-// chat. Quem escolhe este modo fica com tudo da CLI (digitação, anexos, plano, aprovações e
-// histórico dela); o BeagleDock só abre o processo na conversa certa e repassa teclas e tela.
+const { t } = require("./i18n");
+// Terminal mode: the CLI runs with its own interface (TUI) in a pty, without the chat's structured
+// protocol. Whoever picks this mode gets everything from the CLI (typing, attachments, plan, approvals and
+// its history); BeagleDock only opens the process in the right conversation and relays keys and screen.
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
-// Saída guardada por terminal para redesenhar a tela quando a visão é remontada (troca de conversa
-// ou painel com vários terminais). O TUI redesenha tudo ao redimensionar, então o fim basta.
+// Output kept per terminal to redraw the screen when the view is remounted (conversation switch
+// or a panel with several terminals). The TUI redraws everything on resize, so the end is enough.
 const REPLAY_LIMIT = 512 * 1024;
 
 /**
- * Argumentos que abrem a interface da CLI, retomando a conversa nativa quando ela já existe. Numa
- * conversa nova, o Claude Code recebe o ID que vai usar (`newId`), para o histórico achá-la depois.
+ * Arguments that open the CLI's interface, resuming the native conversation when it already exists. In a
+ * new conversation, Claude Code gets the ID it will use (`newId`), so the history finds it later.
  */
 function terminalArgs(providerId, nativeId, newId) {
-  if (!PROVIDERS.has(providerId)) throw new Error("CLI desconhecida.");
-  // Nunca começa com "-": viraria uma opção da CLI em vez do id da conversa.
+  if (!PROVIDERS.has(providerId)) throw new Error(t("errors.unknownCli"));
+  // Never starts with "-": it would become a CLI option instead of the conversation id.
   const valid = (id) => /^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,159}$/.test(id);
   if (!nativeId) {
     if (providerId === "claude" && newId) {
-      if (!valid(newId)) throw new Error("ID nativo inválido.");
+      if (!valid(newId)) throw new Error(t("errors.invalidNativeId"));
       return ["--session-id", newId];
     }
     return [];
   }
-  if (!valid(nativeId)) throw new Error("ID nativo inválido.");
+  if (!valid(nativeId)) throw new Error(t("errors.invalidNativeId"));
   if (providerId === "codex") return ["resume", nativeId];
   if (providerId === "claude") return ["--resume", nativeId];
   return ["--conversation", nativeId];
 }
 
-// Marcas da sessão do Claude Code que abriu o BeagleDock (ex.: `npm run dev` dentro dele). Herdadas,
-// a CLI do terminal se acha filha daquela sessão e desliga o salvamento da conversa (verificado no
+// Markers of the Claude Code session that opened BeagleDock (e.g. `npm run dev` inside it). If inherited,
+// the terminal's CLI thinks it's a child of that session and turns off conversation saving (verified in
 // Claude Code 2.1.317: "Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker").
 const INHERITED_SESSION_VARS = [
   "CLAUDECODE",
@@ -44,7 +45,7 @@ const INHERITED_SESSION_VARS = [
 
 function terminalEnv(base) {
   const env = { ...base, TERM: "xterm-256color", COLORTERM: "truecolor" };
-  // O chat desliga as cores; a interface da CLI precisa delas.
+  // The chat turns colors off; the CLI's interface needs them.
   delete env.FORCE_COLOR;
   delete env.NO_COLOR;
   for (const name of INHERITED_SESSION_VARS) delete env[name];
@@ -57,11 +58,11 @@ function createCliTerminals({
   env = () => process.env,
   checkCwd,
   store,
-  // Chamado antes de abrir: recusa se a conversa tem turno rodando no chat e encerra o processo
-  // ocioso dele, para as duas formas nunca escreverem na mesma conversa ao mesmo tempo.
+  // Called before opening: refuses if the conversation has a turn running in the chat and stops its
+  // idle process, so the two modes never write to the same conversation at the same time.
   beforeOpen = async () => {},
   emit = () => {},
-  // Acompanhamento de cada terminal (fim de resposta, histórico): opened, input, output, exited, closed.
+  // Tracking of each terminal (end of reply, history): opened, input, output, exited, closed.
   hooks = {},
   newId = () => require("crypto").randomUUID(),
 }) {
@@ -85,13 +86,13 @@ function createCliTerminals({
       resumed: entry.resumed,
       exited: entry.exited,
       exitCode: entry.exitCode,
-      // Total de caracteres emitidos: a visão descarta eventos já contidos no `replay`.
+      // Total characters emitted: the view discards events already contained in `replay`.
       end: entry.total,
     };
   }
 
-  // Duas visões abrindo ao mesmo tempo (a grade e a conversa, ou o efeito duplo do React em
-  // desenvolvimento) esperam a mesma abertura: nunca dois processos para a mesma conversa.
+  // Two views opening at the same time (the grid and the conversation, or React's double effect in
+  // development) wait for the same opening: never two processes for the same conversation.
   const opening = new Map();
   function open(request = {}) {
     const id = request.sessionId;
@@ -106,19 +107,19 @@ function createCliTerminals({
   }
 
   async function start({ sessionId, providerId, cwd, cols, rows } = {}) {
-    if (typeof sessionId !== "string" || !sessionId) return { ok: false, error: "Conversa inválida." };
-    if (!PROVIDERS.has(providerId)) return { ok: false, error: "CLI desconhecida." };
+    if (typeof sessionId !== "string" || !sessionId) return { ok: false, error: t("errors.invalidConversation") };
+    if (!PROVIDERS.has(providerId)) return { ok: false, error: t("errors.unknownCli") };
     const existing = terminals.get(sessionId);
     if (existing && !existing.exited)
       return { ok: true, ...info(sessionId, existing), replay: existing.replay };
-    if (!pty) return { ok: false, error: "Terminal indisponível nesta instalação (node-pty não carregou)." };
+    if (!pty) return { ok: false, error: t("errors.ptyUnavailable") };
     try {
       const target = checkCwd(cwd);
       const bin = binary(providerId);
-      if (!bin) return { ok: false, error: `CLI ${providerId} não encontrada.` };
+      if (!bin) return { ok: false, error: t("errors.cliNotFound", { id: providerId }) };
       const link = await store.getNativeSession(sessionId, providerId);
       if (link && link.cwd !== target)
-        return { ok: false, error: "Esta conversa pertence a outro diretório." };
+        return { ok: false, error: t("errors.otherDirectory") };
       await beforeOpen(sessionId);
       const newNativeId = providerId === "claude" && !link?.nativeId ? newId() : undefined;
       const args = terminalArgs(providerId, link?.nativeId, newNativeId);
@@ -141,7 +142,7 @@ function createCliTerminals({
         exitCode: null,
       };
       proc.onData((data) => {
-        // Processo antigo (fechado ou substituído) não escreve na tela do atual.
+        // An old process (closed or replaced) doesn't write to the current one's screen.
         if (terminals.get(sessionId) !== entry) return;
         entry.replay = (entry.replay + data).slice(-REPLAY_LIMIT);
         entry.total += data.length;
@@ -208,14 +209,14 @@ function createCliTerminals({
   };
 }
 
-// Formatos de imagem que a CLI sabe ler da área de transferência.
+// Image formats the CLI can read from the clipboard.
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 
 /**
- * O que o Ctrl+V do terminal faz: com imagem, manda o Ctrl+V cru para a própria CLI ler a área de
- * transferência e anexar; com texto, cola. A API do Electron é assíncrona (`has` e `readText`
- * devolvem Promise; no Electron 45 não existem mais `availableFormats` nem `readImage`): com a
- * versão síncrona, o Ctrl+V falhava em silêncio e nenhuma imagem chegava à CLI.
+ * What the terminal's Ctrl+V does: with an image, it sends the raw Ctrl+V for the CLI itself to read the
+ * clipboard and attach; with text, it pastes. Electron's API is asynchronous (`has` and `readText`
+ * return Promises; Electron 45 no longer has `availableFormats` or `readImage`): with the
+ * synchronous version, Ctrl+V failed silently and no image reached the CLI.
  */
 async function readTerminalClipboard(clipboard) {
   const has = async (type) => {
@@ -225,8 +226,8 @@ async function readTerminalClipboard(clipboard) {
       return false;
     }
   };
-  // Uma consulta por vez: várias ao mesmo tempo travam a área de transferência do Electron no X11
-  // (verificado no Electron 45). PNG primeiro, que é o formato mais comum de captura de tela.
+  // One query at a time: several at once lock up Electron's clipboard on X11
+  // (verified in Electron 45). PNG first, the most common screenshot format.
   let image = false;
   for (const type of IMAGE_TYPES) if ((image = await has(type))) break;
   let text = "";

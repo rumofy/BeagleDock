@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { resolveTheme, type ThemeSetting } from "../lib/theme";
 
-/** Aplica o tema no <html>; com "system", acompanha a preferência do sistema em tempo real. */
+/** Applies the theme to <html>; with "system", it follows the system preference live. */
 export function useTheme(setting: ThemeSetting | undefined) {
   useEffect(() => {
     const media =

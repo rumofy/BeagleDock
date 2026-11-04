@@ -6,6 +6,7 @@ import {
 import { useApp } from "../../hooks/AppStateProvider";
 import { SessionShell } from "./SessionShell";
 
+import { t } from "../../i18n";
 export function FloatingTerminal({ containerRef }: { containerRef: React.RefObject<HTMLDivElement | null> }) {
   const {
     activeTab,
@@ -34,7 +35,7 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
     initialW: number;
     initialH: number;
   }>({ mouseX: 0, mouseY: 0, initialW: 0, initialH: 0 });
-  // Arrastar (Drag) de 60/120 FPS via requestAnimationFrame e DOM direto com hardware transform
+  // 60/120 FPS dragging via requestAnimationFrame and direct DOM with a hardware transform
   const handleStartDrag = (e: React.MouseEvent) => {
     e.preventDefault();
     dragStartRef.current = {
@@ -90,7 +91,7 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
     window.addEventListener("mouseup", onMouseUp, { once: true });
   };
 
-  // Redimensionar (Resize) de alta performance
+  // High-performance resizing
   const handleStartResize = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -155,11 +156,11 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
               }}
               className="absolute z-40 bg-[#141416]/95 backdrop-blur-md rounded-2xl border border-[#3f3f46] shadow-2xl flex flex-col overflow-hidden select-none"
             >
-              {/* BARRA SUPERIOR PARA ARRASTAR */}
+              {/* TOP BAR FOR DRAGGING */}
               <div
                 onMouseDown={handleStartDrag}
                 className="h-9 bg-[#1e1e21] px-3.5 flex items-center justify-between border-b border-[#2e2e33] cursor-grab active:cursor-grabbing select-none"
-                title="Clique e arraste para mover o console"
+                title={t("floating.dragHint")}
               >
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
@@ -178,7 +179,7 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
                   <button
                     onClick={() => setShowInlineTerminal(false)}
                     className="p-1 hover:bg-[#2e2e33] rounded text-[#a1a1aa]"
-                    title="Ocultar console"
+                    title={t("floating.hide")}
                   >
                     <X size={13} />
                   </button>
@@ -187,11 +188,11 @@ export function FloatingTerminal({ containerRef }: { containerRef: React.RefObje
 
               <SessionShell sessionId={currentSession.id} />
 
-              {/* BARRA INFERIOR PARA RESIZE */}
+              {/* BOTTOM BAR FOR RESIZING */}
               <div
                 onMouseDown={handleStartResize}
                 className="h-4 bg-[#1e1e21]/90 border-t border-[#2e2e33] flex items-center justify-between px-2.5 cursor-nwse-resize select-none"
-                title="Arraste para redimensionar largura e altura"
+                title={t("floating.resizeHint")}
               >
                 <span className="text-[9px] font-mono text-[#71717a]">
                   {floatSize.width}x{floatSize.height} • GPU Accelerated

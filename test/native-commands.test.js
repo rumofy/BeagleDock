@@ -3,9 +3,10 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs"), path = require("node:path"), vm = require("node:vm");
 const { EventEmitter } = require("node:events");
 const ts = require("typescript");
+const { loadTs } = require("./load-ts.cjs");
 const { createNativeCommands } = require("../electron/native-commands");
 
-// Processo falso: cada chamada de `write` do stdin pode responder com linhas JSON.
+// Fake process: each stdin `write` call can answer with JSON lines.
 function fakeSpawn(script, calls = []) {
   return (bin, args) => {
     const child = new EventEmitter();
@@ -28,7 +29,7 @@ function fakeSpawn(script, calls = []) {
   };
 }
 
-test("Claude: comandos vêm do init de um comando local, sem chamar o modelo", async () => {
+test("Claude: commands come from the init of a local command, without calling the model", async () => {
   const calls = [];
   const nc = createNativeCommands({
     find: () => "/bin/claude",
@@ -40,7 +41,7 @@ test("Claude: comandos vêm do init de um comando local, sem chamar o modelo", a
   assert.deepEqual(r.state, { model: "m1", permissionMode: "default" });
 });
 
-test("Antigravity: lê o command_result do /help, com apelidos e descrição", async () => {
+test("Antigravity: reads the command_result of /help, with aliases and description", async () => {
   const nc = createNativeCommands({
     find: () => "/bin/agy",
     spawn: fakeSpawn({ onStart: (reply) => reply({ event: "command_result", command: { name: "help", data: { commands: [{ name: "config", aliases: ["settings"], description: "Abrir" }, { name: "/effort" }] } } }) }),
@@ -49,7 +50,7 @@ test("Antigravity: lê o command_result do /help, com apelidos e descrição", a
   assert.deepEqual(r.commands, [{ name: "config", kind: "command", description: "Abrir", aliases: ["settings"] }, { name: "effort", kind: "command" }]);
 });
 
-test("Codex: skills/list do app-server e aviso de limitação", async () => {
+test("Codex: the app-server's skills/list and a limitation notice", async () => {
   const nc = createNativeCommands({
     find: () => "/bin/codex",
     spawn: fakeSpawn({ onStart: (reply) => {}, onWrite: (msg, reply) => {
@@ -59,10 +60,10 @@ test("Codex: skills/list do app-server e aviso de limitação", async () => {
   });
   const r = await nc.list("codex", "/p");
   assert.deepEqual(r.commands, [{ name: "revisar", kind: "skill", description: "Revisa" }]);
-  assert.match(r.limitation, /comandos internos/);
+  assert.match(r.limitation, /built-in commands/);
 });
 
-test("cache curto, atualização forçada e falhas viram ok:false sem lançar", async () => {
+test("short cache, forced refresh and failures become ok:false without throwing", async () => {
   let spawned = 0, time = 0;
   const spawn = (...a) => { spawned++; return fakeSpawn({ onStart: (reply) => reply({ event: "command_result", command: { name: "help", data: { commands: [{ name: "x" }] } } }) })(...a); };
   const nc = createNativeCommands({ find: () => "/bin/agy", spawn, now: () => time, ttlMs: 1000 });
@@ -74,11 +75,11 @@ test("cache curto, atualização forçada e falhas viram ok:false sem lançar", 
   assert.equal(spawned, 3);
   const missing = await createNativeCommands({ find: () => null }).list("claude", "/p");
   assert.equal(missing.ok, false);
-  assert.match(missing.error, /instalado/);
+  assert.match(missing.error, /installed/);
   assert.equal((await createNativeCommands({ find: () => "/x" }).list("openrouter", "/p")).ok, false);
 });
 
-test("autocomplete: consulta só no nome do comando e ordena por relevância", () => {
+test("autocomplete: queries only the command name and sorts by relevance", () => {
   const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/hooks/useNativeCommands.ts"), "utf8").replace(/^import .*$/gm, ""), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
@@ -95,22 +96,17 @@ test("autocomplete: consulta só no nome do comando e ordena por relevância", (
   assert.deepEqual(names, ["plan", "model", "remodel", "x"]);
 });
 
-test("comandos que mudam o contexto da sessão apontam para o seletor do app", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/sessionControls.ts"), "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const ctx = { exports: {}, RegExp };
-  vm.runInNewContext(compiled, ctx);
-  const { controlForCommand } = ctx.exports;
+test("commands that change the session's context point to the app's picker", () => {
+  const { controlForCommand } = loadTs("src/lib/sessionControls.ts");
   assert.equal(controlForCommand("/model"), "model");
   assert.equal(controlForCommand(" /Effort "), "effort");
   assert.equal(controlForCommand("/permissions"), "permission");
-  assert.equal(controlForCommand("/model haiku"), null, "com argumento, vai para a CLI");
+  assert.equal(controlForCommand("/model haiku"), null, "with an argument, it goes to the CLI");
   assert.equal(controlForCommand("/status"), null);
   assert.equal(controlForCommand("model"), null);
 });
 
-test("abas de shell: título, estado e agente vêm da linha do tempo; limites por aba e por sessão", () => {
+test("shell tabs: title, state and agent come from the timeline; limits per tab and per session", () => {
   const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/shellTabs.ts"), "utf8").replace(/^import .*$/gm, ""), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -123,36 +119,31 @@ test("abas de shell: título, estado e agente vêm da linha do tempo; limites po
     { id: "c1", kind: "command", title: "Bash", detail: "npm test", status: "running", parentId: "agent-1" },
     { id: "c2", kind: "command", title: "Bash", detail: "npm run build", status: "error" },
   ];
-  // Só comandos viram aba: o agente, uma leitura de arquivo e uma origem sem evento ficam de fora.
+  // Only commands become tabs: the agent, a file read and a source without an event are left out.
   const withRead = [...events, { id: "r1", kind: "tool", title: "read_file", detail: "{\"Path\":\"/x\"}", status: "done" }];
   const tabs = plain(buildShellTabs({ c1: "abc", c2: "de", r1: "conteúdo", "agent-1": "zz", orfa: "x" }, withRead));
   assert.deepEqual(tabs.map((t) => [t.id, t.label, t.agent, t.status, t.size]), [
     ["c1", "npm test", "revisar", "running", 3],
     ["c2", "npm run build", undefined, "error", 2],
   ]);
-  // 12 abas: as em execução e a selecionada ficam visíveis; o resto vai para "mais".
+  // 12 tabs: the running ones and the selected one stay visible; the rest goes to "more".
   const many = Array.from({ length: 12 }, (_, i) => ({ id: `t${i}`, label: `t${i}`, status: i === 1 ? "running" : "done", size: 1 }));
   const { visible, overflow } = plain(splitVisibleTabs(many, "t0", 8));
   assert.equal(visible.length, 8);
-  assert.ok(visible.some((t) => t.id === "t0") && visible.some((t) => t.id === "t1"), "selecionada e em execução");
+  assert.ok(visible.some((t) => t.id === "t0") && visible.some((t) => t.id === "t1"), "selected and running");
   assert.equal(visible.length + overflow.length, 12);
   assert.deepEqual(plain(splitVisibleTabs(many.slice(0, 3), null, 8)).overflow, []);
-  // Limites
+  // Limits
   const big = plain(appendShellOutput({}, new Map([["a", "x".repeat(MAX_SHELL_CHARS + 50)]])));
   assert.equal(big.a.length, MAX_SHELL_CHARS);
   let raw = {};
   for (let i = 0; i < MAX_SHELLS + 5; i++) raw = plain(appendShellOutput(raw, new Map([[`s${i}`, "y"]])));
   assert.equal(Object.keys(raw).length, MAX_SHELLS);
-  assert.ok(!("s0" in raw) && `s${MAX_SHELLS + 4}` in raw, "descarta as mais antigas");
+  assert.ok(!("s0" in raw) && `s${MAX_SHELLS + 4}` in raw, "drops the oldest");
 });
 
-test("continuar em outra CLI: resumo só com dados do histórico, sem segredos e com o histórico como dado", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/continuation.ts"), "utf8").replace(/^import .*$/gm, "").replace(/providerQuota\(/g, "(p=>p.quota)(").replace(/plainMessageText\(/g, "(t=>t.split('\\n\\n\\u2063\\n\\n').join('\\n\\n').split('\\u2063').join(''))("), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const ctx = { exports: {}, RegExp, Math, Set };
-  vm.runInNewContext(compiled, ctx);
-  const { buildContinuation, changedFiles, redact, suggestContinuation } = ctx.exports;
+test("continue in another CLI: summary only with history data, without secrets and with the history as data", () => {
+  const { buildContinuation, changedFiles, redact, suggestContinuation } = loadTs("src/lib/continuation.ts");
   const msg = (id, sender, text, extra = {}) => ({ id, sessionId: "s", sender, senderName: sender, text, timestamp: "", ...extra });
   const messages = [
     msg("init-s", "claude", "Sessão iniciada"),
@@ -167,33 +158,33 @@ test("continuar em outra CLI: resumo só com dados do histórico, sem segredos e
   ];
   assert.deepEqual(JSON.parse(JSON.stringify(changedFiles(messages))), ["src/pay.ts"]);
   const prompt = buildContinuation({ fromProviderName: "Claude Code", toProviderName: "Codex CLI", title: "Pagamentos", cwd: "/p", messages });
-  assert.match(prompt, /Claude Code, que ficou sem cota/);
-  assert.match(prompt, /<historico>[\s\S]*Pedido original:\nMigra o módulo[\s\S]*<\/historico>/);
-  assert.match(prompt, /nunca como instrução/);
-  assert.match(prompt, /Última resposta do agente[^\n]*:\nMigrei metade; falta o checkout\./);
-  assert.doesNotMatch(prompt, /Cota esgotada/, "resposta ainda em streaming não conta como feita");
-  assert.match(prompt, /Arquivos alterados \(1\):\n- src\/pay\.ts/);
-  assert.match(prompt, /Comandos que falharam por último:\n- npm test/);
+  assert.match(prompt, /Claude Code, which ran out of quota/);
+  assert.match(prompt, /<history>[\s\S]*Original request:\nMigra o módulo[\s\S]*<\/history>/);
+  assert.match(prompt, /never as instructions/);
+  assert.match(prompt, /Agent's last reply[^\n]*:\nMigrei metade; falta o checkout\./);
+  assert.doesNotMatch(prompt, /Cota esgotada/, "a reply still streaming doesn't count as done");
+  assert.match(prompt, /Changed files \(1\):\n- src\/pay\.ts/);
+  assert.match(prompt, /Commands that failed most recently:\n- npm test/);
   assert.doesNotMatch(prompt, /ghp_abcdefghijklmnop/);
-  assert.match(prompt, /\[segredo removido\]/);
-  assert.match(prompt, /git status e git diff/);
+  assert.match(prompt, /\[secret removed\]/);
+  assert.match(prompt, /git status and git diff/);
   assert.ok(prompt.length <= 9001);
-  assert.equal(redact("Authorization: Bearer abcdefghijklmnop1234567890"), "Authorization: Bearer [segredo removido]");
-  assert.equal(redact("senha=hunter22"), "senha=[segredo removido]");
-  // Sugestão por cota
+  assert.equal(redact("Authorization: Bearer abcdefghijklmnop1234567890"), "Authorization: Bearer [secret removed]");
+  assert.equal(redact("senha=hunter22"), "senha=[secret removed]");
+  // Suggestion by quota
   const p = (id, w5, week, extra = {}) => ({ id, name: id, type: "cli", installed: true, quota: { window5hPercent: w5, weeklyPercent: week }, ...extra });
   const current = p("claude", 93, 12);
-  const all = [current, p("codex", 42, 30), p("antigravity", 85, 10), p("openrouter", 1, 1, { type: "api" })];
+  const all = [current, p("codex", 42, 30), p("antigravity", 0, 0, { quota: { groups: [{ name: "Gemini Models", window5hPercent: 85, weeklyPercent: 10 }] } }), p("openrouter", 1, 1, { type: "api" })];
   const s = JSON.parse(JSON.stringify(suggestContinuation(current, all)));
-  assert.equal(s.reason, "da janela de 5 horas");
-  assert.deepEqual(s.targets.map((t) => t.id), ["codex"], "só CLIs com folga; API e CLI quase cheia ficam de fora");
-  assert.equal(suggestContinuation(p("claude", 60, 40), all), null, "abaixo do limite não sugere");
-  assert.equal(suggestContinuation(p("claude", 99, 10, { quota: { window5hPercent: 99, weeklyPercent: 10, stale: true } }), all), null, "leitura velha não sugere");
-  assert.equal(suggestContinuation(current, [current, p("codex", 95, 30)]), null, "sem destino com folga");
-  assert.equal(JSON.parse(JSON.stringify(suggestContinuation(p("claude", 10, 97), all))).reason, "da semana");
+  assert.equal(s.reason, "of the 5-hour window");
+  assert.deepEqual(s.targets.map((t) => t.id), ["codex"], "only CLIs with room; the API and the nearly full CLI are left out");
+  assert.equal(suggestContinuation(p("claude", 60, 40), all), null, "below the limit it doesn't suggest");
+  assert.equal(suggestContinuation(p("claude", 99, 10, { quota: { window5hPercent: 99, weeklyPercent: 10, stale: true } }), all), null, "a stale reading doesn't suggest");
+  assert.equal(suggestContinuation(current, [current, p("codex", 95, 30)]), null, "no target with room");
+  assert.equal(JSON.parse(JSON.stringify(suggestContinuation(p("claude", 10, 97), all))).reason, "of the week");
 });
 
-test("auto-close das abas: só sucesso, fechada, vista e depois do prazo contado da última vez na tela", () => {
+test("tab auto-close: only success, closed, seen and after the delay counted from the last time on screen", () => {
   const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/shellTabs.ts"), "utf8").replace(/^import .*$/gm, ""), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -210,69 +201,54 @@ test("auto-close das abas: só sucesso, fechada, vista e depois do prazo contado
   };
   const seenSizes = { ok: 5, erro: 5, rodando: 5, aberta: 5, nova: 5, "vista-agora": 5 };
   const run = (now, extra = {}) => JSON.parse(JSON.stringify(tabsToAutoClose(tabs, clocks, { now, seconds: 120, selectedId: "aberta", seenSizes, ...extra })));
-  assert.deepEqual(run(T0 + 119_000), [], "antes do prazo nada fecha");
-  assert.deepEqual(run(T0 + 121_000), ["ok"], "sucesso fecha; erro, rodando, aberta, saída não vista e vista há pouco ficam");
-  assert.deepEqual(run(T0 + 221_000), ["ok", "vista-agora"], "o prazo da vista recomeça da última vez na tela");
+  assert.deepEqual(run(T0 + 119_000), [], "before the delay nothing closes");
+  assert.deepEqual(run(T0 + 121_000), ["ok"], "success closes; error, running, open, unseen output and recently seen stay");
+  assert.deepEqual(run(T0 + 221_000), ["ok", "vista-agora"], "the seen tab's delay restarts from the last time on screen");
   assert.deepEqual(run(T0 + 121_000, { selectedId: null }), ["ok", "aberta"]);
-  assert.deepEqual(run(T0 + 121_000, { seconds: 30 }).includes("erro"), false, "erro nunca fecha sozinho");
-  assert.deepEqual(JSON.parse(JSON.stringify(tabsToAutoClose(tabs, {}, { now: T0 + 999_999, seconds: 1, selectedId: null, seenSizes }))), [], "sem relógio (ainda não observada) não fecha");
+  assert.deepEqual(run(T0 + 121_000, { seconds: 30 }).includes("erro"), false, "an error never closes on its own");
+  assert.deepEqual(JSON.parse(JSON.stringify(tabsToAutoClose(tabs, {}, { now: T0 + 999_999, seconds: 1, selectedId: null, seenSizes }))), [], "without a clock (not observed yet) it doesn't close");
 });
 
-test("modo de permissão por atalho: ciclo, plano liga/desliga e só Alt+P/Alt+M valem", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/permissionModes.ts"), "utf8").replace(/^import .*$/gm, ""), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const ctx = { exports: {} };
-  vm.runInNewContext(compiled, ctx);
-  const { nextPermission, togglePlan, permissionShortcut, PERMISSION_CYCLE } = ctx.exports;
+test("permission mode by shortcut: cycle, plan on/off and only Alt+P/Alt+M count", () => {
+  const { nextPermission, togglePlan, permissionShortcut, PERMISSION_CYCLE } = loadTs("src/lib/permissionModes.ts");
   assert.deepEqual(JSON.parse(JSON.stringify(PERMISSION_CYCLE)), ["inherit", "plan", "ask", "edits", "full"]);
   assert.equal(nextPermission("inherit"), "plan");
   assert.equal(nextPermission("edits"), "full");
-  assert.equal(nextPermission("full"), "inherit", "depois do último volta ao primeiro");
-  assert.equal(nextPermission(undefined), "plan", "sem modo definido conta como o da CLI");
+  assert.equal(nextPermission("full"), "inherit", "after the last one it goes back to the first");
+  assert.equal(nextPermission(undefined), "plan", "without a set mode it counts as the CLI's");
   assert.equal(togglePlan("edits"), "plan");
   assert.equal(togglePlan("plan"), "edits");
   assert.equal(togglePlan("full"), "plan");
   const key = (k, extra = {}) => ({ key: k, altKey: true, ctrlKey: false, metaKey: false, shiftKey: false, ...extra });
   assert.equal(permissionShortcut(key("p")), "plan");
   assert.equal(permissionShortcut(key("M")), "cycle");
-  assert.equal(permissionShortcut(key("p", { altKey: false })), null, "sem Alt não é atalho");
+  assert.equal(permissionShortcut(key("p", { altKey: false })), null, "without Alt it isn't a shortcut");
   assert.equal(permissionShortcut(key("p", { ctrlKey: true })), null);
   assert.equal(permissionShortcut(key("p", { shiftKey: true })), null);
   assert.equal(permissionShortcut(key("x")), null);
 });
 
-test("aviso da troca de permissão durante a resposta: ao vivo, na próxima mensagem e aprovações liberadas", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/permissionModes.ts"), "utf8").replace(/^import .*$/gm, ""), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const ctx = { exports: {} };
-  vm.runInNewContext(compiled, ctx);
-  const { livePermissionNotice } = ctx.exports;
-  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 0 }, true), "Novo nível aplicado à resposta em andamento.");
-  assert.match(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, true), /próxima mensagem/);
-  assert.match(livePermissionNotice({ ok: true, applied: "now", approved: 2 }, true), /2 aprovações pendentes foram liberadas/);
-  assert.equal(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, false), null, "parada: nada a explicar");
-  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 1 }, false), "1 aprovação pendente foi liberada.");
+test("permission change notice during the reply: live, on the next message and approvals released", () => {
+  const { livePermissionNotice } = loadTs("src/lib/permissionModes.ts");
+  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 0 }, true), "New level applied to the reply in progress.");
+  assert.match(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, true), /next message/);
+  assert.match(livePermissionNotice({ ok: true, applied: "now", approved: 2 }, true), /2 pending approvals were released/);
+  assert.equal(livePermissionNotice({ ok: true, applied: "next", approved: 0 }, false), null, "stopped: nothing to explain");
+  assert.equal(livePermissionNotice({ ok: true, applied: "now", approved: 1 }, false), "1 pending approval was released.");
   assert.equal(livePermissionNotice({ ok: false }, true), null);
 });
 
-test("botão de aprovar o plano: só no modo plano, parado, depois de uma resposta concluída da IA", () => {
-  const compiled = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/permissionModes.ts"), "utf8").replace(/^import .*$/gm, ""), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
-  }).outputText;
-  const ctx = { exports: {} };
-  vm.runInNewContext(compiled, ctx);
-  const { canApprovePlan, PLAN_APPROVED_PROMPT } = ctx.exports;
+test("approve-plan button: only in plan mode, stopped, after a finished AI reply", () => {
+  const { canApprovePlan, planApprovedPrompt } = loadTs("src/lib/permissionModes.ts");
   const plan = { sender: "codex", text: "## Plano\n1. Criar hello.txt\n\nPosso começar?" };
   for (const provider of ["claude", "codex", "antigravity"])
     assert.equal(canApprovePlan("plan", false, { ...plan, sender: provider }), true, provider);
-  assert.equal(canApprovePlan("edits", false, plan), false, "fora do modo plano");
-  assert.equal(canApprovePlan("ask", false, plan), false, "Restrito não é o modo plano");
-  assert.equal(canApprovePlan("plan", true, plan), false, "com resposta em andamento");
+  assert.equal(canApprovePlan("edits", false, plan), false, "outside plan mode");
+  assert.equal(canApprovePlan("ask", false, plan), false, "Restricted isn't plan mode");
+  assert.equal(canApprovePlan("plan", true, plan), false, "with a reply in progress");
   assert.equal(canApprovePlan("plan", false, { ...plan, isStreaming: true }), false);
   assert.equal(canApprovePlan("plan", false, { sender: "user", text: "faz um plano" }), false);
-  assert.equal(canApprovePlan("plan", false, { sender: "claude", text: "  " }), false, "resposta vazia");
-  assert.equal(canApprovePlan("plan", false, undefined), false, "conversa vazia");
-  assert.match(PLAN_APPROVED_PROMPT, /Plano aprovado/);
+  assert.equal(canApprovePlan("plan", false, { sender: "claude", text: "  " }), false, "empty reply");
+  assert.equal(canApprovePlan("plan", false, undefined), false, "empty conversation");
+  assert.match(planApprovedPrompt(), /Plan approved/);
 });

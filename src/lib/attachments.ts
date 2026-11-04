@@ -1,18 +1,19 @@
 import type { ChatAttachment } from "../types";
 
+import { t } from "../i18n";
 export const MAX_ATTACHMENTS = 10;
 export const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024;
 
-/** Mensagem de erro se o arquivo não puder ser anexado; `null` se puder. */
+/** Error message when the file can't be attached; `null` when it can. */
 export function attachmentProblem(
   file: { name: string; size: number },
   currentCount: number,
 ): string | null {
   if (currentCount >= MAX_ATTACHMENTS)
-    return `Anexe no máximo ${MAX_ATTACHMENTS} arquivos por mensagem.`;
-  if (file.size === 0) return `O arquivo “${file.name}” está vazio.`;
+    return t("attachments.tooMany", { max: MAX_ATTACHMENTS });
+  if (file.size === 0) return t("attachments.empty", { name: file.name });
   if (file.size > MAX_ATTACHMENT_BYTES)
-    return `O arquivo “${file.name}” passa de ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB.`;
+    return t("attachments.tooLarge", { name: file.name, mb: MAX_ATTACHMENT_BYTES / 1024 / 1024 });
   return null;
 }
 
@@ -22,22 +23,22 @@ export const sizeText = (bytes: number) =>
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 /**
- * O que a conversa guarda dos anexos: nome e tamanho sempre, e a imagem (o backend a grava em
- * arquivo na pasta da conversa; o banco só guarda a referência). Arquivos que não são imagem
- * ficam só com nome e tamanho.
+ * What the conversation keeps from attachments: always the name and size, plus the image (the
+ * backend writes it to a file in the conversation folder; the database only keeps the reference).
+ * Non-image files keep only the name and size.
  */
 export function storableAttachments(attachments: ChatAttachment[]): ChatAttachment[] {
   return attachments.map((a) => ({ ...a, url: a.type === "image" ? a.url : "" }));
 }
 
-/** `@trecho` imediatamente antes do cursor, no começo do texto ou depois de um espaço. */
+/** `@fragment` right before the caret, at the start of the text or after a space. */
 export function mentionAt(text: string, caret: number): { query: string; start: number } | null {
   const before = text.slice(0, caret);
   const match = /(?:^|\s)@([\w@.+/-]*)$/.exec(before);
   return match ? { query: match[1], start: caret - match[1].length - 1 } : null;
 }
 
-/** Troca o `@trecho` sob o cursor pelo caminho escolhido e devolve o novo texto e cursor. */
+/** Replaces the `@fragment` under the caret with the chosen path; returns the new text and caret. */
 export function applyMention(
   text: string,
   caret: number,

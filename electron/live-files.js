@@ -121,7 +121,7 @@ function createLiveFiles({
       }
       // Keep descriptors open: Claude may unlink its temporary output immediately at completion.
       // The final bytes remain readable through this descriptor, even after unlink.
-      // Drena os logs incrementais antes do snapshot do transcript, para não repetir a saída.
+      // Drain the incremental logs before the transcript snapshot, so the output isn't repeated.
       for (const tracked of [...files.values()].sort((a, b) => Number(a.name === "transcript.jsonl") - Number(b.name === "transcript.jsonl"))) {
         try {
           const stat = await tracked.handle.stat();

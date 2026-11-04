@@ -1,5 +1,5 @@
-// Regras puras de proteção do ai-memory (sem I/O). Fonte única usada pelo processo principal
-// (via require) e pelo renderer (via import do Vite).
+// Pure ai-memory protection rules (no I/O). Single source used by the main process
+// (via require) and by the renderer (via Vite import).
 export const NEVER_DELETE_PREFIXES = ["decisions/"];
 export const MERGE_FIRST_PREFIXES = [
   "_rules/",
@@ -35,10 +35,10 @@ export function canPurgeProject(workspace, project) {
   return true;
 }
 
-// Exclusão de páginas protegidas exige confirmação explícita igual ao caminho da página.
+// Deleting protected pages requires an explicit confirmation equal to the page path.
 export function deleteConfirmationError(pagePath, confirmProtected) {
   if (protectionFor(pagePath) === "none") return null;
   if (typeof confirmProtected === "string" && confirmProtected === pagePath)
     return null;
-  return "Página protegida: confirme a exclusão informando o caminho da página.";
+  return "Protected page: confirm the deletion by entering the page path.";
 }

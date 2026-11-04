@@ -2,8 +2,8 @@ const fs = require("fs");
 const path = require("path");
 const { execCli, findBinary } = require("./platform");
 
-// Arquivos do projeto para o autocomplete de @arquivo: usa o git (respeita .gitignore) e, fora de um
-// repositório, percorre as pastas ignorando as de dependências e as ocultas.
+// Project files for @file autocomplete: uses git (honors .gitignore) and, outside a
+// repository, walks the folders skipping dependency and hidden ones.
 const MAX_FILES = 20000;
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "build", "release", ".next", "target", "__pycache__", ".venv", "venv", "coverage"]);
 
@@ -38,13 +38,13 @@ async function listFiles(cwd, { exec = execCli, find = findBinary, fsApi = fs } 
       const files = stdout.split("\0").filter(Boolean);
       if (files.length) return files.slice(0, MAX_FILES);
     } catch {
-      /* fora de um repositório git: percorre as pastas */
+      /* outside a git repository: walk the folders */
     }
   }
   return walk(cwd, fsApi);
 }
 
-/** Pontua o caminho para a busca: nome do arquivo e prefixo valem mais que um trecho solto no caminho. */
+/** Scores the path for the search: the file name and a prefix weigh more than a loose fragment in the path. */
 function score(file, query) {
   const lower = file.toLowerCase();
   const base = lower.slice(lower.lastIndexOf("/") + 1);
@@ -53,7 +53,7 @@ function score(file, query) {
   if (base.startsWith(query)) return 10 + base.length;
   if (base.includes(query)) return 100 + base.length;
   if (lower.includes(query)) return 200 + file.length;
-  // Letras na ordem (ex.: "uss" acha useSessions.ts): só no nome do arquivo.
+  // Letters in order (e.g. "uss" finds useSessions.ts): only in the file name.
   let at = 0;
   for (const ch of query) {
     at = base.indexOf(ch, at);

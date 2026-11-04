@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const http = require("http");
 const https = require("https");
+const { t } = require("./i18n");
 
 const DEFAULT_SERVER = "http://127.0.0.1:49374";
 const NAME_RE = /^[A-Za-z0-9._-]{1,120}$/;
@@ -14,7 +15,7 @@ function validName(value, label = "nome") {
     value.startsWith("-") ||
     value.startsWith(".")
   )
-    throw new Error(`Valor inválido para ${label}.`);
+    throw new Error(t("errors.invalidValue", { label }));
   return value;
 }
 
@@ -29,7 +30,7 @@ function validPagePath(value) {
     !value.endsWith(".md") ||
     value.split("/").some((seg) => seg === ".." || seg === "." || seg === "")
   )
-    throw new Error("Caminho de página inválido.");
+    throw new Error(t("errors.invalidPagePath"));
   return value;
 }
 
@@ -70,8 +71,8 @@ function resolveToken({ env = process.env, home = os.homedir() } = {}) {
 }
 
 function describeStatus(status) {
-  if (status === 401 || status === 403) return "Token do ai-memory recusado (401). Verifique a autenticação.";
-  if (status === 404) return "Recurso não encontrado no servidor ai-memory.";
+  if (status === 401 || status === 403) return t("errors.aiMemoryToken");
+  if (status === 404) return t("errors.aiMemoryNotFound");
   return `Servidor ai-memory respondeu HTTP ${status}.`;
 }
 
@@ -81,7 +82,7 @@ function fetchJson(urlPath, { timeoutMs = 20000, env = process.env, home = os.ho
     try {
       url = new URL(resolveServerUrl({ env, home }).replace(/\/+$/, "") + urlPath);
     } catch {
-      return reject(new Error("URL do servidor ai-memory inválida."));
+      return reject(new Error(t("errors.aiMemoryUrl")));
     }
     const lib = url.protocol === "https:" ? https : http;
     const token = resolveToken({ env, home });
@@ -100,13 +101,13 @@ function fetchJson(urlPath, { timeoutMs = 20000, env = process.env, home = os.ho
         try {
           resolve(JSON.parse(text));
         } catch {
-          reject(new Error("Resposta inválida do servidor ai-memory."));
+          reject(new Error(t("errors.aiMemoryResponse")));
         }
       });
     });
-    req.on("timeout", () => req.destroy(new Error("Tempo esgotado ao consultar o servidor ai-memory.")));
+    req.on("timeout", () => req.destroy(new Error(t("errors.aiMemoryTimeout"))));
     req.on("error", (err) => {
-      if (err.code === "ECONNREFUSED") err.message = "Servidor ai-memory offline (conexão recusada).";
+      if (err.code === "ECONNREFUSED") err.message = t("errors.aiMemoryOffline");
       reject(err);
     });
     req.end();
@@ -127,7 +128,7 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const str = (v) => (v == null ? "" : String(v));
 
 function projectBase(ws, p) {
-  return `/api/v1/workspaces/${encodeURIComponent(validName(ws, "workspace"))}/projects/${encodeURIComponent(validName(p, "projeto"))}`;
+  return `/api/v1/workspaces/${encodeURIComponent(validName(ws, "workspace"))}/projects/${encodeURIComponent(validName(p, "project"))}`;
 }
 
 function normalizeProject(x) {
@@ -204,8 +205,8 @@ async function getOverview(ws, p, opts) {
   };
 }
 async function listSessions(ws, p, opts) {
-  // Sem `limit` o servidor devolve só 20 (100 é o máximo) e, sem `include_open`, omite as
-  // sessões que nunca receberam o encerramento (CLI de teste interrompido, por exemplo).
+  // Without `limit` the server returns only 20 (100 is the maximum) and, without `include_open`, it omits
+  // sessions that never got their end (an interrupted test CLI, for example).
   const d = await fetchJson(`${projectBase(ws, p)}/sessions?limit=100&include_open=true`, opts);
   return arr(d, "sessions").map((s) => ({
     sessionId: str(s.session_id),

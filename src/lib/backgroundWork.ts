@@ -1,9 +1,10 @@
 import type { ChatMessage } from "../types";
 
+import { t, tn } from "../i18n";
 /**
- * Trabalho que continua depois de a resposta terminar: comandos e agentes em segundo plano ainda
- * rodando. A CLI avisa o fim deles sozinha (e pode responder de novo), então a conversa não está
- * parada, mesmo sem resposta em andamento.
+ * Work that goes on after the reply finished: background commands and agents still running. The
+ * CLI reports when they end on its own (and may reply again), so the conversation isn't idle even
+ * without a reply in progress.
  */
 export function backgroundWork(messages: ChatMessage[] | undefined) {
   let commands = 0;
@@ -20,9 +21,20 @@ export function backgroundWork(messages: ChatMessage[] | undefined) {
 }
 
 export function backgroundLabel({ commands, agents }: { commands: number; agents: number }) {
-  const parts = [
-    commands ? `${commands} ${commands === 1 ? "comando" : "comandos"}` : "",
-    agents ? `${agents} ${agents === 1 ? "agente" : "agentes"}` : "",
-  ].filter(Boolean);
-  return `${parts.join(" e ")} em segundo plano`;
+  if (commands && agents)
+    return t("background.commandsAndAgents", {
+      commands: tn("background.commands", commands),
+      agents: tn("background.agents", agents),
+    });
+  return commands ? tn("background.onlyCommands", commands) : tn("background.onlyAgents", agents);
+}
+
+/**
+ * A reply is being produced right now, including turns the CLI started on its own (the main agent
+ * answering after a background agent finished). Those never go through `sendPrompt`, so the
+ * session status alone would show the conversation as idle while the AI is still working.
+ * Queued replies don't count: they wait behind the reply that is actually running.
+ */
+export function hasLiveReply(messages: ChatMessage[] | undefined) {
+  return !!messages?.some((m) => m.isStreaming && !m.queuedFor);
 }

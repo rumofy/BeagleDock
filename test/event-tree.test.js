@@ -11,19 +11,19 @@ const { buildEventTree } = ctx.exports;
 const e = (id, parentId) => ({ id, parentId, kind: "tool", title: id, status: "done" });
 const ids = (list) => JSON.parse(JSON.stringify(list.map((x) => x.id)));
 
-test("etapas de agente ficam sob o agente, na ordem em que chegaram", () => {
+test("agent steps stay under the agent, in the order they arrived", () => {
   const { roots, tree } = buildEventTree([e("agent"), e("a", "agent"), e("solta"), e("b", "agent")]);
   assert.deepEqual(ids(roots), ["agent", "solta"]);
   assert.deepEqual(ids(tree.get("agent")), ["a", "b"]);
 });
 
-test("agentes dentro de agentes formam níveis", () => {
+test("agents inside agents form levels", () => {
   const { roots, tree } = buildEventTree([e("raiz"), e("filho", "raiz"), e("neto", "filho")]);
   assert.deepEqual(ids(roots), ["raiz"]);
   assert.deepEqual(ids(tree.get("filho")), ["neto"]);
 });
 
-test("pai ausente, o próprio id ou ciclo não somem nem travam: vão para a raiz", () => {
+test("a missing parent, its own id or a cycle don't vanish or hang: they go to the root", () => {
   const { roots } = buildEventTree([e("orfa", "nao-existe"), e("si", "si"), e("a", "b"), e("b", "a")]);
   assert.deepEqual(ids(roots), ["orfa", "si", "a", "b"]);
 });

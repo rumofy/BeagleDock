@@ -1,31 +1,37 @@
 # BeagleDock
 
-## Escopo das integrações
+## Language
 
-Pedidos de funcionalidade e correções nas integrações abrangem **Claude Code, Codex CLI e Antigravity (AGY)**. Não entregar uma mudança somente para um deles quando o usuário não restringir explicitamente o escopo. Preservar o identificador nativo e o histórico de cada conversa.
+English is the project's language for everything written in the repository: README, `docs/`, `CHANGELOG.md`, this file, code comments, test names, commit messages and PR descriptions. Do not add documentation or comments in another language.
 
-Manter testes de contrato dos três protocolos, testes unitários das regras e testes integrados do aplicativo. Ao validar streaming, verificar dados intermediários antes da conclusão; eventos finais simulados não comprovam saída ao vivo. Registrar versões verificadas e distinguir evidência simulada de diagnóstico com CLI real.
+The app's interface is multilingual: English (default), Spanish and Brazilian Portuguese, chosen in Settings → Appearance. Every text shown to the user, in the renderer and in the Electron main process (notifications, tray menu, dialogs, error messages), goes through the dictionaries in `shared/i18n/` (`en.json`, `es.json`, `pt-BR.json`) via `t()`/`tn()` (`src/i18n` in the renderer, `electron/i18n.js` in the main process). Never hard-code user-facing strings. A new key goes into all three files in the same change; `test/i18n.test.js` checks that the locales have the same keys and placeholders. Prompts the app sends to the CLIs on the user's behalf (handoff, continuation, plan approval) also follow the interface language.
 
-Diagnóstico com CLI real roda sempre numa pasta criada por `node test/probe-dir.cjs <nome>` (ou `makeProbeDir` nos scripts de teste), nunca em `/tmp` solto nem em `mktemp -d`: o `.ai-memory.toml` dela concentra as sessões no projeto `beagledock-probes` em vez de criar um projeto novo no ai-memory a cada pasta.
+## Integration scope
 
-## Versões e distribuição
+Feature requests and fixes in the integrations cover **Claude Code, Codex CLI and Antigravity (AGY)**. Do not deliver a change for only one of them unless the user explicitly narrows the scope. Preserve each conversation's native identifier and history.
 
-O aplicativo se chama BeagleDock e usa a licença Apache-2.0. A versão existe **só** em `package.json`: nunca escrever o número da versão em README, docs, código ou nomes de arquivo fixos. Quem precisa dela lê de `package.json`/`app.getVersion()`; `docs/openapi.json` é sincronizado pelo script de versão e verificado nos testes.
+Keep contract tests for the three protocols, unit tests for the rules and integrated tests of the app. When validating streaming, check intermediate data before completion; simulated final events do not prove live output. Record verified versions and distinguish simulated evidence from diagnosis with the real CLI.
+
+Diagnosis with a real CLI always runs in a folder created by `node test/probe-dir.cjs <name>` (or `makeProbeDir` in the test scripts), never in a loose `/tmp` folder or `mktemp -d`: its `.ai-memory.toml` groups the sessions under the `beagledock-probes` project instead of creating a new ai-memory project for every folder.
+
+## Versions and distribution
+
+The app is called BeagleDock and uses the Apache-2.0 license. The version lives **only** in `package.json`: never write the version number in the README, docs, code or fixed file names. Whatever needs it reads it from `package.json`/`app.getVersion()`; `docs/openapi.json` is synced by the version script and checked by the tests.
 
 ### Changelog
 
-`CHANGELOG.md` segue [Keep a Changelog 1.1.0](https://keepachangelog.com/pt-BR/1.1.0/) e [SemVer](https://semver.org/lang/pt-BR/):
+`CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) and [SemVer](https://semver.org/):
 
-- Toda mudança perceptível ao usuário entra em `## [Unreleased]` no mesmo trabalho que a introduz, numa destas seções, nesta ordem: `Adicionado`, `Alterado`, `Descontinuado`, `Removido`, `Corrigido`, `Segurança`. Uma linha por mudança, em pt-BR, escrita para o usuário (o quê e por quê), sem nomes de arquivos internos nem detalhes de implementação. Refatorações e testes sem efeito visível não entram.
-- Nunca editar à mão as seções de versões já lançadas, a data nem os links do rodapé.
-- Lançar versão: `npm version patch|minor|major` (correção / funcionalidade / quebra de compatibilidade). O script move o `Unreleased` para `## [x.y.z] - AAAA-MM-DD`, atualiza os links de comparação e o `docs/openapi.json`. Ele não faz commit nem tag; isso só quando o usuário pedir. Os nomes antigos (CapyAI, Bleagle/BleagleDock) não são usados em código, identidades ou documentação; a migração única de dados, configurações e hooks antigos para as identidades BeagleDock deve continuar funcionando sem perder sessões nem duplicar aprovações.
+- Every user-visible change goes into `## [Unreleased]` in the same work that introduces it, in one of these sections, in this order: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`. One line per change, in English, written for the user (what and why), without internal file names or implementation details. Refactors and tests with no visible effect are not listed.
+- Never hand-edit the sections of released versions, their dates or the footer links. Versions released before the switch to English keep their original Portuguese text.
+- Releasing a version: `npm version patch|minor|major` (fix / feature / breaking change). The script moves `Unreleased` to `## [x.y.z] - YYYY-MM-DD`, updates the comparison links and `docs/openapi.json`. It does not commit or tag; do that only when the user asks. The old names (CapyAI, Bleagle/BleagleDock) are not used in code, identities or documentation; the one-time migration of old data, settings and hooks to the BeagleDock identities must keep working without losing sessions or duplicating approvals.
 
-A distribuição é apenas local, em Linux (`.deb`/AppImage gerados na própria máquina). O CI (`.github/workflows/`) só roda tipos, testes e build do frontend nos PRs e publica a release no GitHub com as notas do `CHANGELOG.md`, sem pacotes anexados. Não adicionar empacotamento no CI nem alvos para outras plataformas sem pedido explícito. A virada de release é automática: quando a branch de release (`release/X.Y.Z`) entra na `main`, o workflow `Release` cria a tag `vX.Y.Z` no commit integrado e publica a release. Não criar nem enviar a tag à mão; conferir só que o workflow passou.
+Distribution is local only, on Linux (`.deb`/AppImage built on the machine itself). CI (`.github/workflows/`) only runs types, tests and the frontend build on PRs and publishes the GitHub release with the notes from `CHANGELOG.md`, with no packages attached. Do not add packaging to CI or targets for other platforms without an explicit request. Releases are automatic: when the release branch (`release/X.Y.Z`) is merged into `main`, the `Release` workflow creates the `vX.Y.Z` tag on the merged commit and publishes the release. Do not create or push the tag by hand; only check that the workflow passed.
 
-## Estrutura do frontend
+## Frontend structure
 
-`src/App.tsx` só compõe o layout. Cada área fica em `src/features/<área>/` (componentes, hooks e utilitários próprios); estado compartilhado e chamadas ao backend ficam em hooks (`src/hooks/`) e no cliente tipado da API (`src/api/`), nunca via `(window as any)`. Componentes de interface reutilizáveis ficam em `src/components/`.
+`src/App.tsx` only composes the layout. Each area lives in `src/features/<area>/` (its own components, hooks and utilities); shared state and backend calls live in hooks (`src/hooks/`) and in the typed API client (`src/api/`), never through `(window as any)`. Reusable interface components live in `src/components/`.
 
 ## Git
 
-Somente criar commits e PRs quando solicitado. A tag `vX.Y.Z` de uma release é criada pelo CI no merge da `release/X.Y.Z` na `main`. Não incluir coautoria, atribuição de IA ou links de sessão em commits e PRs.
+Only create commits and PRs when asked. The `vX.Y.Z` tag of a release is created by CI when `release/X.Y.Z` is merged into `main`. Do not include co-authorship, AI attribution or session links in commits and PRs.

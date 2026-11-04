@@ -5,6 +5,7 @@ const { parse } = require("smol-toml");
 const { roots, readJson } = require("./telemetry");
 const { findBinary, execCli } = require("./platform");
 const { metadataModels, parseAgyRows, agyModels } = require("./model-options");
+const { t } = require("./i18n");
 const modelIds = (values) => [
   ...new Set(
     (Array.isArray(values) ? values : [])
@@ -83,7 +84,7 @@ function createCatalogs({
         const { stdout } = await exec(bin, ["models"], { timeout: 20000 });
         const ids = parseAgyModels(stdout);
         if (!ids.length)
-          throw new Error("A CLI não retornou um catálogo de modelos válido.");
+          throw new Error(t("errors.invalidCatalog"));
         agyCache = {
           models: ids,
           rows: parseAgyRows(stdout),
@@ -107,7 +108,7 @@ function createCatalogs({
           modelOptions: [],
           activeModel: "",
           mcps: [],
-          modelsSource: "Indisponível",
+          modelsSource: t("common.unavailable"),
           modelsUpdatedAt: null,
           modelsError: null,
         },
@@ -176,7 +177,7 @@ function createCatalogs({
     });
     Object.assign(result.antigravity, {
       models: agyCache.models,
-      modelsSource: agyCache.updatedAt ? "agy models" : "Indisponível",
+      modelsSource: agyCache.updatedAt ? "agy models" : t("common.unavailable"),
       modelsUpdatedAt: agyCache.updatedAt,
       modelsError: agyCache.error,
     });

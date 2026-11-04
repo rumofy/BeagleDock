@@ -1,4 +1,4 @@
-/** Rascunho da mensagem por conversa: guardado ao trocar de conversa e ao fechar o app. */
+/** Message draft per conversation: kept when switching conversations and when closing the app. */
 export const DRAFTS_KEY = "beagledock.drafts.v1";
 const MAX_DRAFTS = 60;
 const MAX_LENGTH = 20000;
@@ -23,18 +23,18 @@ export function loadDrafts(storage?: DraftStorage): DraftMap {
   }
 }
 
-/** Grava o mapa inteiro; falha de armazenamento (modo privado, cota) é ignorada. */
+/** Writes the whole map; a storage failure (private mode, quota) is ignored. */
 export function saveDrafts(drafts: DraftMap, storage?: DraftStorage) {
   try {
     storage?.setItem(DRAFTS_KEY, JSON.stringify(drafts));
   } catch {
-    /* o rascunho vale só nesta execução */
+    /* the draft lasts only for this run */
   }
 }
 
 /**
- * Devolve o novo mapa (texto vazio remove o rascunho). Com `storage`, também grava na hora; sem ele,
- * quem chama grava depois (ex.: com atraso, para não gravar a cada tecla).
+ * Returns the new map (empty text removes the draft). With `storage` it also writes right away;
+ * without it the caller writes later (e.g. debounced, so it doesn't write on every key).
  */
 export function updateDraft(
   drafts: DraftMap,
@@ -44,7 +44,7 @@ export function updateDraft(
 ): DraftMap {
   const next: DraftMap = { ...drafts };
   if (text.trim()) {
-    delete next[sessionId]; // reinsere no fim: o mais recente é o último a ser descartado
+    delete next[sessionId]; // re-insert at the end: the most recent is the last to be dropped
     next[sessionId] = text.slice(0, MAX_LENGTH);
   } else delete next[sessionId];
   const ids = Object.keys(next);

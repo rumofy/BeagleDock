@@ -40,24 +40,24 @@ test("canPurgeProject refuses _global and underscore names", () => {
 test("maintenance prompt carries scope, limits and plan-mode wait", () => {
   const plan = m.buildMaintenancePrompt({ workspace: "default", project: "AcmeApp", mode: "plan", maxDeletions: 25 });
   assert.match(plan, /workspace="default", project="AcmeApp"/);
-  assert.match(plan, /no máximo 25 exclusões/);
+  assert.match(plan, /at most 25 page deletions/);
   assert.match(plan, /no_llm=true/);
   assert.match(plan, /dry_run=true/);
-  assert.match(plan, /AGUARDE a aprovação/);
-  assert.match(plan, /NUNCA exclua páginas em `decisions\/\*`/);
+  assert.match(plan, /WAIT for the user's approval/);
+  assert.match(plan, /NEVER delete pages in `decisions\/\*`/);
   assert.match(plan, /ai-memory-learning-maintenance/);
-  assert.match(plan, /UMA chamada/);
+  assert.match(plan, /ONE ai-memory call/);
   assert.match(plan, /_prompts\/consolidation\.md/);
   const exec = m.buildMaintenancePrompt({ workspace: "a", project: "b", mode: "execute", maxDeletions: 5 });
-  assert.doesNotMatch(exec, /AGUARDE a aprovação/);
-  assert.match(exec, /executar com limite/i);
+  assert.doesNotMatch(exec, /WAIT for the user's approval/);
+  assert.match(exec, /run with a limit/i);
 });
 
 test("deleteConfirmationError requires the exact page path for protected prefixes", () => {
   for (const path of ["decisions/a.md", "_rules/a.md", "review/a.md", "claude-memory/a.md", "procedures/a.md", "profile/a.md", "preferences/a.md", "_prompts/a.md"]) {
-    assert.match(m.deleteConfirmationError(path, undefined), /protegida/, path);
-    assert.match(m.deleteConfirmationError(path, "outra/pagina.md"), /protegida/, path);
-    assert.match(m.deleteConfirmationError(path, true), /protegida/, path);
+    assert.match(m.deleteConfirmationError(path, undefined), /Protected/, path);
+    assert.match(m.deleteConfirmationError(path, "outra/pagina.md"), /Protected/, path);
+    assert.match(m.deleteConfirmationError(path, true), /Protected/, path);
     assert.equal(m.deleteConfirmationError(path, path), null, path);
   }
   assert.equal(m.deleteConfirmationError("notes/a.md", undefined), null);

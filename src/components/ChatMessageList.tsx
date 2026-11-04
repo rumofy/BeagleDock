@@ -4,10 +4,12 @@ import { ChatActivity } from "./ChatActivity";
 import { CompanyIcon } from "./CompanyIcon";
 import { ChatTimeline } from "./ChatTimeline";
 import { MessageBody } from "./MessageBody";
+import { PlanProposal, proposedPlan } from "./PlanProposal";
 import type { FileTarget } from "./LinkedText";
 import { messageSegments } from "../lib/messageSegments";
 import type { ChatMessage, ReasoningEffortLevel, UserProfile } from "../types";
 
+import { t, tn } from "../i18n";
 export function reasoningBadgeClass(effort: ReasoningEffortLevel) {
   switch (effort) {
     case "low":
@@ -33,7 +35,7 @@ type RowProps = {
   onAnswerNow?: (msg: ChatMessage, mode: "background" | "interrupt") => void;
 };
 
-// Só a mensagem em streaming muda de identidade a cada pedaço; as demais não re-renderizam.
+// Only the streaming message changes identity on every chunk; the others don't re-render.
 const MessageRow = memo(
   function MessageRow({
     msg,
@@ -54,6 +56,7 @@ const MessageRow = memo(
           e.status === "running" &&
           e.meta?.background === true,
       ).length ?? 0;
+    const plan = msg.sender === "user" ? undefined : proposedPlan(msg.events);
     const segments = messageSegments(msg.text || "");
     const earlier = segments.slice(0, -1);
     const lastSegment = segments.at(-1) || "";
@@ -91,7 +94,7 @@ const MessageRow = memo(
             <span className="text-xs text-[#9d9483]">{msg.timestamp}</span>
           </div>
 
-          {/* Cada trecho de texto da resposta é uma caixa própria: o que já foi lido fica separado do novo. */}
+          {/* Each text part of the reply gets its own box: what was already read stays apart from the new. */}
           {earlier.map((segment, index) => (
             <div key={index} className={`${boxClass} mb-2`} data-testid="message-segment">
               {index === 0 && msg.events && msg.events.length > 0 && (
@@ -109,6 +112,8 @@ const MessageRow = memo(
             {earlier.length === 0 && msg.events && msg.events.length > 0 && (
               <ChatTimeline events={msg.events} streaming={!!msg.isStreaming} />
             )}
+
+            {plan && <PlanProposal event={plan} onOpenFile={onOpenFile} />}
 
             {lastSegment && (
               <div className="whitespace-pre-wrap break-words font-sans">
@@ -135,20 +140,20 @@ const MessageRow = memo(
                   <button
                     type="button"
                     onClick={() => onForceQueued(msg)}
-                    title="Interrompe a execução atual e envia esta mensagem agora"
+                    title={t("queue.sendNowHint")}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
                   >
-                    <Zap size={12} /> Enviar agora
+                    <Zap size={12} /> {t("queue.sendNow")}
                   </button>
                 )}
                 {onCancelQueued && (
                   <button
                     type="button"
                     onClick={() => onCancelQueued(msg)}
-                    title="Remove a mensagem da fila antes de a IA lê-la"
+                    title={t("queue.removeHint")}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-[11px] font-bold text-[#665e4f]"
                   >
-                    <Trash2 size={12} /> Remover da fila
+                    <Trash2 size={12} /> {t("queue.remove")}
                   </button>
                 )}
               </div>
@@ -160,28 +165,28 @@ const MessageRow = memo(
                     <button
                       type="button"
                       onClick={() => onAnswerNow(msg, "background")}
-                      title="O comando em execução vai para o segundo plano e continua rodando; a IA responde a sua mensagem agora"
+                      title={t("answerNow.backgroundHint")}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
                     >
-                      <Zap size={12} /> Responder agora
+                      <Zap size={12} /> {t("answerNow.background")}
                     </button>
                     <button
                       type="button"
                       onClick={() => onAnswerNow(msg, "interrupt")}
-                      title="Cancela a etapa em execução (inclusive o comando) e a IA responde a sua mensagem"
+                      title={t("answerNow.interruptHint")}
                       className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] text-[11px] font-bold text-[#665e4f]"
                     >
-                      <OctagonX size={12} /> Interromper e responder
+                      <OctagonX size={12} /> {t("answerNow.interrupt")}
                     </button>
                   </>
                 ) : (
                   <button
                     type="button"
                     onClick={() => onAnswerNow(msg, "interrupt")}
-                    title="O Codex não manda comandos para o segundo plano: interrompe a etapa em execução (inclusive o comando) e responde a sua mensagem"
+                    title={t("answerNow.codexHint")}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-[11px] font-bold text-amber-800"
                   >
-                    <Zap size={12} /> Interromper e responder
+                    <Zap size={12} /> {t("answerNow.interrupt")}
                   </button>
                 )}
               </div>
@@ -193,9 +198,7 @@ const MessageRow = memo(
                 className="flex items-center gap-2 text-[11px] font-medium text-amber-700"
               >
                 <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />
-                {backgroundAgents === 1
-                  ? "1 agente ainda trabalhando em segundo plano"
-                  : `${backgroundAgents} agentes ainda trabalhando em segundo plano`}
+                {tn("message.backgroundAgents", backgroundAgents)}
               </div>
             )}
             {!msg.isStreaming && backgroundCommands > 0 && (
@@ -205,9 +208,7 @@ const MessageRow = memo(
                 className="flex items-center gap-2 text-[11px] font-medium text-amber-700"
               >
                 <span className="w-1.5 h-1.5 shrink-0 rounded-full bg-amber-500 animate-pulse" />
-                {backgroundCommands === 1
-                  ? "1 comando ainda rodando em segundo plano: a IA aguarda o aviso de conclusão"
-                  : `${backgroundCommands} comandos ainda rodando em segundo plano: a IA aguarda o aviso de conclusão`}
+                {tn("message.backgroundCommands", backgroundCommands)}
               </div>
             )}
             {msg.attachments && msg.attachments.length > 0 && (
@@ -295,7 +296,7 @@ export function ChatMessageList({
   onCancelQueued?: (msg: ChatMessage) => void;
   onAnswerNow?: (msg: ChatMessage, mode: "background" | "interrupt") => void;
 }) {
-  // "Enviar agora" só vale para a próxima mensagem da fila (a primeira que ainda espera).
+  // "Send now" only applies to the next queued message (the first one still waiting).
   const nextQueuedId = messages.find((m) => m.queuedFor)?.id;
   return (
     <>

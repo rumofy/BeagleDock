@@ -1,12 +1,13 @@
-// Ditado por voz: transcreve o áudio gravado no composer (WAV mono 16 kHz) em texto.
-// Padrão: Parakeet local (parakeet-cli do whisper.cpp), sem conta, sem chave e sem internet.
-// Opcional: API compatível com OpenAI (gpt-4o-transcribe, Groq, servidor local…).
+// Voice dictation: transcribes the audio recorded in the composer (16 kHz mono WAV) into text.
+// Default: local Parakeet (whisper.cpp's parakeet-cli), no account, no key and no internet.
+// Optional: an OpenAI-compatible API (gpt-4o-transcribe, Groq, local server…).
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const spawn = require("cross-spawn");
 const { redact } = require("./redact");
 const { fixNamesBySound } = require("./speech-names");
+const { t } = require("./i18n");
 
 const DEFAULTS = Object.freeze({
   engine: "local",
@@ -15,15 +16,15 @@ const DEFAULTS = Object.freeze({
   language: "pt",
   vocabulary: "",
 });
-// Limite da API da OpenAI (25 MB); em WAV 16 kHz mono são uns 13 minutos.
+// OpenAI API limit (25 MB); in 16 kHz mono WAV that's about 13 minutes.
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
-const MIN_AUDIO_BYTES = 44 + 3200; // cabeçalho + ~0,1 s
+const MIN_AUDIO_BYTES = 44 + 3200; // header + ~0.1 s
 const TIMEOUT_MS = 180_000;
 const MAX_PROMPT_CHARS = 1500;
 
 class SpeechModelMissingError extends Error {
   constructor(model) {
-    super(`Baixe o modelo de voz (${model.label}) para usar o ditado local.`);
+    super(t("dictation.modelMissing", { model: model.label }));
     this.code = "SPEECH_MODEL_MISSING";
   }
 }
@@ -32,7 +33,7 @@ function text(value, fallback = "") {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
-/** Configuração efetiva do ditado, com os padrões aplicados. */
+/** Effective dictation settings, with the defaults applied. */
 function resolveDictationConfig(settings) {
   const raw = (settings && settings.voiceDictation) || {};
   return {
@@ -44,7 +45,7 @@ function resolveDictationConfig(settings) {
   };
 }
 
-/** Entradas do vocabulário: "termo" fixa a grafia; "errado => certo" troca o que sair errado. */
+/** Vocabulary entries: "term" fixes the spelling; "wrong => right" replaces what comes out wrong. */
 function parseVocabulary(vocabulary = "") {
   const terms = [];
   const replacements = [];
@@ -58,7 +59,7 @@ function parseVocabulary(vocabulary = "") {
   return { terms, replacements };
 }
 
-/** Lista de termos sem repetição, preservando a ordem: a do usuário vem primeiro. */
+/** List of terms without repeats, keeping the order: the user's come first. */
 function vocabularyTerms({ vocabulary = "", context = [] } = {}) {
   const { terms: own, replacements } = parseVocabulary(vocabulary);
   const seen = new Set();
@@ -73,7 +74,7 @@ function vocabularyTerms({ vocabulary = "", context = [] } = {}) {
 }
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// Palavra inteira e solta: não mexe dentro de caminho, arquivo ou variável (`~/.app`,
+// Whole, standalone word: doesn't touch the inside of a path, file or variable (`~/.app`,
 // `package.json`, `APP_DIR`).
 const wordPattern = (phrase) =>
   new RegExp(
@@ -82,11 +83,11 @@ const wordPattern = (phrase) =>
   );
 
 /**
- * Corrige a transcrição com o vocabulário: troca "errado => certo" e acerta a grafia de
- * termos conhecidos (ex.: "claude code" → "Claude Code"). Funciona com qualquer motor.
+ * Fixes the transcription with the vocabulary: replaces "wrong => right" and fixes the spelling of
+ * known terms (e.g. "claude code" → "Claude Code"). Works with any engine.
  */
 function applyVocabulary(transcript, options = {}) {
-  // URLs passam intactas (`?logo=linux` não vira `?logo=Linux`); só o texto em volta é corrigido.
+  // URLs pass through intact (`?logo=linux` doesn't become `?logo=Linux`); only the text around is fixed.
   return String(transcript || "")
     .split(URL_PATTERN)
     .map((part, i) => (i % 2 ? part : applyVocabularyToText(part, options)))
@@ -100,28 +101,42 @@ function applyVocabularyToText(text, { vocabulary = "", context = [] } = {}) {
   const { terms: own, replacements } = parseVocabulary(vocabulary);
   for (const { from, to } of replacements)
     result = result.replace(wordPattern(from), to);
-  // Nomes da sessão (pasta, workspace) podem ser palavras comuns ("Testes"): só entram os
-  // que têm grafia claramente própria, como "RumofyNext".
+  // Session names (folder, workspace) may be common words ("Testes"): only the ones
+  // with a clearly own spelling, like "RumofyNext", get in.
   const distinctive = context.filter((term) => /\p{Lu}/u.test(String(term).slice(1)));
-  // O que soa como um nome conhecido ("Bigodok") vira o nome ("BeagleDock").
+  // What sounds like a known name ("Bigodok") becomes the name ("BeagleDock").
   result = fixNamesBySound(result, distinctive, [...own, ...replacements.map((r) => r.to)]);
   for (const term of vocabularyTerms({ vocabulary, context: distinctive })) {
-    if (term.length < 3 || term === term.toLowerCase()) continue; // só termos com grafia própria
+    if (term.length < 3 || term === term.toLowerCase()) continue; // only terms with their own spelling
     result = result.replace(wordPattern(term), term);
   }
   return result;
 }
 
 /**
- * Contexto para modelos que aceitam dica (API): ditado para um assistente de programação,
- * com os nomes próprios e termos técnicos que precisam sair escritos exatamente assim.
+ * Context for models that accept a hint (API): dictation for a coding assistant,
+ * with the proper names and technical terms that must come out written exactly like this.
  */
+const DICTATION_HINTS = {
+  pt: {
+    intro:
+      "Ditado em português do Brasil para um assistente de programação. Termos técnicos em inglês são mantidos em inglês. Use pontuação correta.",
+    vocabulary: "Vocabulário",
+  },
+  es: {
+    intro:
+      "Dictado en español para un asistente de programación. Los términos técnicos en inglés se mantienen en inglés. Usa la puntuación correcta.",
+    vocabulary: "Vocabulario",
+  },
+  en: {
+    intro: "Dictation for a coding assistant. Keep technical terms verbatim and use proper punctuation.",
+    vocabulary: "Vocabulary",
+  },
+};
 function buildPrompt({ language, vocabulary, context }) {
-  const intro =
-    language === "pt" || language === "auto"
-      ? "Ditado em português do Brasil para um assistente de programação. Termos técnicos em inglês são mantidos em inglês. Use pontuação correta."
-      : "Dictation for a coding assistant. Keep technical terms verbatim and use proper punctuation.";
-  let prompt = `${intro} Vocabulário: `;
+  // The hint follows the dictation language (not the interface's): it's what the speech model hears.
+  const hint = DICTATION_HINTS[language === "auto" ? "pt" : language] || DICTATION_HINTS.en;
+  let prompt = `${hint.intro} ${hint.vocabulary}: `;
   for (const term of vocabularyTerms({ vocabulary, context })) {
     const next = `${prompt}${prompt.endsWith(": ") ? "" : ", "}${term}`;
     if (next.length > MAX_PROMPT_CHARS) break;
@@ -130,25 +145,25 @@ function buildPrompt({ language, vocabulary, context }) {
   return `${prompt}.`;
 }
 
-/** Valida o áudio recebido do renderer (base64 de um WAV). */
+/** Validates the audio received from the renderer (base64 of a WAV). */
 function decodeWav(base64) {
-  if (typeof base64 !== "string" || !base64) throw new Error("Áudio vazio.");
+  if (typeof base64 !== "string" || !base64) throw new Error(t("dictation.emptyAudio"));
   if (base64.length > Math.ceil((MAX_AUDIO_BYTES * 4) / 3) + 4)
-    throw new Error("Gravação longa demais para transcrever (limite de 25 MB).");
+    throw new Error(t("dictation.tooLong"));
   const audio = Buffer.from(base64, "base64");
   if (audio.length > MAX_AUDIO_BYTES)
-    throw new Error("Gravação longa demais para transcrever (limite de 25 MB).");
+    throw new Error(t("dictation.tooLong"));
   if (
     audio.length < 12 ||
     audio.toString("ascii", 0, 4) !== "RIFF" ||
     audio.toString("ascii", 8, 12) !== "WAVE"
   )
-    throw new Error("Formato de áudio inválido.");
-  if (audio.length < MIN_AUDIO_BYTES) throw new Error("Gravação curta demais.");
+    throw new Error(t("dictation.invalidFormat"));
+  if (audio.length < MIN_AUDIO_BYTES) throw new Error(t("dictation.tooShort"));
   return audio;
 }
 
-/** Remove marcações que não são fala ([BLANK_AUDIO], [Música]…) e junta as linhas. */
+/** Removes markings that aren't speech ([BLANK_AUDIO], [Music]…) and joins the lines. */
 function cleanTranscript(raw) {
   return String(raw || "")
     .replace(/\[[^\]\n]{1,40}\]/g, " ")
@@ -170,16 +185,16 @@ async function transcribeWithApi({ audio, config, apiKey, prompt, fetchImpl = fe
   try {
     url = new URL(`${config.baseUrl}/audio/transcriptions`);
   } catch {
-    throw new Error("Endereço da API de transcrição inválido.");
+    throw new Error(t("dictation.invalidApiUrl"));
   }
   if (url.protocol !== "https:" && !(url.protocol === "http:" && isLocalHost(url.href)))
-    throw new Error("A API de transcrição precisa usar https (http só para localhost).");
+    throw new Error(t("dictation.httpsOnly"));
   if (!apiKey && !isLocalHost(url.href))
     throw new Error(
-      "Cadastre a chave da API de transcrição em Configurações → Ditado por voz.",
+      t("dictation.apiKeyMissing"),
     );
   const form = new FormData();
-  form.append("file", new Blob([audio], { type: "audio/wav" }), "ditado.wav");
+  form.append("file", new Blob([audio], { type: "audio/wav" }), "dictation.wav");
   form.append("model", config.model);
   if (config.language && config.language !== "auto")
     form.append("language", config.language);
@@ -196,8 +211,8 @@ async function transcribeWithApi({ audio, config, apiKey, prompt, fetchImpl = fe
     });
   } catch (error) {
     if (error?.name === "TimeoutError")
-      throw new Error("A transcrição demorou demais para responder.");
-    throw new Error(`Não foi possível falar com a API de transcrição: ${redact(error.message)}`);
+      throw new Error(t("dictation.apiTimeout"));
+    throw new Error(t("dictation.apiUnreachable", { error: redact(error.message) }));
   }
   const body = await response.text();
   let data = null;
@@ -207,26 +222,26 @@ async function transcribeWithApi({ audio, config, apiKey, prompt, fetchImpl = fe
   if (!response.ok) {
     const detail = data?.error?.message || data?.error || body.slice(0, 300);
     throw new Error(
-      `Transcrição recusada (HTTP ${response.status}): ${redact(String(detail || "sem detalhes"))}`,
+      t("dictation.apiRefused", { status: response.status, detail: redact(String(detail || t("dictation.noDetails"))) }),
     );
   }
-  if (typeof data?.text !== "string") throw new Error("Resposta da transcrição sem texto.");
+  if (typeof data?.text !== "string") throw new Error(t("dictation.noText"));
   return cleanTranscript(data.text);
 }
 
-/** Threads para o modelo local: os núcleos de desempenho bastam; mais que 8 não ajuda. */
+/** Threads for the local model: the performance cores are enough; more than 8 doesn't help. */
 function localThreads(cpuCount = os.cpus().length) {
   return Math.max(1, Math.min(8, cpuCount - 2));
 }
 
-/** Roda o parakeet-cli com o WAV num arquivo temporário privado e devolve o texto. */
+/** Runs parakeet-cli with the WAV in a private temporary file and returns the text. */
 async function transcribeLocally({ audio, binary, modelPath, spawnImpl = spawn, fsApi = fs, threads = localThreads() }) {
   if (!binary)
     throw new Error(
-      "Motor de ditado local não encontrado. Rode `npm run build:speech` (ou `npm run build`) para compilá-lo.",
+      t("dictation.engineMissing"),
     );
-  const dir = fsApi.mkdtempSync(path.join(os.tmpdir(), "beagledock-ditado-"));
-  const file = path.join(dir, "ditado.wav");
+  const dir = fsApi.mkdtempSync(path.join(os.tmpdir(), "beagledock-dictation-"));
+  const file = path.join(dir, "dictation.wav");
   try {
     fsApi.writeFileSync(file, audio, { mode: 0o600 });
     const args = ["-m", modelPath, "-f", file, "-t", String(threads), "-np"];
@@ -237,18 +252,18 @@ async function transcribeLocally({ audio, binary, modelPath, spawnImpl = spawn, 
       try {
         child = spawnImpl(binary, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
       } catch (error) {
-        reject(new Error(`Não foi possível iniciar o motor de ditado: ${error.message}`));
+        reject(new Error(t("dictation.engineStartFailed", { error: error.message })));
         return;
       }
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
-        reject(new Error("O motor de ditado demorou demais para transcrever."));
+        reject(new Error(t("dictation.engineTimeout")));
       }, TIMEOUT_MS);
       child.stdout.on("data", (chunk) => (stdout += chunk));
       child.stderr.on("data", (chunk) => (stderr = (stderr + chunk).slice(-2000)));
       child.on("error", (error) => {
         clearTimeout(timer);
-        reject(new Error(`Falha no motor de ditado: ${error.message}`));
+        reject(new Error(t("dictation.engineFailed", { error: error.message })));
       });
       child.on("close", (code) => {
         clearTimeout(timer);
@@ -256,7 +271,7 @@ async function transcribeLocally({ audio, binary, modelPath, spawnImpl = spawn, 
         else
           reject(
             new Error(
-              `O motor de ditado terminou com erro (${code}): ${stderr.trim().split("\n").pop() || "sem detalhes"}`,
+              t("dictation.engineExited", { code, detail: stderr.trim().split("\n").pop() || t("dictation.noDetails") }),
             ),
           );
       });
@@ -268,7 +283,7 @@ async function transcribeLocally({ audio, binary, modelPath, spawnImpl = spawn, 
   }
 }
 
-/** Caminho do parakeet-cli: recurso do pacote instalado ou vendor/ do repositório. */
+/** Path of parakeet-cli: a resource of the installed package or the repository's vendor/. */
 function findLocalEngine({ resourcesPath = process.resourcesPath, appRoot = path.join(__dirname, ".."), fsApi = fs } = {}) {
   const candidates = [
     resourcesPath && path.join(resourcesPath, "speech", "parakeet-cli"),
@@ -285,8 +300,8 @@ function findLocalEngine({ resourcesPath = process.resourcesPath, appRoot = path
 }
 
 /**
- * Transcreve uma gravação. `request.context` traz termos da sessão atual (projeto,
- * arquivos citados) que viram dica para a API e correção de grafia em qualquer motor.
+ * Transcribes a recording. `request.context` carries terms of the current session (project,
+ * mentioned files) that become a hint for the API and a spelling fix in any engine.
  */
 async function transcribeAudio(request, deps) {
   const { getSettings, getSecret, fetchImpl, spawnImpl, fsApi, models, findEngine = findLocalEngine } = deps;

@@ -1,5 +1,5 @@
-// Histórico de conversas: o banco do BeagleDock como fonte principal, os arquivos nativos das CLIs
-// como complemento, imagens em arquivo (não em base64 no banco), fechar e apagar definitivamente.
+// Conversation history: the BeagleDock database as the main source, the CLIs' native files
+// as a complement, images in files (not base64 in the database), closing and deleting permanently.
 const { test, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
@@ -33,7 +33,7 @@ const write = (home, name, value) => {
 };
 const lines = (values) => values.map((v) => JSON.stringify(v)).join("\n") + "\n";
 
-test("imagem da mensagem vai para arquivo: o banco guarda só a referência e a prévia volta ao ler", async () => {
+test("a message's image goes to a file: the database keeps only the reference and the preview comes back on read", async () => {
   await store.saveSession(session("img"));
   await store.saveChatMessage(message("m-img", "img", "olha", {
     attachments: [{ id: "a1", name: "print.png", type: "image", url: PNG, sizeText: "1 KB" }],
@@ -41,31 +41,31 @@ test("imagem da mensagem vai para arquivo: o banco guarda só a referência e a 
   const raw = await new Promise((resolve, reject) =>
     store.db.get("SELECT attachments_json FROM chat_history WHERE id='m-img'", (e, r) => (e ? reject(e) : resolve(r))),
   );
-  assert.ok(!raw.attachments_json.includes("base64"), "nada de base64 no banco");
+  assert.ok(!raw.attachments_json.includes("base64"), "no base64 in the database");
   const stored = JSON.parse(raw.attachments_json)[0];
   assert.match(stored.file, /^[a-f0-9]{32}\.png$/);
   assert.ok(fs.existsSync(path.join(attachmentsDir("img"), stored.file)));
   const [loaded] = await store.getChatMessages("img");
-  assert.equal(loaded.attachments[0].url, PNG, "a interface recebe a imagem como antes");
+  assert.equal(loaded.attachments[0].url, PNG, "the interface gets the image as before");
   assert.equal(loaded.attachments[0].file, undefined);
 });
 
-test("a cópia enviada à CLI e a do histórico são o mesmo arquivo; repetir a imagem não duplica", () => {
+test("the copy sent to the CLI and the history's are the same file; repeating the image doesn't duplicate it", () => {
   const sent = saveAttachments({ sessionId: "img", attachments: [{ name: "print", url: PNG }], root });
   const stored = toStoredAttachments({ root, sessionId: "img", attachments: [{ url: PNG, type: "image" }] });
   assert.equal(path.basename(sent[0].path), stored[0].file);
   assert.equal(fs.readdirSync(attachmentsDir("img")).length, 1);
 });
 
-test("referência de arquivo fora do padrão não lê nada fora da pasta da conversa", () => {
+test("a non-standard file reference reads nothing outside the conversation's folder", () => {
   write(root, "segredo.png", "x");
   const [item] = fromStoredAttachments({ root, sessionId: "img", attachments: [{ file: "../../segredo.png" }] });
   assert.equal(item.url, "");
   const [missing] = fromStoredAttachments({ root, sessionId: "img", attachments: [{ file: "0".repeat(32) + ".png" }] });
-  assert.equal(missing.url, "", "arquivo apagado vira anexo sem prévia");
+  assert.equal(missing.url, "", "a deleted file becomes an attachment without preview");
 });
 
-test("bancos antigos com imagem em base64 migram para arquivos ao iniciar", async () => {
+test("old databases with base64 images migrate to files on startup", async () => {
   const sqlite3 = require("sqlite3");
   const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-legacy-"));
   try {
@@ -96,7 +96,7 @@ test("bancos antigos com imagem em base64 migram para arquivos ao iniciar", asyn
   }
 });
 
-test("fechadas não carregam mensagens ao iniciar, mas aparecem no histórico e reabrem com tudo", async () => {
+test("closed conversations don't load messages on startup, but show up in the history and reopen with everything", async () => {
   await store.saveSession(session("aberta", { title: "Aberta" }));
   await store.saveChatMessage(message("m-a", "aberta", "primeira pergunta"));
   await store.saveSession(session("fechada", { title: "Fechada", nativeSessionId: "native-fechada-1" }));
@@ -113,25 +113,25 @@ test("fechadas não carregam mensagens ao iniciar, mas aparecem no histórico e 
   assert.equal(closed.prompt, "assunto raro xyzzy");
   assert.equal(closed.messageCount, 1);
   assert.ok(Number.isFinite(closed.timestampMs) && closed.timestampMs > 0);
-  assert.equal((await store.getChatMessages("fechada")).length, 1, "reabrir lê as mensagens salvas");
+  assert.equal((await store.getChatMessages("fechada")).length, 1, "reopening reads the saved messages");
   assert.deepEqual(await store.linkedNativeIds(), ["claude:native-fechada-1"]);
 });
 
-test("busca do histórico procura no título e no texto das mensagens, com % e _ literais", async () => {
+test("history search looks in the title and message text, with literal % and _", async () => {
   const ids = (list) => list.map((h) => h.beagleSessionId).sort();
   assert.deepEqual(ids(await store.listConversationHistory("xyzzy")), ["fechada"]);
   assert.deepEqual(ids(await store.listConversationHistory("Aberta")), ["aberta"]);
   assert.deepEqual(await store.listConversationHistory("100%"), []);
 });
 
-test("apagar a conversa remove mensagens, vínculo e imagens do disco", async () => {
+test("deleting the conversation removes messages, link and images from disk", async () => {
   assert.ok(fs.existsSync(attachmentsDir("img")));
   await store.deleteSessionFromDb("img");
   assert.equal(await store.sessionExists("img"), false);
   assert.equal(fs.existsSync(attachmentsDir("img")), false);
 });
 
-test("fechar encerra o processo da CLI e recusa com resposta em andamento", async () => {
+test("closing ends the CLI process and refuses while a reply is in progress", async () => {
   const killed = [];
   let release, started;
   const startedTurn = new Promise((r) => { started = r; });
@@ -148,8 +148,8 @@ test("fechar encerra o processo da CLI e recusa com resposta em andamento", asyn
   await service.setSessionArchived("aberta", false);
   const turn = service.execute({ sessionId: "aberta", providerId: "claude", prompt: "oi", responseMessageId: "r1" });
   await startedTurn;
-  await assert.rejects(service.setSessionArchived("aberta", true), /Pare a execução/);
-  assert.deepEqual(killed, ["aberta"], "não mata a resposta em andamento");
+  await assert.rejects(service.setSessionArchived("aberta", true), /Stop this conversation/);
+  assert.deepEqual(killed, ["aberta"], "doesn't kill the reply in progress");
   release({ ok: true, text: "ok" });
   await turn;
 });
@@ -158,14 +158,14 @@ function nativeHome(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-native-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const cwd = "/projeto";
-  // Conversa sem terminal (modo headless): não está no history.jsonl, só em projects/.
+  // Conversation without a terminal (headless mode): not in history.jsonl, only in projects/.
   write(home, ".claude/projects/-projeto/aaaaaaaa-0001.jsonl", lines([
     { type: "queue-operation", content: "x" },
     { type: "user", isMeta: true, cwd, message: { content: "<local-command-caveat>" } },
     { type: "user", cwd, message: { content: [{ type: "text", text: "conversa feita sem terminal" }] } },
   ]));
   write(home, ".claude/projects/-projeto/aaaaaaaa-0001/subagents/agent-1.jsonl", lines([{ type: "user" }]));
-  // Sessão de comando interno, sem mensagem de verdade: não entra no histórico.
+  // Built-in command session, with no real message: doesn't go into the history.
   write(home, ".claude/projects/-projeto/bbbbbbbb-0002.jsonl", lines([
     { type: "user", cwd, message: { content: "/context" } },
   ]));
@@ -196,7 +196,7 @@ function nativeHome(t) {
   return home;
 }
 
-test("histórico nativo: inclui conversas sem terminal, ignora sessões vazias e as já ligadas", (t) => {
+test("native history: includes conversations without a terminal, ignores empty sessions and already linked ones", (t) => {
   const home = nativeHome(t);
   const reader = createHistory({ home, env: {} });
   const list = reader.history({ exclude: ["claude:cccccccc-0003"] });
@@ -210,7 +210,7 @@ test("histórico nativo: inclui conversas sem terminal, ignora sessões vazias e
   assert.deepEqual(reader.history({ query: "CODEX" }).map((h) => h.id), ["codex:codex-com-msg-1"]);
 });
 
-test("apagar a conversa nativa remove arquivo, pasta auxiliar e linhas dos índices das três CLIs", (t) => {
+test("deleting the native conversation removes the file, helper folder and index lines of the three CLIs", (t) => {
   const home = nativeHome(t);
   const reader = createHistory({ home, env: {} });
   reader.remove("claude", "aaaaaaaa-0001");
@@ -218,7 +218,7 @@ test("apagar a conversa nativa remove arquivo, pasta auxiliar e linhas dos índi
   assert.equal(fs.existsSync(path.join(home, ".claude/projects/-projeto/aaaaaaaa-0001")), false);
   const claudeIndex = fs.readFileSync(path.join(home, ".claude/history.jsonl"), "utf8");
   assert.ok(!claudeIndex.includes("aaaaaaaa-0001") && claudeIndex.includes("outra-sessao-9"));
-  assert.ok(fs.existsSync(path.join(home, ".claude/projects/-projeto/bbbbbbbb-0002.jsonl")), "as outras ficam");
+  assert.ok(fs.existsSync(path.join(home, ".claude/projects/-projeto/bbbbbbbb-0002.jsonl")), "the others stay");
 
   reader.remove("codex", "codex-com-msg-1");
   assert.equal(fs.readdirSync(path.join(home, ".codex/sessions/2026/11/01")).length, 1);
@@ -229,12 +229,12 @@ test("apagar a conversa nativa remove arquivo, pasta auxiliar e linhas dos índi
   assert.equal(fs.existsSync(path.join(home, ".gemini/antigravity-cli/brain/agy-conversa-1")), false);
   assert.ok(!fs.readFileSync(path.join(home, ".gemini/antigravity-cli/history.jsonl"), "utf8").includes("agy-conversa-1"));
 
-  assert.deepEqual(reader.history().map((h) => h.id), ["claude:cccccccc-0003"], "só sobra a que não foi apagada");
-  assert.throws(() => reader.remove("claude", "../../etc"), /inválido/);
-  assert.throws(() => reader.remove("outra", "aaaaaaaa-0001"), /inválido/);
+  assert.deepEqual(reader.history().map((h) => h.id), ["claude:cccccccc-0003"], "only the one not deleted is left");
+  assert.throws(() => reader.remove("claude", "../../etc"), /Invalid/);
+  assert.throws(() => reader.remove("outra", "aaaaaaaa-0001"), /Invalid/);
 });
 
-test("otimização de imagem: limita o maior lado e troca a extensão para .webp", () => {
+test("image optimization: limits the longest side and switches the extension to .webp", () => {
   const out = ts.transpileModule(fs.readFileSync(path.resolve("src/lib/imageOptimize.ts"), "utf8"), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText;
@@ -246,6 +246,6 @@ test("otimização de imagem: limita o maior lado e troca a extensão para .webp
   assert.deepEqual({ ...lib.fitWithin(1000, 8000) }, { width: 322, height: 2576, resized: true });
   assert.equal(lib.webpName("print.png"), "print.webp");
   assert.equal(lib.webpName("captura"), "captura.webp");
-  assert.equal(lib.canOptimize("image/gif"), false, "GIF pode ser animado");
+  assert.equal(lib.canOptimize("image/gif"), false, "a GIF may be animated");
   assert.equal(lib.canOptimize("image/png"), true);
 });

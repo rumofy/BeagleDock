@@ -41,7 +41,7 @@ test("native global permission edits preserve unrelated settings, rules and TOML
   });
   assert.throws(
     () => service.save("antigravity", { permissions: { allow: ["*"] } }),
-    /inválida/,
+    /Invalid/,
   );
   const codex = path.join(home, ".codex/config.toml");
   const content =
@@ -78,7 +78,7 @@ test("native global permission edits preserve unrelated settings, rules and TOML
   service.save("claude", { mode: "dontAsk" });
   assert.notEqual(before, service.fingerprint("claude"));
   write(agy, "{invalid");
-  assert.match(service.get("antigravity").error, /inválida/);
+  assert.match(service.get("antigravity").error, /Invalid/);
   assert.throws(() =>
     service.save("antigravity", { toolPermission: "strict" }),
   );
@@ -108,7 +108,7 @@ test("inherit omits overrides for every CLI; advanced TOML tables are never rewr
   write(file, text);
   assert.throws(
     () => svc.save("codex", { approval_policy: "never" }),
-    /tabela avançada/,
+    /advanced table/,
   );
   assert.equal(fs.readFileSync(file, "utf8"), text);
 });
@@ -154,7 +154,7 @@ test("release checks persist deduplicated notices, model additions and read stat
       ),
   );
   assert.ok(
-    service.get().notifications.some((n) => n.title === "Codex CLI detectada"),
+    service.get().notifications.some((n) => n.title === "Codex CLI detected"),
   );
   await service.check();
   assert.equal(requests, 3);
@@ -166,7 +166,7 @@ test("release checks persist deduplicated notices, model additions and read stat
   fail = true;
   await service.check(true);
   assert.equal(service.get().releases.claude.version, "2.0.0");
-  assert.match(service.get().releases.claude.error, /verificar/);
+  assert.match(service.get().releases.claude.error, /check/);
 });
 test("fixed native updaters are bounded and serialized, reject arbitrary providers, report failure and verify installed version", async (t) => {
   const home = temp(t);
@@ -183,13 +183,13 @@ test("fixed native updaters are bounded and serialized, reject arbitrary provide
     },
   });
   const run = svc.update("antigravity");
-  await assert.rejects(svc.update("antigravity"), /andamento/);
+  await assert.rejects(svc.update("antigravity"), /already running/);
   release();
   assert.deepEqual(await run, { ok: true, version: "2.0.0" });
   assert.deepEqual(calls[0].args, ["update"]);
   assert.equal(calls[0].options.timeout, 180000);
   assert.deepEqual(calls[1].args, ["--version"]);
-  await assert.rejects(svc.update("unknown"), /inválida/);
+  await assert.rejects(svc.update("unknown"), /Invalid/);
   const failed = createEcosystem({
     file: path.join(home, "state2"),
     find: (n) => "/fixture/" + n,
@@ -203,7 +203,7 @@ test("fixed native updaters are bounded and serialized, reject arbitrary provide
   );
   assert.throws(
     () => updateCommand("codex", "/unknown/codex", () => null),
-    /não reconhecida/,
+    /Unrecognized/,
   );
   assert.equal(newer("1.10.0", "1.9.0"), true);
   assert.equal(newer("1.0.0-beta", "1.0.0"), false);

@@ -14,7 +14,7 @@ const memory = () => {
   return { getItem: (k) => data.get(k) ?? null, setItem: (k, v) => data.set(k, v), data };
 };
 
-test("rascunho é guardado por conversa e some quando o texto fica vazio", () => {
+test("a draft is kept per conversation and disappears when the text becomes empty", () => {
   const storage = memory();
   let drafts = updateDraft({}, "a", "olá", storage);
   drafts = updateDraft(drafts, "b", "outro", storage);
@@ -24,7 +24,7 @@ test("rascunho é guardado por conversa e some quando o texto fica vazio", () =>
   assert.deepEqual(plain(loadDrafts(storage)), { b: "outro" });
 });
 
-test("armazenamento ausente, bloqueado ou corrompido não quebra o chat", () => {
+test("missing, blocked or corrupted storage doesn't break the chat", () => {
   assert.deepEqual(plain(loadDrafts(undefined)), {});
   assert.deepEqual(plain(loadDrafts({ getItem: () => "{lixo", setItem() {} })), {});
   assert.deepEqual(plain(loadDrafts({ getItem: () => "[1,2]", setItem() {} })), {});
@@ -32,7 +32,7 @@ test("armazenamento ausente, bloqueado ou corrompido não quebra o chat", () => 
   assert.deepEqual(plain(updateDraft({}, "a", "texto", blocked)), { a: "texto" });
 });
 
-test("limita quantidade e tamanho e descarta os mais antigos", () => {
+test("limits count and size and drops the oldest", () => {
   const storage = memory();
   let drafts = {};
   for (let i = 0; i < 70; i++) drafts = updateDraft(drafts, `s${i}`, "x", storage);
@@ -43,7 +43,7 @@ test("limita quantidade e tamanho e descarta os mais antigos", () => {
   assert.ok(storage.data.has(DRAFTS_KEY));
 });
 
-test("sem armazenamento informado não grava a cada tecla; gravar é uma chamada à parte", () => {
+test("without a given storage it doesn't save on every key; saving is a separate call", () => {
   const { saveDrafts } = ctx.exports;
   let writes = 0;
   const storage = { getItem: () => null, setItem: () => writes++ };

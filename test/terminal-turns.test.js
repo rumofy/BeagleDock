@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createTurnWatcher } = require("../electron/terminal-turns");
 
-// Relógio e temporizadores manuais: o silêncio do AGY é medido sem esperar de verdade.
+// Manual clock and timers: AGY's silence is measured without really waiting.
 function clock() {
   let t = 0;
   const timers = [];
@@ -26,12 +26,12 @@ function clock() {
 }
 const title = (text) => `\x1b]0;${text}\x07`;
 
-test("Claude Code: o spinner no título marca o trabalho e o ✳ marca o fim (ou a espera por você)", () => {
+test("Claude Code: the spinner in the title marks work and ✳ marks the end (or waiting for you)", () => {
   const c = clock();
   const ends = [];
   const w = createTurnWatcher({ providerId: "claude", onTurnEnd: (e) => ends.push(e), ...c });
   w.output(title("✳ Claude Code"));
-  assert.equal(ends.length, 0, "a abertura não é resposta");
+  assert.equal(ends.length, 0, "the startup isn't a reply");
   w.input("rode os testes\r");
   w.output(title("◐ Claude Code"));
   c.advance(5000);
@@ -41,15 +41,15 @@ test("Claude Code: o spinner no título marca o trabalho e o ✳ marca o fim (ou
   assert.equal(ends.length, 1);
   assert.equal(ends[0].startedAt, 0);
   w.output(title("✳ Shell npm test"));
-  assert.equal(ends.length, 1, "o mesmo título de novo não avisa outra vez");
-  // Resposta espontânea (agente em segundo plano terminou): sem Enter, também conta.
+  assert.equal(ends.length, 1, "the same title again doesn't notify twice");
+  // Spontaneous reply (a background agent finished): without Enter it also counts.
   w.output(title("◒ Claude Code"));
   c.advance(2000);
   w.output(title("✳ Claude Code"));
   assert.equal(ends.length, 2);
 });
 
-test("Claude Code: título cortado entre dois pedaços de saída e trabalho curto demais", () => {
+test("Claude Code: title split between two output chunks and work that's too short", () => {
   const c = clock();
   const ends = [];
   const w = createTurnWatcher({ providerId: "claude", onTurnEnd: (e) => ends.push(e), ...c });
@@ -62,14 +62,14 @@ test("Claude Code: título cortado entre dois pedaços de saída e trabalho curt
   w.output(title("◐ x"));
   c.advance(100);
   w.output(title("✳ x"));
-  assert.equal(ends.length, 1, "redesenho rápido não é resposta");
+  assert.equal(ends.length, 1, "a quick redraw isn't a reply");
 });
 
-test("Codex CLI: o estado OSC 7501 só conta depois de você enviar algo", () => {
+test("Codex CLI: the OSC 7501 state only counts after you send something", () => {
   const c = clock();
   const ends = [];
   const w = createTurnWatcher({ providerId: "codex", onTurnEnd: (e) => ends.push(e), ...c });
-  // Abertura real: passa por working (servidores MCP) e volta a idle sozinho.
+  // Real startup: goes through working (MCP servers) and back to idle on its own.
   w.output("\x1b]7501;state=idle:app=codex\x07");
   w.output("\x1b]7501;state=working:app=codex\x07");
   c.advance(3000);
@@ -82,17 +82,17 @@ test("Codex CLI: o estado OSC 7501 só conta depois de você enviar algo", () =>
   assert.equal(ends.length, 1);
 });
 
-test("Codex: Enter numa tela de abertura (confiança, revisão de hooks) não vira fim de resposta", () => {
+test("Codex: Enter on a startup screen (trust, hooks review) doesn't become the end of a reply", () => {
   const c = clock();
   const ends = [];
   const w = createTurnWatcher({ providerId: "codex", onTurnEnd: (e) => ends.push(e), ...c });
-  // Codex CLI 0.166.0 com hooks alterados: nenhum estado até a pessoa passar da tela de revisão.
+  // Codex CLI 0.166.0 with changed hooks: no state until the person gets past the review screen.
   w.input("\r");
   w.output("\x1b]7501;state=idle:app=codex\x07");
   w.output("\x1b]7501;state=working:app=codex\x07");
   c.advance(2500);
   w.output("\x1b]7501;state=idle:app=codex\x07");
-  assert.equal(ends.length, 0, "a inicialização depois da tela não é resposta");
+  assert.equal(ends.length, 0, "the initialization after the screen isn't a reply");
   w.input("oi\r");
   w.output("\x1b]7501;state=working:app=codex\x07");
   c.advance(3000);
@@ -100,23 +100,23 @@ test("Codex: Enter numa tela de abertura (confiança, revisão de hooks) não vi
   assert.equal(ends.length, 1);
 });
 
-test("AGY: silêncio depois de uma resposta encerra; atividade curta (eco, comando de barra) não", () => {
+test("AGY: silence after a reply ends it; short activity (echo, slash command) doesn't", () => {
   const c = clock();
   const ends = [];
   const w = createTurnWatcher({ providerId: "antigravity", onTurnEnd: (e) => ends.push(e), ...c });
   w.output("tela inicial");
   c.advance(10000);
-  assert.equal(ends.length, 0, "sem Enter, nada conta");
+  assert.equal(ends.length, 0, "without Enter, nothing counts");
   w.input("/help\r");
   w.output("ajuda");
   c.advance(3500);
-  assert.equal(ends.length, 0, "atividade curta não é resposta");
+  assert.equal(ends.length, 0, "short activity isn't a reply");
   w.input("rode os testes\r");
   for (let i = 0; i < 20; i++) {
     w.output("⠋ trabalhando");
     c.advance(500);
   }
-  assert.equal(ends.length, 0, "enquanto a tela anima, ainda trabalha");
+  assert.equal(ends.length, 0, "while the screen animates, it's still working");
   c.advance(3000);
   assert.equal(ends.length, 1);
   c.advance(10000);

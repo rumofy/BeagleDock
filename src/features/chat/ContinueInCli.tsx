@@ -3,10 +3,11 @@ import { ChevronDown, Split } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 import { providerUsage, suggestContinuation } from "../../lib/continuation";
 
+import { t } from "../../i18n";
 const percentLabel = (value: number | null | undefined) =>
-  value === null || value === undefined ? "sem leitura" : `${Math.round(value)}% usado`;
+  value === null || value === undefined ? t("continue.noReading") : t("continue.used", { percent: Math.round(value) });
 
-/** Botão do cabeçalho: continua a tarefa em outra CLI, em uma conversa nova. */
+/** Header button: continues the task in another CLI, in a new conversation. */
 export function ContinueInCliButton() {
   const { providers, currentSession, handleContinueInCli } = useApp();
   const [open, setOpen] = useState(false);
@@ -32,10 +33,10 @@ export function ContinueInCliButton() {
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#ede9de] hover:bg-[#e2dcce] border border-[#d6cfbe] text-[#332f28] transition shadow-2xs"
-        title="Continuar esta tarefa em outra CLI, com um resumo do que foi feito"
+        title={t("continue.hint")}
       >
         <Split size={14} className="text-emerald-700" />
-        <span>Continuar em</span>
+        <span>{t("continue.button")}</span>
         <ChevronDown size={12} />
       </button>
       {open && (
@@ -58,7 +59,7 @@ export function ContinueInCliButton() {
             </button>
           ))}
           <p className="px-3 pt-1 pb-2 text-[10px] text-[#8c8270] border-t border-[#eee8d9] mt-1">
-            Cria uma conversa nova com o resumo do histórico local; esta continua como está.
+            {t("continue.menuNote")}
           </p>
         </div>
       )}
@@ -66,7 +67,7 @@ export function ContinueInCliButton() {
   );
 }
 
-/** Sugestão automática quando a cota da CLI atual está perto do fim. Só informa; você decide. */
+/** Automatic suggestion when the current CLI's quota is nearly used. Informational only; you decide. */
 export function ContinuationBanner() {
   const { providers, currentSession, currentProvider, handleContinueInCli, isExecutingPrompt } = useApp();
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -82,8 +83,7 @@ export function ContinuationBanner() {
       className="mb-2 flex flex-wrap items-center gap-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-[#6b3d09]"
     >
       <span className="flex-1 min-w-[200px]">
-        A cota {suggestion.reason} do {currentProvider?.name} está em {Math.round(suggestion.percent)}%.
-        Continue esta tarefa em outra CLI, com um resumo do que foi feito:
+        {t("continue.banner", { reason: suggestion.reason, name: currentProvider?.name, percent: Math.round(suggestion.percent) })}
       </span>
       {suggestion.targets.map((target) => (
         <button
@@ -102,7 +102,7 @@ export function ContinuationBanner() {
         onClick={() => setDismissed(currentSession.id)}
         className="px-2 py-1 rounded-lg text-[#6b3d09] hover:bg-amber-100 font-semibold"
       >
-        Agora não
+        {t("composer.notNow")}
       </button>
     </div>
   );

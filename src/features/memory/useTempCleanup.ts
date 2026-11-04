@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { backendAvailable, beagleApi } from "../../api/beagleApi";
 import type { AIMemoryTempProject } from "../../types/api";
 
-/** Configuração e execução da limpeza dos projetos temporários do ai-memory. */
+import { t, tn } from "../../i18n";
+/** Settings and execution of the cleanup of ai-memory's temporary projects. */
 export function useTempCleanup(onCleaned: () => void) {
   const [days, setDays] = useState<number | null>(null);
   const [draft, setDraft] = useState("");
@@ -18,7 +19,7 @@ export function useTempCleanup(onCleaned: () => void) {
     setLoading(true);
     try {
       const res = await beagleApi.previewAIMemoryTempCleanup();
-      if (!res?.ok) throw new Error(res?.error || "Falha ao verificar os temporários.");
+      if (!res?.ok) throw new Error(res?.error || t("temp.checkFailed"));
       setDays(res.days ?? 0);
       setDraft(String(res.days ?? 0));
       setTemps(res.projects || []);
@@ -41,8 +42,8 @@ export function useTempCleanup(onCleaned: () => void) {
     setBusy(true);
     try {
       const res = await beagleApi.setAIMemoryTempCleanupDays(value);
-      if (!res?.ok) throw new Error(res?.error || "Falha ao salvar o prazo.");
-      setMessage(res.days ? `Prazo salvo: ${res.days} dia(s).` : "Limpeza automática desligada.");
+      if (!res?.ok) throw new Error(res?.error || t("temp.saveFailed"));
+      setMessage(res.days ? tn("temp.saved", res.days) : t("temp.autoOffSaved"));
       setError("");
       await load();
     } catch (err) {
@@ -62,10 +63,10 @@ export function useTempCleanup(onCleaned: () => void) {
       if (res?.error) throw new Error(res.error);
       setMessage(
         removed
-          ? `${removed} projeto(s) temporário(s) apagado(s).`
-          : "Nenhum projeto temporário para apagar.",
+          ? tn("temp.removed", removed)
+          : t("temp.nothing"),
       );
-      setError(failed ? `${failed} não puderam ser apagados.` : "");
+      setError(failed ? tn("temp.failed", failed) : "");
       await load();
       onCleaned();
     } catch (err) {

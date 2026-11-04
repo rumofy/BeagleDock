@@ -11,9 +11,10 @@ const {
   shell: electronShell,
 } = require("electron");
 const path = require("path");
+const i18n = require("./i18n");
 const fs = require("fs");
 const os = require("os");
-// Migração única de nomes antigos: precisa rodar antes de abrir o banco e de definir userData.
+// One-time migration of old names: must run before opening the database and setting userData.
 const { migrateLegacyData } = require("./migration");
 migrateLegacyData({ appData: app.getPath?.("appData") });
 const { execFileSync, spawn } = require("child_process");
@@ -46,7 +47,7 @@ const { inspectWorkspace, validateWorkspaceEdit } = require("./workspace-status"
 const nativeCommands = createNativeCommands();
 const agyUsage = createAgyUsage();
 const providerUsage = createProviderUsage({
-  // Cada leitura inicia uma CLI: com a janela oculta ou minimizada, consulta bem menos.
+  // Each read starts a CLI: with the window hidden or minimized, it queries much less.
   getRefreshMs: () => (background?.isWindowActive() ? 45000 : 10 * 60000),
   onUpdate: () => pushToolsUpdate().catch(() => {}),
 });
@@ -114,7 +115,7 @@ try {
 
 const activePtySessions = new Map();
 
-// 1. Detecção 100% Sistema Operacional (Zero Git)
+// 1. Detection 100% from the operating system (no Git)
 function detectUserIdentity() {
   let gecosName = "";
   try {
@@ -161,7 +162,7 @@ function runLocalJob(action, args = []) {
     let received = false;
     const timer = setTimeout(() => {
       worker.terminate();
-      reject(new Error("Tempo limite ao ler dados locais."));
+      reject(new Error(i18n.t("errors.localDataTimeout")));
     }, 30000);
     worker.once("message", (value) => {
       received = true;
@@ -176,7 +177,7 @@ function runLocalJob(action, args = []) {
     worker.once("exit", () => {
       localWorkers.delete(worker);
       clearTimeout(timer);
-      if (!received) reject(new Error("Falha ao ler dados locais."));
+      if (!received) reject(new Error(i18n.t("errors.localDataFailed")));
     });
   });
 }
@@ -209,8 +210,8 @@ async function getRealQuotaMetrics() {
     providerUsage.get(),
     agyUsage.get(),
   ]);
-  // Cota vem das próprias CLIs (/usage do Claude Code, limites do app-server do Codex);
-  // os logs locais só fornecem tokens. Nada de leitura por log ou por modelo.
+  // Quota comes from the CLIs themselves (Claude Code's /usage, Codex's app-server limits);
+  // local logs only provide tokens. No reading quotas from logs or per model.
   for (const id of ["claude", "codex"])
     metrics[id] = { ...metrics[id], ...live[id] };
   metrics.antigravity = { ...metrics.antigravity, ...liveAgy };
@@ -218,11 +219,11 @@ async function getRealQuotaMetrics() {
   return metrics;
 }
 
-// 3. Integração Completa com o binário real do ai-memory (Stripping log line on stdout)
+// 3. Full integration with the real ai-memory binary (stripping the log line on stdout)
 function parseAiMemoryJsonOutput(stdout) {
   if (!stdout) return null;
   const trimmed = stdout.trim();
-  // O binário do ai-memory imprime uma linha de INFO no início do stdout antes do JSON
+  // The ai-memory binary prints an INFO line at the start of stdout before the JSON
   const lines = trimmed.split("\n");
   const cleanLines = lines.filter(
     (l) =>
@@ -232,7 +233,7 @@ function parseAiMemoryJsonOutput(stdout) {
   try {
     return JSON.parse(candidate);
   } catch (e) {
-    // Fallback: procura o primeiro '{' ou '['
+    // Fallback: look for the first '{' or '['
     const firstBrace = candidate.indexOf("{");
     const firstBracket = candidate.indexOf("[");
     let startIdx = -1;
@@ -334,7 +335,7 @@ async function checkAIMemoryServer() {
   };
 }
 
-// 4. Skills Reais do Sistema
+// 4. Real system skills
 function getInstalledSkills() {
   const dirs = [
     path.join(os.homedir(), ".agents", "skills"),
@@ -395,8 +396,8 @@ function getInstalledSkills() {
   return skills;
 }
 
-// Histórico: conversas do BeagleDock (banco) primeiro, depois as conversas só do terminal de cada
-// CLI, sem repetir as que já estão ligadas a uma conversa do BeagleDock.
+// History: BeagleDock conversations (database) first, then each CLI's terminal-only
+// conversations, without repeating the ones already linked to a BeagleDock conversation.
 async function getCliHistory(query = "") {
   const term = typeof query === "string" ? query.slice(0, 200) : "";
   const [own, linked] = await Promise.all([
@@ -435,7 +436,7 @@ function discoverLocalWorkspaces() {
   ];
 }
 
-// 8. Gerenciador de Processos PTY Interativos e Execução de Prompts Reais
+// 8. Interactive PTY process manager and real prompt runs
 function ensurePtySession(sessionId, cwd, providerId) {
   if (activePtySessions.has(sessionId)) {
     const existing = activePtySessions.get(sessionId);
@@ -547,7 +548,7 @@ function sendToRenderer(channel, payload) {
   if (mainWindow && !mainWindow.isDestroyed())
     mainWindow.webContents.send(
       channel,
-      // Carimbo de emissão para medir o atraso do stream até a tela.
+      // Emission stamp to measure the stream's delay to the screen.
       channel === "cli-stream-chunk" || channel === "cli-activity-event"
         ? { ...payload, emittedAt: Date.now() }
         : payload,
@@ -574,7 +575,7 @@ async function pushToolsUpdate() {
   return pushing;
 }
 let background;
-// Título e CLI de cada conversa, para o menu da bandeja listar as que estão rodando.
+// Title and CLI of each conversation, so the tray menu lists the running ones.
 const sessionInfo = new Map();
 const providerNames = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
 const approvals = require("./approvals").createApprovalBroker({
@@ -583,11 +584,12 @@ const approvals = require("./approvals").createApprovalBroker({
     if (channel === "cli-approvals") background?.onApprovalsChanged();
   },
 });
-// Limite de compactação automática (configuração do usuário), mantido em memória para cada turno.
+// Automatic compaction limit (user setting), kept in memory for each turn.
 let savedAutoCompactTokens;
 getAppSettings()
   .then((saved) => {
     if (saved && savedAutoCompactTokens === undefined) savedAutoCompactTokens = saved.autoCompactTokens;
+    i18n.setLocale(saved?.language);
   })
   .catch(() => {});
 const { plainText } = require("./message-segments");
@@ -595,7 +597,7 @@ const cliRunner = createCliRunner({
   approvals,
   getAutoCompactTokens: () => savedAutoCompactTokens,
   onMcpAuthError: (line) => codexMcpAuth.inspect(line),
-  // Agentes em segundo plano atualizam a linha do tempo depois do turno: grava no histórico.
+  // Background agents update the timeline after the turn: save it to the history.
   onLateEvents: (payload) => sessionService.saveLateEvents(payload),
   onAutoTurn: (payload) => {
     void sessionService.saveAutoTurn(payload);
@@ -603,8 +605,8 @@ const cliRunner = createCliRunner({
     const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
     background.notifyTurnFinished({
       sessionId: payload.sessionId,
-      title: `${names[payload.providerId] || payload.providerId} respondeu`,
-      body: plainText(String(payload.ok ? payload.text : payload.error || "Falha na execução."))
+      title: i18n.t("notices.replied", { name: names[payload.providerId] || payload.providerId }),
+      body: plainText(String(payload.ok ? payload.text : payload.error || i18n.t("session.runFailed")))
         .replace(/\s+/g, " ")
         .slice(0, 140),
     });
@@ -635,8 +637,8 @@ const sessionService = createSessionService({
   },
   runner: cliRunner,
 });
-// Modo terminal: o fim de cada resposta (pela tela da CLI) grava o histórico da conversa nativa e
-// avisa com notificação quando a janela está fora de foco, como no chat.
+// Terminal mode: the end of each reply (from the CLI's screen) saves the native conversation's history and
+// notifies when the window is out of focus, as in the chat.
 const terminalHistory = createTerminalHistory({
   readConversation: (providerId, nativeId, cwd) =>
     runLocalJob("conversation", [providerId, nativeId, { cwd }]),
@@ -649,8 +651,8 @@ const terminalWatchers = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function terminalTurnEnded(sessionId, providerId) {
   void (async () => {
-    // A CLI mostra o fim na tela um pouco antes de gravar a resposta no arquivo da conversa
-    // (Claude Code 2.1.317): espera um pouco e tenta de novo se a resposta ainda não chegou.
+    // The CLI shows the end on screen a bit before saving the reply to the conversation file
+    // (Claude Code 2.1.317): wait a little and retry if the reply hasn't arrived yet.
     await wait(800);
     let result = await terminalHistory.sync(sessionId);
     for (const delay of [1500, 3000]) {
@@ -694,10 +696,10 @@ const cliTerminals = createCliTerminals({
   checkCwd: validCwd,
   store: { getNativeSession },
   beforeOpen: async (sessionId) => {
-    if (updatingCli) throw new Error("Aguarde a atualização da CLI terminar.");
+    if (updatingCli) throw new Error(i18n.t("errors.waitCliUpdate"));
     if (sessionService.activeIds().includes(sessionId))
-      throw new Error("Espere a resposta atual terminar antes de abrir o terminal.");
-    // O processo do chat fica vivo entre os turnos: encerra para só o terminal usar a conversa.
+      throw new Error(i18n.t("errors.waitReplyBeforeTerminal"));
+    // The chat process stays alive between turns: stop it so only the terminal uses the conversation.
     cliRunner.kill(sessionId);
   },
   emit: sendToRenderer,
@@ -717,7 +719,7 @@ function shutdown() {
 }
 module.exports = { shutdown };
 
-// Ambiente de teste: sem bandeja, confirmação nem instância única.
+// Test environment: no tray, confirmation or single instance.
 const smokeRun = !!process.env.BEAGLEDOCK_SMOKE_ROOT;
 background = createBackgroundController({
   app,
@@ -729,7 +731,7 @@ background = createBackgroundController({
   dialog,
   getWindow: () => mainWindow,
   iconPath: path.join(__dirname, "../dist/brand/beagledock-logo.png"),
-  // Turnos rodando ou na fila de qualquer sessão.
+  // Turns running or queued in any session.
   runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()),
   approvalsList: () => approvals.list(),
   runningSessions: () =>
@@ -738,21 +740,21 @@ background = createBackgroundController({
       title: sessionInfo.get(id)?.title,
       providerName: providerNames[sessionInfo.get(id)?.providerId],
     })),
-  // A interface leva o chat até a conversa (clique no menu da bandeja ou na notificação).
+  // The interface takes the chat to the conversation (click on the tray menu or the notification).
   openSession: (sessionId) => sendToRenderer("open-session", { sessionId }),
   bypass: smokeRun,
   onQuit: shutdown,
 });
-// Instância única: abrir de novo só traz a janela de volta; `beagledock --quit` pede para encerrar
-// a instância em execução (com a mesma confirmação da bandeja), útil sem bandeja visível.
+// Single instance: opening again only brings the window back; `beagledock --quit` asks the running
+// instance to quit (with the same confirmation as the tray), useful without a visible tray.
 const gotLock = smokeRun || app.requestSingleInstanceLock();
 if (!gotLock) app.exit(0);
 else if (!smokeRun) {
   app.on("second-instance", (_event, argv) =>
     argv.includes("--quit") ? background.requestQuit() : background.showWindow(),
   );
-  if (process.argv.includes("--quit")) app.exit(0); // nada em execução para encerrar
-  // Encerramento do sistema (logout/desligamento) não depende da bandeja.
+  if (process.argv.includes("--quit")) app.exit(0); // nothing running to quit
+  // System shutdown (logout/power off) doesn't depend on the tray.
   for (const signal of ["SIGTERM", "SIGINT"])
     process.on(signal, () => {
       background.allowQuit();
@@ -769,7 +771,7 @@ function createWindow() {
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: "#f7f5ef",
-    // Aberto com o sistema (--hidden) e com a bandeja funcionando, começa só na bandeja.
+    // Opened with the system (--hidden) and with a working tray, it starts only in the tray.
     show: false,
     title: "BeagleDock - Multi-AI Cockpit",
     icon: iconPath,
@@ -780,7 +782,7 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       webSecurity: true,
-      // Minimizada ou na bandeja, a interface continua recebendo o stream sem atraso.
+      // Minimized or in the tray, the interface keeps getting the stream without delay.
       backgroundThrottling: false,
     },
   });
@@ -789,7 +791,7 @@ function createWindow() {
     if (process.argv.includes("--hidden") && background.trayReady() && !smokeRun) return;
     mainWindow.show();
   });
-  // Zoom da interface: atalhos Ctrl +/-/0, persistido nas configurações.
+  // Interface zoom: Ctrl +/-/0 shortcuts, persisted in the settings.
   const applyZoom = (factor) => {
     const value = zoom.clamp(factor);
     mainWindow.webContents.setZoomFactor(value);
@@ -811,12 +813,12 @@ function createWindow() {
       .catch(() => {});
   });
   mainWindow.zoomControl = { apply: applyZoom };
-  // Links http(s) abrem no navegador padrão; a janela do app nunca navega nem abre outra janela.
+  // http(s) links open in the default browser; the app window never navigates or opens another window.
   const openInBrowser = (url) => {
     try {
       electronShell.openExternal(parseExternalUrl(url)).catch(() => {});
     } catch {
-      /* endereço não permitido */
+      /* address not allowed */
     }
   };
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -840,7 +842,7 @@ function createWindow() {
 }
 
 module.exports.ready = app.whenReady().then(async () => {
-  if (!gotLock) return; // segunda instância: não abre banco nem janela
+  if (!gotLock) return; // second instance: doesn't open the database or a window
   await initDatabase();
   try {
     const dropped = await dropUnreadableCredentials(
@@ -848,32 +850,32 @@ module.exports.ready = app.whenReady().then(async () => {
     );
     if (dropped.length) {
       console.warn(
-        `[migração] credenciais ilegíveis removidas: ${dropped.join(", ")}`,
+        `[migration] unreadable credentials removed: ${dropped.join(", ")}`,
       );
       ecosystem.notifyOnce(
         "migration:credentials",
         "cli_update",
-        "Recadastre as chaves de API",
-        "Chaves de API cadastradas no app precisam ser recadastradas após a renomeação para BeagleDock. As CLIs (Claude Code, Codex e Antigravity) mantêm a própria autenticação.",
+        i18n.t("migration.reenterKeysTitle"),
+        i18n.t("migration.reenterKeysBody"),
       );
     }
   } catch (error) {
-    console.warn("[migração] verificação de credenciais falhou:", error.message);
+    console.warn("[migration] credential check failed:", error.message);
   }
   const registerHandler = ipcMain.handle.bind(ipcMain);
   const handle = (channel, handler) =>
     registerHandler(channel, (event, ...args) => {
       if (!mainWindow || event.sender !== mainWindow.webContents)
-        throw new Error("Remetente IPC inválido.");
+        throw new Error("Invalid IPC sender.");
       if (
         event.senderFrame &&
         event.senderFrame !== mainWindow.webContents.mainFrame
       )
-        throw new Error("Frame IPC inválido.");
+        throw new Error("Invalid IPC frame.");
       return handler(event, ...args);
     });
 
-  // IPC: Ferramentas, Catálogos de Modelos e Cotas Reais (OAuth + Token Count)
+  // IPC: tools, model catalogs and real quotas (OAuth + token count)
   handle("detect-tools", async () => {
     return pushToolsUpdate();
   });
@@ -898,12 +900,12 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("read-notifications", () => ecosystem.markRead());
   handle("update-cli", async (_event, id) => {
     if (!["claude", "codex", "antigravity"].includes(id))
-      throw new Error("CLI inválida.");
+      throw new Error(i18n.t("ecosystem.invalidCli"));
     if (activePtySessions.size || sessionService.isBusy() || cliTerminals.list().some((t) => !t.exited))
       throw new Error(
-        "Aguarde as execuções terminarem antes de atualizar uma CLI.",
+        i18n.t("errors.waitRunsBeforeUpdate"),
       );
-    if (updatingCli) throw new Error("Atualização já em andamento.");
+    if (updatingCli) throw new Error(i18n.t("ecosystem.updateRunning"));
     updatingCli = true;
     try {
       await cliRunner.prepareUpdate();
@@ -918,7 +920,7 @@ module.exports.ready = app.whenReady().then(async () => {
       updatingCli = false;
     }
   });
-  // IPC: Status e Comandos Reais do ai-memory
+  // IPC: real ai-memory status and commands
   handle("ai-memory-status", async () => {
     return await checkAIMemoryServer();
   });
@@ -977,18 +979,18 @@ module.exports.ready = app.whenReady().then(async () => {
       if (!workspace || !project)
         return {
           ok: false,
-          error: "Workspace e projeto são obrigatórios para ler uma página.",
+          error: i18n.t("errors.pageScopeRequired"),
         };
       try {
         const page = await aiMemoryApi.getPage(workspace, project, pagePath);
         return { ok: true, data: { ...page, workspace, project } };
       } catch (err) {
         if (err && err.status === 404)
-          return { ok: false, notFound: true, error: "Página não encontrada." };
-        // Fallback para a CLI (servidor HTTP indisponível ou resposta inesperada).
+          return { ok: false, notFound: true, error: i18n.t("memoryErrors.pageNotFound") };
+        // Fallback to the CLI (HTTP server unavailable or unexpected response).
         try {
           aiMemoryApi.validName(workspace, "workspace");
-          aiMemoryApi.validName(project, "projeto");
+          aiMemoryApi.validName(project, "project");
           aiMemoryApi.validPagePath(pagePath);
         } catch (e) {
           return { ok: false, error: e.message };
@@ -1058,7 +1060,7 @@ module.exports.ready = app.whenReady().then(async () => {
     getDays: async () => (await getAppSettings())?.aiMemoryTempCleanupDays,
     purge: (ws, p) => {
       if (!memoryMaintenance.canPurgeProject(ws, p))
-        return { ok: false, error: "Este projeto não pode ser excluído." };
+        return { ok: false, error: i18n.t("errors.projectNotDeletable") };
       return purgeProject(ws, p);
     },
     log: (msg) => console.log(msg),
@@ -1083,13 +1085,13 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("ai-memory-temp-cleanup-set-days", async (_e, value) => {
     const days = memoryTempCleanup.normalizeDays(value);
     const result = await saveAppSettings({ aiMemoryTempCleanupDays: days });
-    if (!result?.success) return { ok: false, error: "Falha ao salvar a configuração." };
+    if (!result?.success) return { ok: false, error: i18n.t("errors.configSaveFailed") };
     return { ok: true, days };
   });
   handle("ai-memory-delete-page", async (_e, ws, p, pagePath, confirmProtected) => {
     try {
       aiMemoryApi.validName(ws, "workspace");
-      aiMemoryApi.validName(p, "projeto");
+      aiMemoryApi.validName(p, "project");
       aiMemoryApi.validPagePath(pagePath);
     } catch (err) {
       return { ok: false, error: err.message };
@@ -1098,7 +1100,7 @@ module.exports.ready = app.whenReady().then(async () => {
       pagePath,
       confirmProtected,
     );
-    if (denied) return { ok: false, error: denied };
+    if (denied) return { ok: false, error: i18n.t("errors.protectedPage") };
     return await runAiMemoryJson(
       ["delete-page", "--path", pagePath, "--workspace", ws, "--project", p],
       undefined,
@@ -1108,20 +1110,20 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("ai-memory-purge-project", async (_e, ws, p, confirmName) => {
     try {
       aiMemoryApi.validName(ws, "workspace");
-      aiMemoryApi.validName(p, "projeto");
+      aiMemoryApi.validName(p, "project");
     } catch (err) {
       return { ok: false, error: err.message };
     }
     if (!memoryMaintenance.canPurgeProject(ws, p))
-      return { ok: false, error: "Este projeto não pode ser excluído." };
+      return { ok: false, error: i18n.t("errors.projectNotDeletable") };
     if (confirmName !== `${ws}/${p}`)
-      return { ok: false, error: "Confirmação não confere com workspace/projeto." };
+      return { ok: false, error: i18n.t("errors.purgeConfirmMismatch") };
     return await purgeProject(ws, p);
   });
   handle("ai-memory-maintenance-prompt", (_e, opts) => {
     const { workspace, project, mode, maxDeletions } = opts || {};
     aiMemoryApi.validName(workspace, "workspace");
-    aiMemoryApi.validName(project, "projeto");
+    aiMemoryApi.validName(project, "project");
     return memoryMaintenance.buildMaintenancePrompt({
       workspace,
       project,
@@ -1145,11 +1147,11 @@ module.exports.ready = app.whenReady().then(async () => {
       subcmdArgs.length !== 1 ||
       subcmdArgs[0] !== "handoffs"
     )
-      return { ok: false, error: "Comando não permitido pela interface." };
+      return { ok: false, error: i18n.t("errors.commandNotAllowed") };
     return await runAiMemoryJson(subcmdArgs, validCwd(cwd));
   });
 
-  // IPC: Skills e Histórico
+  // IPC: skills and history
   handle("get-skills", async () => {
     return getInstalledSkills();
   });
@@ -1158,20 +1160,20 @@ module.exports.ready = app.whenReady().then(async () => {
     return getCliHistory(query);
   });
 
-  // Apagar definitivamente: conversa do BeagleDock (mensagens e anexos) e a conversa nativa da CLI.
+  // Delete permanently: the BeagleDock conversation (messages and attachments) and the CLI's native conversation.
   handle("delete-conversation", async (_event, request) => {
     try {
       const { provider, beagleSessionId, nativeId } = request || {};
       if (!["claude", "codex", "antigravity"].includes(provider))
-        throw new Error("Provedor inválido.");
+        throw new Error(i18n.t("errors.invalidProvider"));
       if (beagleSessionId !== undefined && typeof beagleSessionId !== "string")
-        throw new Error("Conversa inválida.");
+        throw new Error(i18n.t("errors.invalidConversation"));
       let native = typeof nativeId === "string" ? nativeId : undefined;
       if (beagleSessionId) {
         const saved = (await getSavedSessions()).find((s) => s.id === beagleSessionId);
-        if (!saved) throw new Error("Conversa inexistente ou removida.");
-        if (saved.providerId !== provider) throw new Error("Provedor incompatível com a conversa salva.");
-        // O ID nativo vem do vínculo salvo, nunca do pedido.
+        if (!saved) throw new Error(i18n.t("session.missing"));
+        if (saved.providerId !== provider) throw new Error(i18n.t("errors.providerMismatch"));
+        // The native ID comes from the saved link, never from the request.
         native = saved.nativeSessionId;
         killPty(beagleSessionId);
         cliTerminals.close(beagleSessionId);
@@ -1192,7 +1194,7 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
-  // IPC: Identidade OS + SQLite Profile
+  // IPC: OS identity + SQLite profile
   handle("get-user-profile", async () => {
     try {
       const detected = detectUserIdentity();
@@ -1203,7 +1205,7 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
-  // IPC: Sessões e Mensagens no SQLite
+  // IPC: sessions and messages in SQLite
   handle("save-session", async (_event, session) => {
     try {
       const saved = await sessionService.saveSession(session);
@@ -1312,7 +1314,7 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
-  // Lista do projeto guardada por poucos segundos: o autocomplete consulta a cada tecla.
+  // Project list kept for a few seconds: the autocomplete queries on every keystroke.
   const projectFileCache = new Map();
   handle("search-project-files", async (_event, request) => {
     try {
@@ -1363,12 +1365,16 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("save-app-settings", async (_event, settingsObj) => {
     try {
-      // Iniciar com o sistema mexe em um arquivo do usuário: se falhar, nada é gravado.
+      // Starting with the system touches a user file: if it fails, nothing is saved.
       if (Object.hasOwn(settingsObj || {}, "launchAtLogin")) {
         const auto = setAutostart(!!settingsObj.launchAtLogin);
         if (!auto.ok) return { success: false, error: auto.error };
       }
       const result = await saveAppSettings(settingsObj);
+      if (Object.hasOwn(settingsObj || {}, "language")) {
+        i18n.setLocale(result?.settings?.language);
+        background?.refreshMenu?.();
+      }
       if (Object.hasOwn(settingsObj || {}, "autoCompactTokens"))
         savedAutoCompactTokens = result?.settings?.autoCompactTokens;
       if (Object.hasOwn(settingsObj || {}, "runInBackground"))
@@ -1379,7 +1385,7 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
-  // Ditado por voz: o renderer grava o microfone e envia o WAV; modelo e chave ficam aqui.
+  // Voice dictation: the renderer records the microphone and sends the WAV; model and key stay here.
   const speechModels = createSpeechModels({
     dir: path.join(
       process.env.BEAGLEDOCK_DATA_DIR || path.join(os.homedir(), ".beagledock"),
@@ -1441,9 +1447,9 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
-  // IPC: PTY e Execução Real de Prompts
+  // IPC: PTY and real prompt runs
   handle("pty-spawn", async (_event, { sessionId, cwd, providerId }) => {
-    if (updatingCli) throw new Error("Aguarde a atualização da CLI terminar.");
+    if (updatingCli) throw new Error(i18n.t("errors.waitCliUpdate"));
     const entry = ensurePtySession(sessionId, cwd, providerId);
     return { ok: true, pid: entry.pid, cwd: entry.cwd };
   });
@@ -1470,9 +1476,9 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("compact-session", async (_event, id, providerId) => {
     if (typeof id !== "string" || !["claude", "codex", "antigravity"].includes(providerId))
-      return { ok: false, error: "Conversa inválida." };
+      return { ok: false, error: i18n.t("errors.invalidConversation") };
     const result = await cliRunner.compact(id, providerId);
-    // A compactação manual acontece fora de turno: grava o contexto resultante.
+    // Manual compaction happens outside a turn: save the resulting context.
     if (result.ok && result.context)
       await sessionService.setSessionContext(id, result.context).catch(() => {});
     return { ok: result.ok, error: result.error };
@@ -1480,8 +1486,8 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("set-session-archived", async (_event, id, archived) => {
     try {
-      if (typeof id !== "string") throw new Error("Conversa inválida.");
-      // Fechar encerra o processo da CLI; a conversa fica no histórico.
+      if (typeof id !== "string") throw new Error(i18n.t("errors.invalidConversation"));
+      // Closing stops the CLI process; the conversation stays in the history.
       if (archived === true) killPty(id);
       return await sessionService.setSessionArchived(id, archived === true);
     } catch (e) {
@@ -1497,21 +1503,21 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
   handle("interrupt-cli-session", (_event, id) => sessionService.interrupt(id));
-  // Mensagem na fila: tira da fila antes de a CLI recebê-la / interrompe a execução atual para ela passar.
+  // Queued message: take it off the queue before the CLI gets it / interrupt the current run so it goes through.
   handle("cancel-queued-prompt", (_event, request) => sessionService.cancelQueued(request));
   handle("force-queued-prompt", (_event, request) => sessionService.forceQueued(request));
   handle("answer-now-prompt", (_event, request) => sessionService.answerNow(request));
   handle("execute-cli-prompt", async (_event, payload) =>
     updatingCli
-      ? { ok: false, error: "Aguarde a atualização da CLI terminar." }
+      ? { ok: false, error: i18n.t("errors.waitCliUpdate") }
       : cliTerminals.isOpen(payload?.sessionId)
-        ? { ok: false, error: "Esta conversa está aberta no terminal. Volte para o chat para enviar por aqui." }
+        ? { ok: false, error: i18n.t("errors.openInTerminal") }
         : sessionService.execute(payload).then((result) => {
             notifyChatReply(payload, result);
             return result;
           }),
   );
-  // Modo terminal: a interface própria de cada CLI, retomando a conversa nativa.
+  // Terminal mode: each CLI's own interface, resuming the native conversation.
   handle("cli-terminal-open", (_event, request) => cliTerminals.open(request));
   handle("cli-terminal-write", (_event, request) => cliTerminals.write(request));
   handle("cli-terminal-resize", (_event, request) => cliTerminals.resize(request));

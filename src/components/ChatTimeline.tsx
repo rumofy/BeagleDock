@@ -22,6 +22,7 @@ import { buildEventTree } from "../lib/eventTree";
 import { formatTokens } from "../lib/tokens";
 import type { ChatEvent, ChatEventKind } from "../types";
 
+import { t, tn, type MessageKey } from "../i18n";
 const KIND_ICON: Record<ChatEventKind, typeof Brain> = {
   reasoning: Brain,
   command: Terminal,
@@ -36,19 +37,8 @@ const KIND_ICON: Record<ChatEventKind, typeof Brain> = {
   step: Circle,
 };
 
-const KIND_LABEL: Record<ChatEventKind, string> = {
-  reasoning: "Raciocínio",
-  command: "Comando",
-  tool: "Ferramenta",
-  mcp: "MCP",
-  file: "Arquivos",
-  web: "Web",
-  plan: "Plano",
-  agent: "Agente",
-  compaction: "Contexto",
-  status: "Status",
-  step: "Etapa",
-};
+// Read on every render, so it follows the interface language.
+const kindLabel = (kind: ChatEventKind) => t(`timeline.kind.${kind}` as MessageKey);
 
 const EventRow = memo(function EventRow({
   event,
@@ -79,8 +69,8 @@ const EventRow = memo(function EventRow({
         >
           <Icon size={13} />
         </span>
-        <span className="text-[11px] font-semibold text-[#3d382e] truncate max-w-[45%]" title={event.title || KIND_LABEL[event.kind]}>
-          {event.title || KIND_LABEL[event.kind]}
+        <span className="text-[11px] font-semibold text-[#3d382e] truncate max-w-[45%]" title={event.title || kindLabel(event.kind)}>
+          {event.title || kindLabel(event.kind)}
         </span>
         {event.detail && (
           <span
@@ -99,15 +89,15 @@ const EventRow = memo(function EventRow({
             <Loader2
               size={12}
               className="animate-spin text-amber-600"
-              aria-label="em andamento"
+              aria-label={t("timeline.running")}
             />
           ) : event.status === "error" ? (
-            <X size={12} className="text-rose-600" aria-label="falhou" />
+            <X size={12} className="text-rose-600" aria-label={t("timeline.failed")} />
           ) : (
             <Check
               size={12}
               className="text-emerald-600"
-              aria-label="concluído"
+              aria-label={t("timeline.done")}
             />
           )}
         </span>
@@ -122,13 +112,13 @@ const EventRow = memo(function EventRow({
           {[
             event.meta.subagentType,
             Number.isFinite(event.meta.toolUses)
-              ? `${event.meta.toolUses} ${event.meta.toolUses === 1 ? "ferramenta" : "ferramentas"}`
+              ? tn("timeline.tools", event.meta.toolUses ?? 0)
               : "",
             Number.isFinite(event.meta.tokens)
               ? `${formatTokens(event.meta.tokens)} tokens`
               : "",
             event.meta.lastTool && event.status === "running"
-              ? `agora: ${event.meta.lastTool}`
+              ? t("timeline.now", { tool: event.meta.lastTool })
               : "",
           ]
             .filter(Boolean)
@@ -152,7 +142,7 @@ const EventRow = memo(function EventRow({
       {children.length > 0 && (
         <ul
           className="ml-3 mt-1 pl-3 border-l-2 border-[#e4dec9] divide-y divide-[#eee8d9]"
-          aria-label={`Etapas de ${event.title || "agente"}`}
+          aria-label={t("timeline.stepsOf", { name: event.title || t("timeline.agentFallback") })}
         >
           {children.map((child) => (
             <EventRow
@@ -179,7 +169,7 @@ export const ChatTimeline = memo(function ChatTimeline({
 }) {
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
   const running = events.filter((e) => e.status === "running").length;
-  // Aberta enquanto a resposta chega ou enquanto algo (um agente) ainda trabalha.
+  // Open while the reply arrives or while something (an agent) is still working.
   const open = userOpen ?? (streaming || running > 0);
   const { roots, tree } = useMemo(() => buildEventTree(events), [events]);
   const agents = events.filter((e) => e.kind === "agent").length;
@@ -197,14 +187,14 @@ export const ChatTimeline = memo(function ChatTimeline({
         aria-expanded={open}
       >
         {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        Atividade
+        {t("timeline.activity")}
         <span className="font-normal text-[#938b7a] truncate min-w-0">
-          · {events.length} {events.length === 1 ? "etapa" : "etapas"}
+          · {tn("timeline.steps", events.length)}
           {agents > 0
-            ? ` · ${agents} ${agents === 1 ? "agente" : "agentes"}`
+            ? ` · ${tn("background.agents", agents)}`
             : ""}
-          {running > 0 ? ` · ${running} em andamento` : ""}
-          {failed > 0 ? ` · ${failed} com erro` : ""}
+          {running > 0 ? ` · ${t("timeline.inProgress", { count: running })}` : ""}
+          {failed > 0 ? ` · ${t("timeline.withError", { count: failed })}` : ""}
         </span>
       </button>
       {open && (

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t } from "../../i18n";
 export function SkillsModal() {
   const {
     showSkillsModal,
@@ -32,7 +33,7 @@ export function SkillsModal() {
                   <input
                     type="text"
                     autoFocus
-                    placeholder="Buscar skills salvas (ex: revisor, seguranca, memory, aws)..."
+                    placeholder={t("skills.searchPlaceholder")}
                     value={skillsSearch}
                     onChange={(e) => setSkillsSearch(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 rounded-xl border border-[#d6cfbe] bg-[#ffffff] text-xs outline-none focus:border-[#968d7a]"
@@ -40,7 +41,7 @@ export function SkillsModal() {
                 </div>
               </div>
               <span className="font-mono text-[10px] bg-[#ede9de] px-2 py-1 rounded text-[#6b6251]">
-                ESC para fechar
+                {t("history.escToClose")}
               </span>
               <button
                 onClick={() => setShowSkillsModal(false)}
@@ -53,11 +54,10 @@ export function SkillsModal() {
             <div className="p-4 overflow-y-auto space-y-2.5 flex-1">
               <div className="text-[11px] font-bold text-[#8c8270] uppercase tracking-wider mb-1 flex items-center justify-between">
                 <span>
-                  Skills reais instaladas no seu ambiente (
-                  {installedSkills.length})
+                  {t("skills.installed", { count: installedSkills.length })}
                 </span>
                 <span className="text-[10px] text-amber-800 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  Clique para chamar a skill
+                  {t("skills.clickToCall")}
                 </span>
               </div>
 
@@ -92,7 +92,7 @@ export function SkillsModal() {
                         )}
                         {skill.name.includes("revis") && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Revisor Favorito
+                            {t("skills.favoriteReviewer")}
                           </span>
                         )}
                       </div>
@@ -106,7 +106,7 @@ export function SkillsModal() {
 
                     <div className="shrink-0 flex flex-col items-end gap-1.5">
                       <span className="px-2 py-1 rounded-lg bg-[#ede9de] group-hover:bg-amber-100 group-hover:text-amber-900 font-mono text-[10px] font-bold text-[#443e33] transition flex items-center gap-1">
-                        <span>Chamar</span>
+                        <span>{t("skills.call")}</span>
                         <ChevronRight size={12} />
                       </span>
                     </div>
@@ -115,11 +115,11 @@ export function SkillsModal() {
             </div>
 
             <div className="p-3 bg-[#faf8f4] border-t border-[#eeeae0] text-center text-xs text-[#7d7565]">
-              Atalho global: pressione{" "}
+              {t("skills.shortcutBefore")}{" "}
               <kbd className="font-bold bg-[#ede9de] px-1.5 py-0.5 rounded text-[#332f28]">
                 Ctrl + K
               </kbd>{" "}
-              a qualquer momento no cockpit.
+              {t("skills.shortcutAfter")}
             </div>
           </div>
         </div>

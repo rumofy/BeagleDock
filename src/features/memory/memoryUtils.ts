@@ -1,5 +1,6 @@
 import type { AIMemoryPageItem } from "../../types";
 
+import { t, type MessageKey } from "../../i18n";
 export const GROUP_ORDER = [
   "_rules",
   "decisions",
@@ -15,22 +16,7 @@ export const GROUP_ORDER = [
   "others",
 ] as const;
 
-export const GROUP_LABELS: Record<string, string> = {
-  _rules: "Regras",
-  decisions: "Decisões",
-  procedures: "Procedimentos",
-  gotchas: "Armadilhas",
-  concepts: "Conceitos",
-  review: "Revisão",
-  "claude-memory": "Memória do Claude",
-  notes: "Notas",
-  preferences: "Preferências",
-  profile: "Perfil",
-  sessions: "Sessões",
-  others: "Outros",
-};
-
-// Regras de proteção/purga vêm da fonte única compartilhada com o processo principal.
+// Protection/purge rules come from the single source shared with the main process.
 export {
   protectionFor,
   isTestProject,
@@ -52,7 +38,7 @@ export function groupPages(pages: AIMemoryPageItem[]) {
   }
   return GROUP_ORDER.filter((g) => map.has(g)).map((g) => ({
     id: g,
-    label: GROUP_LABELS[g],
+    label: t(`memoryGroup.${g}` as MessageKey),
     pages: map
       .get(g)!
       .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || "")),
@@ -61,19 +47,19 @@ export function groupPages(pages: AIMemoryPageItem[]) {
 
 export function relativeTime(iso?: string, now = Date.now()): string {
   if (!iso) return "—";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "—";
-  const s = Math.max(0, Math.floor((now - t) / 1000));
-  if (s < 60) return "agora";
+  const time = Date.parse(iso);
+  if (Number.isNaN(time)) return "—";
+  const s = Math.max(0, Math.floor((now - time) / 1000));
+  if (s < 60) return t("time.now");
   const m = Math.floor(s / 60);
-  if (m < 60) return `há ${m} min`;
+  if (m < 60) return t("time.minutesAgo", { n: m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `há ${h} h`;
+  if (h < 24) return t("time.hoursAgo", { n: h });
   const d = Math.floor(h / 24);
-  if (d < 30) return `há ${d} d`;
+  if (d < 30) return t("time.daysAgo", { n: d });
   const mo = Math.floor(d / 30);
-  if (mo < 12) return `há ${mo} m`;
-  return `há ${Math.floor(d / 365)} a`;
+  if (mo < 12) return t("time.monthsAgo", { n: mo });
+  return t("time.yearsAgo", { n: Math.floor(d / 365) });
 }
 
 export function formatDate(iso?: string): string {
@@ -113,7 +99,7 @@ export function frontmatterEntries(
   ]);
 }
 
-// Converte [[alvo]] / [[alvo|rótulo]] em links markdown com o esquema interno wiki:.
+// Turns [[target]] / [[target|label]] into markdown links with the internal wiki: scheme.
 export function transformWikiLinks(body: string): string {
   return body.replace(/\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g, (_m, target, label) => {
     const t = String(target).trim();

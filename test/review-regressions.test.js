@@ -126,11 +126,11 @@ test("deleting an active turn waits for cancellation, drops response and rejects
   assert.deepEqual(await store.getChatMessages(id), []);
   await assert.rejects(
     store.saveChatMessage(message("late-answer", id, "late")),
-    /removida/,
+    /removed/,
   );
   await assert.rejects(
     store.setNativeSession(id, "claude", "native-late-123", root),
-    /removida/,
+    /removed/,
   );
   assert.equal(
     (
@@ -165,7 +165,7 @@ test("deletion waits for already queued metadata writes and refuses new ones", a
   const deletion = service.remove(id);
   await assert.rejects(
     service.saveChatMessage(message("late", id, "late")),
-    /removida/,
+    /removed/,
   );
   gate.resolve();
   await save;
@@ -224,7 +224,7 @@ test("history replacement refuses a running turn", async () => {
     prompt: "hello",
   });
   await started.promise;
-  await assert.rejects(service.replaceChatMessages(id, []), /Aguarde/);
+  await assert.rejects(service.replaceChatMessages(id, []), /Wait for the run/);
   turn.resolve({ ok: true, output: "done" });
   await pending;
 });
@@ -345,7 +345,7 @@ test("stop cancels the active turn and its queue, preserves partial output/nativ
   );
   assert.match(
     history.find((m) => m.id === "stop-queued-answer").text,
-    /cancelado antes/,
+    /cancelled before/,
   );
   assert.equal(
     (

@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { useApp } from "../../hooks/AppStateProvider";
 
+import { t } from "../../i18n";
 export function SidebarNav() {
   const {
     activeTab,
@@ -18,7 +19,7 @@ export function SidebarNav() {
     refreshAIMemoryExplorer,
     cliTerminals,
   } = useApp();
-  // Shells em execução: comandos rodando agora em qualquer conversa (os mesmos das abas do shell).
+  // Running shells: commands running now in any conversation (the same as the shell tabs).
   const runningShells = Object.values(messages).reduce(
     (total, list) =>
       total +
@@ -66,35 +67,35 @@ export function SidebarNav() {
               </div>
               <span className="font-mono text-[10px] bg-[#dfdacd] px-1.5 py-0.5 rounded text-[#5d5648]">
                 {Object.keys(cliTerminals.terminals).length
-                  ? `${Object.keys(cliTerminals.terminals).length} CLI · ${runningShells} rodando`
-                  : `${runningShells} rodando`}
+                  ? t("nav.shellsWithCli", { cli: Object.keys(cliTerminals.terminals).length, running: runningShells })
+                  : t("nav.shellsRunning", { running: runningShells })}
               </span>
             </button>
 
-            {/* ATALHO: SKILLS SALVAS (Ctrl+K) */}
+            {/* SHORTCUT: SAVED SKILLS (Ctrl+K) */}
             <button
               onClick={() => setShowSkillsModal(true)}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-[#5d5648] hover:bg-[#e4dec9] transition"
-              title="Atalho: Ctrl+K"
+              title={t("nav.shortcut", { keys: "Ctrl+K" })}
             >
               <div className="flex items-center gap-2">
                 <Wand2 size={16} className="text-[#847b6a]" />
-                <span>Skills & Revisor ({installedSkills.length})</span>
+                <span>{t("nav.skills", { count: installedSkills.length })}</span>
               </div>
               <span className="font-mono text-[10px] bg-[#dfdacd]/70 text-[#686050] px-1.5 py-0.5 rounded flex items-center gap-1">
                 <kbd className="font-sans text-[9px]">Ctrl+K</kbd>
               </span>
             </button>
 
-            {/* ATALHO: HISTÓRICO DE CONVERSAS (Ctrl+H) */}
+            {/* SHORTCUT: CONVERSATION HISTORY (Ctrl+H) */}
             <button
               onClick={() => setShowHistoryModal(true)}
               className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-[#5d5648] hover:bg-[#e4dec9] transition"
-              title="Atalho: Ctrl+H"
+              title={t("nav.shortcut", { keys: "Ctrl+H" })}
             >
               <div className="flex items-center gap-2">
                 <History size={16} className="text-[#847b6a]" />
-                <span>Histórico de Conversas</span>
+                <span>{t("nav.history")}</span>
               </div>
               <span className="font-mono text-[10px] bg-[#dfdacd]/70 text-[#686050] px-1.5 py-0.5 rounded flex items-center gap-1">
                 <kbd className="font-sans text-[9px]">Ctrl+H</kbd>

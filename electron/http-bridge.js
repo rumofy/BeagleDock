@@ -73,7 +73,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
   async function handle(
     req,
     res,
-    next = () => json(res, 404, { error: "Rota não encontrada." }),
+    next = () => json(res, 404, { error: "Route not found." }),
   ) {
     const url = new URL(req.url, "http://localhost");
     if (!url.pathname.startsWith("/__beagledock/")) return next();
@@ -84,13 +84,13 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
       (req.headers["sec-fetch-site"] &&
         !["same-origin", "none"].includes(req.headers["sec-fetch-site"]))
     )
-      return json(res, 403, { error: "Origem não autorizada." });
+      return json(res, 403, { error: "Origin not allowed." });
     const events = url.pathname === "/__beagledock/events";
     const presented = events
       ? url.searchParams.get("token")
       : req.headers.authorization?.replace(/^Bearer /, "");
     if (!matches(presented, token))
-      return json(res, 401, { error: "Credencial local inválida." });
+      return json(res, 401, { error: "Invalid local credential." });
     if (events) {
       if (req.method !== "GET") return json(res, 405, { error: "Use GET." });
       res.writeHead(200, {
@@ -108,7 +108,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
       return;
     }
     if (url.pathname !== "/__beagledock/invoke")
-      return json(res, 404, { error: "Rota não encontrada." });
+      return json(res, 404, { error: "Route not found." });
     if (req.method !== "POST") return json(res, 405, { error: "Use POST." });
     if (req.headers["content-type"]?.split(";")[0] !== "application/json")
       return json(res, 415, { error: "Use application/json." });
@@ -118,7 +118,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
       for await (const chunk of req) {
         size += chunk.length;
         if (size > maxBody) {
-          json(res, 413, { error: "Pedido excedeu o limite." });
+          json(res, 413, { error: "Request exceeded the limit." });
           return;
         }
         chunks.push(chunk);
@@ -127,7 +127,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
       try {
         data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
       } catch {
-        return json(res, 400, { error: "JSON inválido." });
+        return json(res, 400, { error: "Invalid JSON." });
       }
       if (
         !data ||
@@ -136,7 +136,7 @@ function createHttpBridge({ bridge, token, origin, maxBody = 1024 * 1024 }) {
         !Array.isArray(data.args) ||
         data.args.length > 10
       )
-        return json(res, 400, { error: "Método ou argumentos inválidos." });
+        return json(res, 400, { error: "Invalid method or arguments." });
       const result = await bridge.invoke(data.method, data.args);
       json(res, 200, { result: result ?? null });
     } catch (error) {
