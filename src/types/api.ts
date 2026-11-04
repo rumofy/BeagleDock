@@ -83,6 +83,16 @@ export interface LivePermissionResult {
   error?: string;
 }
 
+export type QuestionAnswers = Record<string, string[]>;
+
+export interface UserQuestion {
+  id: string;
+  question: string;
+  header: string;
+  multiSelect: boolean;
+  options: { label: string; description: string }[];
+}
+
 export interface CliApproval {
   id: string;
   sessionId: string;
@@ -92,6 +102,7 @@ export interface CliApproval {
   tool: string;
   input: string;
   options: ApprovalOption[];
+  questions?: UserQuestion[];
 }
 
 export interface GlobalPolicyField {
@@ -332,7 +343,7 @@ export interface BeagleAPI {
   updateCli(id: string): Promise<{ ok: boolean; version?: string | null; error?: string }>;
   getCliApprovals(): Promise<CliApproval[]>;
   /** `decision`: "allow" | "deny" or the id of an offered option; `message` goes with a denial. */
-  resolveCliApproval(id: string, decision: string, message?: string): Promise<unknown>;
+  resolveCliApproval(id: string, decision: string, message?: string, answers?: QuestionAnswers): Promise<unknown>;
   /**
    * Changes the conversation's permission level with the CLI open. `applied`: "now" (the running CLI
    * already uses the new level) or "next" (applies from the next message); `approved` = pending

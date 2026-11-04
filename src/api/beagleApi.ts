@@ -23,8 +23,8 @@ export const beagleApi: BeagleAPI = {
   updateCli: (id) => backend().updateCli(id),
   getCliApprovals: () => backend().getCliApprovals(),
   getAppVersion: () => backend().getAppVersion(),
-  resolveCliApproval: (id, decision, message) =>
-    backend().resolveCliApproval(id, decision, message),
+  resolveCliApproval: (id, decision, message, answers) =>
+    backend().resolveCliApproval(id, decision, message, answers),
   setLivePermission: (sessionId, permission) =>
     backend().setLivePermission(sessionId, permission),
   detectTools: () => backend().detectTools(),

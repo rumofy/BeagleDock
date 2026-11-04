@@ -4,6 +4,13 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-11-04
+
+### Fixed
+
+- Plan mode temporarily makes the conversation read-only; approving the plan or turning planning off restores the permission mode used before planning, including after restarting the app.
+- Questions from the CLIs now show selectable answers, descriptions and a custom response field instead of raw JSON and permission buttons. Multiple questions and multiple selections are supported, and your answers are sent back to the conversation.
+
 ## [0.14.0] - 2026-11-04
 
 ### Added
@@ -333,7 +340,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/rumofy/BeagleDock/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/rumofy/BeagleDock/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/rumofy/BeagleDock/compare/v0.12.0...v0.13.0

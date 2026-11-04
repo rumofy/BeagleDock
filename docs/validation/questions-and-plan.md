@@ -1,0 +1,13 @@
+# Questions and plan permissions
+
+Validation uses offline protocol fixtures. No provider-backed CLI run was performed for this change, so these results do not establish behavior with a particular installed CLI version.
+
+- The Electron desktop test exercises Claude Code's `AskUserQuestion`, Codex's `item/tool/requestUserInput`, and Antigravity's `ask_question` hook. It checks that questions arrive before completion, options replace the permission UI, incomplete answers cannot be submitted, multiple selections survive, and a custom answer replaces the selected single-choice option. All three fixtures receive the answer and finish in the same conversation.
+- Claude answers use `updatedInput.answers`, keyed by the original question text, while preserving the original tool input. Codex answers retain native question IDs and use `{ answers: { id: { answers: [...] } } }`. Unrelated Codex threads cannot request an answer in the current conversation.
+- Antigravity's current permission hook does not replace tool results. The bridge skips its terminal question dialog with `decision: deny` and includes the person's answers in the localized reason shown to the agent. This is a compatibility path; it does not claim that AGY records a successful native interactive answer.
+- Answer validation requires every question, accepts custom text, and rejects permission shortcuts. Switching to Full access does not answer a question or approve a plan. Dismissing or stopping a question sends no answers.
+- Plan entry uses Claude's native `plan` permission mode, Codex's read-only sandbox with no escalation approval, and AGY's planning mode and explicit deny rules. These are each CLI's restrictions, not an additional BeagleDock operating-system sandbox.
+- Plan entry saves the prior permission in SQLite. Ordinary saves while planning preserve it. Leaving planning clears it. Tests cover all three providers and prior modes CLI global, Restricted, Accept edits, and Full access. Older plan sessions without a recorded prior mode retain the Accept edits fallback.
+- The composer and Alt+P restore the saved mode. The Electron test enters planning from Full access, submits a plan request, approves the result, and verifies that Full access is restored and the native conversation continues for all three providers.
+- Claude's native `ExitPlanMode` approval restores the saved permission as well, including the configured global mode when the conversation previously inherited CLI defaults.
+- Live permission changes retain the existing provider guarantees: Claude can switch modes through its control protocol, AGY narrows tool access through its bridge, and Codex's sandbox changes on the next turn. A command already executing is not retroactively undone.

@@ -54,6 +54,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
   const sessionApprovals = cliApprovals.filter((a) => a.sessionId === session.id);
   const waitingPermission = sessionApprovals.length > 0;
   // Only a plan waiting: the badge says so, so it isn't mistaken for a tool permission.
+  const waitingQuestionOnly = waitingPermission && sessionApprovals.every((a) => a.kind === "question");
   const waitingPlanOnly = waitingPermission && sessionApprovals.every((a) => a.kind === "plan");
   // Large conversation with an expired cache: resuming reprocesses the whole context.
   const context = contextBySession[session.id];
@@ -146,9 +147,9 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
           {waitingPermission && (
             <span
               className="shrink-0 text-[9px] font-bold uppercase tracking-wider text-white bg-amber-600 rounded px-1 animate-pulse"
-              title={waitingPlanOnly ? t("session.planWaiting") : t("session.permissionWaiting")}
+              title={waitingQuestionOnly ? t("question.waiting") : waitingPlanOnly ? t("session.planWaiting") : t("session.permissionWaiting")}
             >
-              {waitingPlanOnly ? t("session.badgePlan") : t("session.badgePermission")}
+              {waitingQuestionOnly ? t("question.badge") : waitingPlanOnly ? t("session.badgePlan") : t("session.badgePermission")}
             </span>
           )}
           {unreadSessionIds.includes(session.id) && (

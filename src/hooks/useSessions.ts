@@ -9,6 +9,8 @@ import {
   livePermissionNotice,
   PERMISSION_LABELS,
   planApprovedPrompt,
+  permissionAfterPlan,
+  withPermission,
 } from "../lib/permissionModes";
 import { providerQuota, stripAnsi } from "../lib/format";
 import { createFrameBatcher } from "../lib/frameBatcher";
@@ -324,7 +326,7 @@ export function useSessions({
           .flatMap((p) => p.sessions)
           .find((s) => s.id === sessionId);
         if (!session || (session.permission || "inherit") === permission) return;
-        void persistSession({ ...session, permission });
+        void persistSession(withPermission(session, permission));
         setPermissionNotice({
           sessionId,
           text:
@@ -536,8 +538,9 @@ export function useSessions({
     if (!currentSession || permission === (currentSession.permission || "inherit")) return;
     const session = currentSession;
     const executing = isExecutingPrompt;
-    noteChoice({ ...session, permission });
-    void persistSession({ ...session, permission }).then(async (saved) => {
+    const next = withPermission(session, permission);
+    noteChoice(next);
+    void persistSession(next).then(async (saved) => {
       if (!saved || !backendAvailable()) return;
       try {
         const result = await beagleApi.setLivePermission(session.id, permission);
@@ -572,15 +575,14 @@ export function useSessions({
       permission: session.permission || "inherit",
     });
 
-  // "Approve plan and run": takes the conversation out of plan mode (Accept edits, live when the CLI
-  // accepts it) and asks for the implementation. Same path in all three CLIs; Codex and AGY restart and
-  // resume the conversation already able to write.
+  // Approving restores the conversation's permission from before plan mode, then continues
+  // the same native conversation. Read-only planning never changes that saved permission.
   const handleApprovePlan = async () => {
     if (!currentSession || isExecutingPrompt || currentSession.permission !== "plan") return;
-    const session: ChatSession = { ...currentSession, permission: "edits" };
+    const session = withPermission(currentSession, permissionAfterPlan(currentSession));
     if (!(await persistSession(session))) return;
     if (backendAvailable())
-      await beagleApi.setLivePermission(session.id, "edits").catch(() => undefined);
+      await beagleApi.setLivePermission(session.id, session.permission || "inherit").catch(() => undefined);
     await sendPrompt(session, planApprovedPrompt());
   };
 

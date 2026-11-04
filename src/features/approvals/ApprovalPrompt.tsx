@@ -40,17 +40,17 @@ export function ApprovalPrompt() {
         {title}
         {pending.length > 1 ? ` · ${t("approvalPrompt.more", { count: pending.length - 1 })}` : ""}
       </button>
-      {first.kind === "plan" ? (
-        // A plan is reviewed inside its conversation, never approved from a corner popup.
+      {first.kind === "plan" || first.kind === "question" ? (
+        // Plans and questions are reviewed inside their conversation.
         <div
-          data-testid="plan-ready-notice"
+          data-testid={first.kind === "question" ? "question-ready-notice" : "plan-ready-notice"}
           className="rounded-2xl border-2 border-emerald-500 bg-emerald-50 shadow-md p-3.5 space-y-2"
         >
           <div className="text-sm font-bold text-emerald-900">
-            {t("approvalPrompt.planReady")}
+            {t(first.kind === "question" ? "question.waiting" : "approvalPrompt.planReady")}
           </div>
           <p className="text-xs text-[#2c2822]">
-            {t("approvalPrompt.planReadyHint")}
+            {t(first.kind === "question" ? "question.openHint" : "approvalPrompt.planReadyHint")}
           </p>
           <button
             type="button"

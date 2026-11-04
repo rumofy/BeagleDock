@@ -39,6 +39,7 @@ const {
 } = require("./auto-compact");
 const { askApproval, approvalKind, claudeApprovalOptions } = require("./approval-options");
 const { t } = require("./i18n");
+const { userQuestions, claudeAnswers } = require("./user-questions");
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 const PERMISSIONS = new Set(["inherit", "plan", "ask", "edits", "full"]);
 
@@ -124,11 +125,15 @@ function buildArgs({
   return args;
 }
 
-// Where the conversation goes when the plan is approved: keeps "Full access" if it was already chosen
-// (including during the wait); otherwise, "Accept edits", like the shortcut that turns plan off.
+// Restore the permission held before planning; an explicit change during the wait wins.
 function planExit(entry) {
-  const permission = entry.permission === "full" ? "full" : "edits";
-  return { permission, mode: permission === "full" ? "bypassPermissions" : "acceptEdits" };
+  const permission = entry.permission === "plan"
+    ? entry.permissionBeforePlan || "edits"
+    : entry.permission === "ask" && !entry.permissionBeforePlan ? "edits" : entry.permission;
+  const mode = permission === "inherit" ? entry.inheritedPermissionMode || "default"
+    : permission === "full" ? "bypassPermissions"
+    : permission === "ask" ? "plan" : "acceptEdits";
+  return { permission, mode };
 }
 
 function createCliRunner({
@@ -143,6 +148,7 @@ function createCliRunner({
   resolveSelection = ({ model, effort }) => ({ model, effort }),
   readAgyPermissions = readInheritedPermissions,
   globalFingerprint = () => "",
+  getClaudePermissionMode = () => "default",
   // Context limit for compacting on its own (0 = off). Read on every turn: a change applies right away.
   getAutoCompactTokens = () => DEFAULT_AUTO_COMPACT_TOKENS,
   approvals,
@@ -254,6 +260,8 @@ function createCliRunner({
         throw new Error(
           t("errors.cliMissingInstall", { id: providerId }),
         );
+      const savedPermission = await store.getSessionPermission?.(sessionId);
+      const permissionBeforePlan = savedPermission?.permissionBeforePlan;
       const link = await store.getNativeSession(sessionId, providerId);
       if (link && link.cwd !== cwd)
         throw new Error(
@@ -342,6 +350,7 @@ function createCliRunner({
               sessionId,
               permission,
               ask: approvals.ask,
+              askDetailed: approvals.askDetailed,
               getNativeId: () => processes.get(sessionId)?.nativeId,
               onConversation: (id) => processes.get(sessionId)?.watchConversation?.(id),
             });
@@ -377,6 +386,8 @@ function createCliRunner({
           model,
           effort,
           permission,
+          permissionBeforePlan,
+          inheritedPermissionMode: providerId === "claude" ? getClaudePermissionMode() : undefined,
           controls: new Map(),
           controlSeq: 0,
           cwd,
@@ -833,7 +844,10 @@ function createCliRunner({
                     response: decision.allow
                       ? {
                           behavior: "allow",
-                          updatedInput: request.input || {},
+                          updatedInput: decision.answers && request.tool_name === "AskUserQuestion"
+                            ? { ...request.input, answers: claudeAnswers(
+                                userQuestions(request.input), decision.answers) }
+                            : request.input || {},
                           ...(exitPlan
                             ? { updatedPermissions: [{ type: "setMode", mode: exitPlan.mode, destination: "session" }] }
                             : decision.native?.updatedPermissions
@@ -1515,10 +1529,14 @@ function createCliRunner({
     let applied = "next";
     if (entry && entry.child.exitCode === null && !entry.child.killed) {
       const readonly = (level) => level === "plan" || level === "ask";
+      const savedPermission = await store.getSessionPermission?.(sessionId);
+      if (permission === "plan" && entry.permission !== "plan")
+        entry.permissionBeforePlan = savedPermission?.permissionBeforePlan || entry.permission;
       if (entry.providerId === "claude") {
         // "CLI global" has no equivalent mode to send: it goes back to it by restarting on the next message.
-        if (permission !== "inherit" && entry.effort !== "plan") {
-          const mode = readonly(permission) ? "plan" : permission === "full" ? "bypassPermissions" : "acceptEdits";
+        if ((permission !== "inherit" || entry.permission === "plan") && entry.effort !== "plan") {
+          const mode = permission === "inherit" ? entry.inheritedPermissionMode || "default"
+            : readonly(permission) ? "plan" : permission === "full" ? "bypassPermissions" : "acceptEdits";
           try {
             await control(entry, { subtype: "set_permission_mode", mode });
             if (processes.get(sessionId) === entry) {

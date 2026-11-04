@@ -18,7 +18,7 @@ export function PermissionShortcuts() {
       if (!action) return;
       event.preventDefault();
       const next =
-        action === "plan" ? togglePlan(currentSession.permission) : nextPermission(currentSession.permission);
+        action === "plan" ? togglePlan(currentSession.permission, currentSession.permissionBeforePlan) : nextPermission(currentSession.permission);
       handlePermissionChange(next);
       setAppError("");
       // Discreet confirmation in the header picker, which always shows the current mode.

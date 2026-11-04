@@ -394,8 +394,23 @@ function createCodexStream({
               }
             };
             void decide().catch(() => close(sessionId));
-          } else if (ev.method === "item/tool/requestUserInput")
-            send({ id: ev.id, result: { answers: {} } });
+          } else if (ev.method === "item/tool/requestUserInput") {
+            const request = ev.params || {};
+            if (request.threadId && request.threadId !== current.nativeId && !current.subThreads?.has(request.threadId)) {
+              send({ id: ev.id, result: { answers: {} } });
+              return;
+            }
+            const answer = async () => {
+              const decision = await askApproval(approvals, {
+                sessionId, providerId: "codex", kind: "question", tool: ev.method, input: request,
+              });
+              if (!child.killed && child.exitCode === null)
+                send({ id: ev.id, result: { answers: Object.fromEntries(
+                  Object.entries(decision.answers || {}).map(([id, answers]) => [id, { answers }]),
+                ) } });
+            };
+            void answer().catch(() => close(sessionId));
+          }
           else
             send({
               id: ev.id,

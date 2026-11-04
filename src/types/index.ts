@@ -72,6 +72,8 @@ export interface ChatSession {
   currentModel: string;
   reasoningEffort: ReasoningEffortLevel;
   permission?: PermissionLevel;
+  /** Permission restored after leaving plan mode. */
+  permissionBeforePlan?: Exclude<PermissionLevel, "plan">;
   status: "running" | "idle" | "waiting_input" | "error";
   pid?: number;
   createdAt: string;

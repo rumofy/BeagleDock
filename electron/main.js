@@ -612,13 +612,14 @@ const cliRunner = createCliRunner({
     });
   },
   globalFingerprint: globalPermissions.fingerprint,
+  getClaudePermissionMode: () => globalPermissions.get("claude").fields.find((f) => f.key === "mode")?.value || "default",
   resolveSelection: ({ providerId, model, effort }) =>
     resolveModelSelection(
       catalogs.localCatalogs()[providerId]?.modelOptions || [],
       model,
       effort,
     ),
-  store: { getNativeSession, setNativeSession },
+  store: { getNativeSession, setNativeSession, getSessionPermission: require("./database").getSessionPermission },
   emit: sendToRenderer,
   onComplete: () => pushToolsUpdate(),
 });
@@ -882,8 +883,8 @@ module.exports.ready = app.whenReady().then(async () => {
 
   handle("get-app-version", () => app.getVersion());
   handle("get-cli-approvals", () => approvals.list());
-  handle("resolve-cli-approval", (_event, id, decision, message) =>
-    approvals.resolve(id, decision, { message }),
+  handle("resolve-cli-approval", (_event, id, decision, message, answers) =>
+    approvals.resolve(id, decision, { message, answers }),
   );
   handle("set-live-permission", (_event, sessionId, permission) =>
     cliRunner.setPermission({ sessionId, permission }),

@@ -293,3 +293,29 @@ test("AGY: the approval bridge applies the permission change live", async (t) =>
   assert.equal((await call("write_to_file", { TargetFile: "a.txt" })).decision, "allow");
   assert.equal(asks.length, 1);
 });
+
+test("AGY questions use the shared form even in full access and deliver answers through the hook reason", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-agy-questions-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const broker = createApprovalBroker();
+  const bridge = await createAgyApprovalBridge({
+    home, env: {}, sessionId: "local-session", permission: "full",
+    getNativeId: () => "native-session-123", ask: broker.ask, askDetailed: broker.askDetailed,
+  });
+  t.after(() => bridge.close());
+  const pending = send(bridge.env.BEAGLEDOCK_APPROVAL_SOCKET, {
+    token: bridge.env.BEAGLEDOCK_APPROVAL_TOKEN,
+    request: { conversationId: "native-session-123", toolCall: {
+      name: "ask_question", args: { questions: [{ question: "Channel?", options: ["Email", "WhatsApp"], is_multi_select: true }] },
+    } },
+  });
+  while (!broker.list().length) await new Promise((r) => setImmediate(r));
+  const [request] = broker.list();
+  assert.equal(request.kind, "question");
+  assert.equal(request.questions[0].multiSelect, true);
+  assert.equal(broker.approveSession("local-session"), 0);
+  broker.resolve(request.id, "answer", { answers: { 0: ["Email", "WhatsApp"] } });
+  const result = await pending;
+  assert.equal(result.decision, "deny", "skip the CLI's terminal dialog");
+  assert.match(result.reason, /"Channel\?":"Email, WhatsApp"/);
+});

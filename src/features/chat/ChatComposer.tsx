@@ -1,3 +1,4 @@
+import { permissionAfterPlan } from "../../lib/permissionModes";
 import {
   Send,
   Square,
@@ -494,7 +495,7 @@ export function ChatComposer() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => handlePermissionChange("edits")}
+                        onClick={() => currentSession && handlePermissionChange(permissionAfterPlan(currentSession))}
                         className="px-2 py-1 rounded-lg text-[11px] font-semibold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 transition flex items-center gap-1"
                         title={t("composer.planOffHint")}
                       >

@@ -111,6 +111,7 @@ export function ChatHeader() {
   const waitingApproval = cliApprovals.some(
     (a) => a.sessionId === currentSession?.id,
   );
+  const waitingQuestionOnly = waitingApproval && cliApprovals.filter((a) => a.sessionId === currentSession?.id).every((a) => a.kind === "question");
   const waitingPlanOnly =
     waitingApproval &&
     cliApprovals
@@ -243,7 +244,7 @@ export function ChatHeader() {
                 className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-white bg-amber-600 px-2 py-0.5 rounded-full animate-pulse"
               >
                 <ShieldCheck size={10} />
-                {waitingPlanOnly ? t("header.planToReview") : t("header.waitingPermission")}
+                {waitingQuestionOnly ? t("question.waiting") : waitingPlanOnly ? t("header.planToReview") : t("header.waitingPermission")}
               </span>
             )}
             {terminalMode ? (

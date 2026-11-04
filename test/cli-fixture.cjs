@@ -117,13 +117,19 @@ if (name === "claude" && args.includes("/usage")) {
   );
   process.exit(0);
 }
+const fixtureQuestions = [
+  { id: "channels", header: "Channel", question: "Which campaign channels?", multiSelect: true, is_multi_select: true,
+    options: [{ label: "Email", description: "Use the existing channel" }, { label: "WhatsApp", description: "Use approved templates" }] },
+  { id: "details", header: "Details", question: "Which details should we include?", options: [{ label: "Default" }, { label: "All details" }] },
+];
 const root = process.env.BEAGLEDOCK_SMOKE_ROOT;
 if (!root) throw new Error("Fixture requires isolated storage.");
 if (name === "codex" && args[0] === "app-server") {
   let thread,
     buffer = "",
     turns = 0,
-    approvalFinish;
+    approvalFinish,
+    questionFinish;
   const emit = (value) => process.stdout.write(JSON.stringify(value) + "\n");
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {
@@ -133,6 +139,11 @@ if (name === "codex" && args[0] === "app-server") {
     for (const line of lines) {
       if (!line.trim()) continue;
       const m = JSON.parse(line);
+      if (m.id === "codex-question" && questionFinish) {
+        questionFinish(m.result.answers);
+        questionFinish = null;
+        continue;
+      }
       if (m.id === "codex-approval" && approvalFinish) {
         approvalFinish(m.result?.decision === "accept");
         approvalFinish = null;
@@ -196,7 +207,19 @@ if (name === "codex" && args[0] === "app-server") {
           });
           continue;
         }
-        const text = `codex fixture resposta ${count}`;
+        if (m.params.input?.[0]?.text === "smoke-question") {
+          questionFinish = (answers) => {
+            emit({ method: "item/completed", params: { threadId: thread, turnId, item: {
+              id: itemId, type: "agentMessage", text: "QUESTION_ANSWER_DONE " + JSON.stringify(answers),
+            } } });
+            emit({ method: "turn/completed", params: { threadId: thread, turn: { id: turnId, status: "completed" } } });
+          };
+          emit({ id: "codex-question", method: "item/tool/requestUserInput", params: { threadId: thread, questions: fixtureQuestions } });
+          continue;
+        }
+        const promptText = m.params.input?.[0]?.text || "";
+        const text = promptText === "smoke-plan" ? "PLAN_READY_FOR_REVIEW"
+          : promptText.startsWith("Plan approved.") ? "PLAN_RESTORED_AND_CONTINUED" : `codex fixture resposta ${count}`;
         if (m.params.input?.[0]?.text?.startsWith("smoke-approval")) {
           const childApproval = m.params.input[0].text.includes("-child");
           const approvalThread = childApproval ? `child-${thread}` : thread;
@@ -562,6 +585,10 @@ process.stdin.on("data", (chunk) => {
           );
         continue;
       }
+      if (input.type === "control_response" && input.response?.request_id === "claude-question") {
+        process.stdout.write(JSON.stringify({ type: "result", result: "QUESTION_ANSWER_DONE " + JSON.stringify(input.response.response.updatedInput.answers) }) + "\n");
+        continue;
+      }
       if (input.type === "control_response" && approvalPending) {
         approvalPending = false;
         const answer =
@@ -634,6 +661,35 @@ process.stdin.on("data", (chunk) => {
         throw new Error("Invalid AGY input envelope");
       if (name === "claude" && input.type !== "user")
         throw new Error("Invalid Claude input envelope");
+      if (responsePrompt === "smoke-plan" || responsePrompt.startsWith("Plan approved.")) {
+        const answer = responsePrompt === "smoke-plan" ? "PLAN_READY_FOR_REVIEW" : "PLAN_RESTORED_AND_CONTINUED";
+        const result = name === "agy"
+          ? { event: "result", conversation_id: id, result: { status: "SUCCESS", response: answer } }
+          : { type: "result", session_id: id, result: answer };
+        process.stdout.write(JSON.stringify(result) + "\n");
+        continue;
+      }
+      if (responsePrompt === "smoke-question") {
+        if (name === "claude") {
+          process.stdout.write(JSON.stringify({ type: "control_request", request_id: "claude-question", request: {
+            subtype: "can_use_tool", tool_name: "AskUserQuestion", input: { questions: fixtureQuestions },
+          } }) + "\n");
+        } else {
+          process.stdout.write(JSON.stringify({ event: "init", conversation_id: id }) + "\n");
+          const client = require("net").createConnection(process.env.BEAGLEDOCK_APPROVAL_SOCKET);
+          let response = "";
+          client.on("connect", () => client.write(JSON.stringify({ token: process.env.BEAGLEDOCK_APPROVAL_TOKEN, request: {
+            conversationId: id, toolCall: { name: "ask_question", args: { questions: fixtureQuestions.map((q) => ({
+              question: q.question, options: q.options.map((o) => o.label), is_multi_select: q.is_multi_select,
+            })) } },
+          } }) + "\n"));
+          client.on("data", (chunk) => response += chunk);
+          client.on("close", () => process.stdout.write(JSON.stringify({ event: "result", result: {
+            status: "SUCCESS", response: "QUESTION_ANSWER_DONE " + JSON.parse(response).reason,
+          } }) + "\n"));
+        }
+        continue;
+      }
       if (responsePrompt.startsWith("smoke-approval")) {
         if (name === "claude") {
           process.stdout.write(
