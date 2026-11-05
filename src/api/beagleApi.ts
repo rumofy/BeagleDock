@@ -8,6 +8,24 @@ export const backendAvailable = (): boolean => !!window.beagleAPI;
 export const terminalAvailable = (): boolean =>
   typeof window.beagleAPI?.cliTerminalOpen === "function";
 
+/** Live shell output (pty) only reaches the computer's own window. */
+export const shellAvailable = (): boolean => typeof window.beagleAPI?.ptySpawn === "function";
+
+/** Registering and editing project folders needs the computer's folder picker. */
+export const workspaceEditingAvailable = (): boolean =>
+  typeof window.beagleAPI?.saveWorkspace === "function";
+
+/** Opening files in the editor only makes sense on the computer (not on a paired phone). */
+export const editorAvailable = (): boolean =>
+  typeof window.beagleAPI?.openInEditor === "function";
+
+/** Phone access only exists in the desktop app (the development browser bridge doesn't expose it). */
+/** The voice model is downloaded on the computer only (not from a paired phone). */
+export const dictationDownloadAvailable = (): boolean =>
+  typeof window.beagleAPI?.downloadDictationModel === "function";
+export const remoteAccessAvailable = (): boolean =>
+  typeof window.beagleAPI?.getRemoteAccessStatus === "function";
+
 function backend(): BeagleAPI {
   const api = window.beagleAPI;
   if (!api) throw new Error(t("errors.backendUnavailable"));
@@ -59,6 +77,7 @@ export const beagleApi: BeagleAPI = {
   loadFullConversation: (provider, sessionId) => backend().loadFullConversation(provider, sessionId),
   getUserProfile: () => backend().getUserProfile(),
   getSavedState: () => backend().getSavedState(),
+  getSessions: () => backend().getSessions(),
   saveSession: (session) => backend().saveSession(session),
   deleteSession: (sessionId) => backend().deleteSession(sessionId),
   saveWorkspace: (workspace) => backend().saveWorkspace(workspace),
@@ -98,5 +117,11 @@ export const beagleApi: BeagleAPI = {
   forceQueuedPrompt: (request) => backend().forceQueuedPrompt(request),
   answerNowPrompt: (request) => backend().answerNowPrompt(request),
   executeCliPrompt: (payload) => backend().executeCliPrompt(payload),
+  getRemoteAccessStatus: () => backend().getRemoteAccessStatus(),
+  setRemoteAccessEnabled: (enabled) => backend().setRemoteAccessEnabled(enabled),
+  startRemotePairing: () => backend().startRemotePairing(),
+  cancelRemotePairing: () => backend().cancelRemotePairing(),
+  revokeRemoteDevice: (id) => backend().revokeRemoteDevice(id),
+
   on: (channel, callback) => backend().on(channel, callback),
 };

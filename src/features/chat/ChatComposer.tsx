@@ -26,10 +26,16 @@ import { appendDictation } from "../../lib/wav";
 import { dictationAvailable, useVoiceDictation } from "./useVoiceDictation";
 import { formatMegabytes, useDictationModel } from "../../hooks/useDictationModel";
 import { canApprovePlan } from "../../lib/permissionModes";
+import { dictationDownloadAvailable } from "../../api/beagleApi";
 
 import { t } from "../../i18n";
 const clock = (total: number) =>
   `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+
+// On a phone (below the desktop window's minimum width) the composer's buttons get finger-sized
+// tap targets and bigger icons.
+const PHONE_TAP_TARGETS =
+  "max-sm:[&>button]:min-w-10 max-sm:[&>button]:min-h-10 max-sm:[&>button]:inline-flex max-sm:[&>button]:items-center max-sm:[&>button]:justify-center max-sm:[&>button>svg]:size-5";
 
 export function ChatComposer() {
   const {
@@ -228,7 +234,7 @@ export function ChatComposer() {
                       e.preventDefault();
                       handleDropFiles(e.dataTransfer.files);
                     }}
-                    className={`relative flex items-center gap-2 bg-[#ffffff] border ${dragging ? "border-amber-500 ring-2 ring-amber-200" : "border-[#dcd6c7]"} focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition`}
+                    className={`relative flex flex-wrap sm:flex-nowrap items-center gap-1 sm:gap-2 ${PHONE_TAP_TARGETS} bg-[#ffffff] border ${dragging ? "border-amber-500 ring-2 ring-amber-200" : "border-[#dcd6c7]"} focus-within:border-[#968d7a] rounded-2xl p-2 shadow-sm transition`}
                   >
                     {dragging && (
                       <div
@@ -322,17 +328,24 @@ export function ChatComposer() {
                         data-testid="dictation-model-offer"
                         className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-xl bg-[#f4f1e8] text-[11px] font-semibold text-[#443e33]"
                       >
-                        <span title={t("composer.localDictationHint")}>
-                          {t("composer.localDictationNeedsModel", { size: formatMegabytes(speechModel.status.model.size) })}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => void downloadModel()}
-                          className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1b18] text-white hover:bg-[#32302b]"
-                        >
-                          <Download size={12} />
-                          {t("composer.download")}
-                        </button>
+                        {dictationDownloadAvailable() ? (
+                          <>
+                            <span title={t("composer.localDictationHint")}>
+                              {t("composer.localDictationNeedsModel", { size: formatMegabytes(speechModel.status.model.size) })}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void downloadModel()}
+                              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#1c1b18] text-white hover:bg-[#32302b]"
+                            >
+                              <Download size={12} />
+                              {t("composer.download")}
+                            </button>
+                          </>
+                        ) : (
+                          // On a paired phone: dictation uses the computer's model, downloaded there.
+                          <span>{t("composer.dictationModelOnComputer")}</span>
+                        )}
                         <button
                           type="button"
                           onClick={() => setOfferModel(false)}
@@ -462,7 +475,7 @@ export function ChatComposer() {
                       }}
                       onPaste={handlePaste}
                       placeholder={t("composer.placeholder", { target: currentSession?.currentModel || currentProvider?.name || "" })}
-                      className="flex-1 px-2 py-2 text-sm bg-transparent outline-none text-[#1c1b18] placeholder-[#9c9381]"
+                      className="flex-1 min-w-0 basis-full order-first sm:order-none sm:basis-auto px-2 py-2 text-base sm:text-sm bg-transparent outline-none text-[#1c1b18] placeholder-[#9c9381]"
                     />
 
                     {canApprovePlan(
@@ -490,7 +503,7 @@ export function ChatComposer() {
                         title={t("composer.planOnHint")}
                       >
                         <Compass size={13} className="text-emerald-600" />
-                        <span>/plan</span>
+                        <span className="hidden sm:inline">/plan</span>
                       </button>
                     ) : (
                       <button
@@ -500,7 +513,7 @@ export function ChatComposer() {
                         title={t("composer.planOffHint")}
                       >
                         <Zap size={13} className="text-emerald-700" />
-                        <span>{t("composer.planActive")}</span>
+                        <span className="hidden sm:inline">{t("composer.planActive")}</span>
                       </button>
                     )}
 
@@ -512,10 +525,12 @@ export function ChatComposer() {
                         title={t("composer.handoffNow")}
                       >
                         <ArrowRightLeft size={13} className="text-indigo-600" />
-                        <span>/handoff</span>
+                        <span className="hidden sm:inline">/handoff</span>
                       </button>
                     )}
 
+                    {/* On a narrow screen the field takes the first line and these stay on the right below it. */}
+                    <span className={`ml-auto sm:ml-0 flex items-center gap-1 sm:gap-2 ${PHONE_TAP_TARGETS}`}>
                     {currentSession && isExecutingPrompt && (
                       <button
                         type="button"
@@ -527,9 +542,11 @@ export function ChatComposer() {
                         className="px-3 py-2 rounded-xl bg-rose-700 hover:bg-rose-800 disabled:opacity-50 text-white text-xs font-bold flex gap-1.5 items-center"
                       >
                         <Square size={12} />
-                        {stoppingSessions[currentSession.id]
-                          ? t("composer.stopping")
-                          : t("composer.stop")}
+                        <span className="hidden sm:inline">
+                          {stoppingSessions[currentSession.id]
+                            ? t("composer.stopping")
+                            : t("composer.stop")}
+                        </span>
                       </button>
                     )}
                     <button
@@ -539,6 +556,7 @@ export function ChatComposer() {
                     >
                       <Send size={15} />
                     </button>
+                    </span>
                   </form>
                 </div>
   );

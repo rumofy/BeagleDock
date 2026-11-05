@@ -10,7 +10,7 @@ import {
   Code2,
   Settings2,
 } from "lucide-react";
-import { beagleApi } from "../../api/beagleApi";
+import { beagleApi, editorAvailable, shellAvailable, workspaceEditingAvailable } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
 import { formatQuota, getQuotaColor, permissionStyle } from "../../lib/format";
 import { CompanyIcon } from "../../components/CompanyIcon";
@@ -293,7 +293,7 @@ export function ChatHeader() {
                     handleWorkspaceChange(e.target.value);
                   }
                 }}
-                className="text-[11px] font-mono font-medium bg-[#f4f1e8] hover:bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
+                className="max-w-[55vw] sm:max-w-none truncate text-[11px] font-mono font-medium bg-[#f4f1e8] hover:bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
                 disabled={
                   !!currentSession?.nativeSessionId || isExecutingPrompt
                 }
@@ -304,10 +304,13 @@ export function ChatHeader() {
                     {ws.name} ({ws.path})
                   </option>
                 ))}
+                {workspaceEditingAvailable() && (
                 <option value="__add_new__">
                   + Cadastrar Novo Workspace...
                 </option>
+                )}
               </select>
+              {workspaceEditingAvailable() && (
               <button
                 type="button"
                 onClick={() => setShowWorkspaceManager(true)}
@@ -317,6 +320,7 @@ export function ChatHeader() {
               >
                 <Settings2 size={12} />
               </button>
+              )}
 
               <AiMemoryBadge
                 scope={memoryScope}
@@ -334,6 +338,7 @@ export function ChatHeader() {
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-2.5 [&_button]:whitespace-nowrap">
+        {editorAvailable() && (
         <button
           type="button"
           disabled={!currentSession}
@@ -357,6 +362,7 @@ export function ChatHeader() {
           <Code2 size={14} />
           <span>VS Code</span>
         </button>
+        )}
         {!terminalMode && <ContinueInCliButton />}
         {terminalMode && <TerminalDictationButton />}
         <button
@@ -397,7 +403,7 @@ export function ChatHeader() {
           </div>
         )}
 
-        {!terminalMode && (
+        {!terminalMode && shellAvailable() && (
         <>
         <button
           onClick={() => setShowInlineTerminal((prev) => !prev)}

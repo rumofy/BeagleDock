@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useLayoutEffect, useState } from "react";
 import { ArrowDown } from "lucide-react";
-import { beagleApi } from "../../api/beagleApi";
+import { beagleApi, editorAvailable } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
 import { ApprovalCard } from "../../components/ApprovalCard";
 import { ContextBar } from "../../components/ContextBar";
@@ -123,7 +123,7 @@ export function ChatView() {
         ref={chatScrollRef}
         onScroll={onScroll}
         data-testid="chat-scroll"
-        className="flex-1 overflow-y-auto p-6 flex flex-col justify-between"
+        className="flex-1 overflow-y-auto p-3 sm:p-6 flex flex-col justify-between"
       >
         <div className="max-w-4xl w-full mx-auto flex-1 flex flex-col justify-between space-y-4">
           {/* MESSAGE LIST */}
@@ -136,7 +136,7 @@ export function ChatView() {
               <ChatMessageList
                 messages={currentMessages}
                 userProfile={userProfile}
-                onOpenFile={openFile}
+                onOpenFile={editorAvailable() ? openFile : undefined}
                 onForceQueued={onForceQueued}
                 onCancelQueued={onCancelQueued}
                 onAnswerNow={onAnswerNow}

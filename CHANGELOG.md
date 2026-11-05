@@ -4,6 +4,10 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- Phone access: use the full chat from a phone on the same Wi-Fi or private network, for Claude Code, Codex CLI and Antigravity: model, level and permission, attachments and photos, dictation, commands and skills, the queue, plan review, approvals, quotas and notifications, with both screens kept in sync live. Turn it on in Settings → Phone access (off by default) and pair the phone with a QR code; the connection is encrypted, only paired devices on private networks can connect, and each device can be revoked.
+
 ## [0.14.1] - 2026-11-04
 
 ### Fixed

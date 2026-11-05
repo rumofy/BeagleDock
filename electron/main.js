@@ -63,6 +63,10 @@ const { createTerminalHistory } = require("./terminal-history");
 const { createTurnWatcher } = require("./terminal-turns");
 const { chatReplyNotice, terminalTurnNotice } = require("./reply-notices");
 const { Worker } = require("worker_threads");
+const { createRemoteAccess } = require("./remote-access");
+const { createRemoteApi } = require("./remote-api");
+const { createClientSync } = require("./client-sync");
+const qrcode = require("qrcode-generator");
 const {
   initDatabase,
   saveUserProfile,
@@ -93,6 +97,7 @@ const {
   dropUnreadableCredentials,
   getNativeSession,
   setNativeSession,
+  dbPath,
 } = require("./database");
 
 const globalPermissions =
@@ -103,6 +108,8 @@ app.commandLine?.appendSwitch("class", "BeagleDock");
 app.setPath?.("userData", path.join(app.getPath("appData"), "beagledock"));
 let updatingCli = false;
 let mainWindow;
+// Phone access over the local network (off until turned on in Settings).
+let remoteAccess = null;
 let ptyModule = null;
 try {
   ptyModule = require("node-pty");
@@ -545,14 +552,14 @@ function ensurePtySession(sessionId, cwd, providerId) {
 }
 
 function sendToRenderer(channel, payload) {
-  if (mainWindow && !mainWindow.isDestroyed())
-    mainWindow.webContents.send(
-      channel,
-      // Emission stamp to measure the stream's delay to the screen.
-      channel === "cli-stream-chunk" || channel === "cli-activity-event"
-        ? { ...payload, emittedAt: Date.now() }
-        : payload,
-    );
+  // Emission stamp to measure the stream's delay to the screen.
+  const stamped =
+    channel === "cli-stream-chunk" || channel === "cli-activity-event"
+      ? { ...payload, emittedAt: Date.now() }
+      : payload;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, stamped);
+  // Paired phones get only the chat events (the filter lives in remote-access).
+  remoteAccess?.broadcast(channel, stamped);
 }
 let refreshTimer;
 let modelTimer;
@@ -706,6 +713,7 @@ const cliTerminals = createCliTerminals({
   emit: sendToRenderer,
 });
 function shutdown() {
+  void remoteAccess?.stop();
   clearInterval(refreshTimer);
   clearInterval(modelTimer);
   cliTerminals.closeAll();
@@ -864,7 +872,17 @@ module.exports.ready = app.whenReady().then(async () => {
     console.warn("[migration] credential check failed:", error.message);
   }
   const registerHandler = ipcMain.handle.bind(ipcMain);
-  const handle = (channel, handler) =>
+  // Every screen (this window and paired phones) runs the same handlers; what one of them changes
+  // in a conversation is passed on to the others.
+  const handlers = new Map();
+  const emitOthers = (origin, channel, payload) => {
+    if (origin !== "desktop" && mainWindow && !mainWindow.isDestroyed())
+      mainWindow.webContents.send(channel, payload);
+    remoteAccess?.broadcast(channel, payload, { except: origin });
+  };
+  const clientSync = createClientSync({ emitOthers, activeIds: () => sessionService.activeIds() });
+  const handle = (channel, handler) => {
+    handlers.set(channel, handler);
     registerHandler(channel, (event, ...args) => {
       if (!mainWindow || event.sender !== mainWindow.webContents)
         throw new Error("Invalid IPC sender.");
@@ -873,8 +891,9 @@ module.exports.ready = app.whenReady().then(async () => {
         event.senderFrame !== mainWindow.webContents.mainFrame
       )
         throw new Error("Invalid IPC frame.");
-      return handler(event, ...args);
+      return clientSync.run("desktop", channel, args, () => handler(event, ...args));
     });
+  };
 
   // IPC: tools, model catalogs and real quotas (OAuth + token count)
   handle("detect-tools", async () => {
@@ -1526,8 +1545,44 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("cli-terminal-list", () => cliTerminals.list());
   handle("cli-terminal-clipboard", () => readTerminalClipboard(require("electron").clipboard));
 
+  // Conversations only (no messages): what another screen reloads after a change.
+  handle("get-sessions", () => getSavedSessions());
+  // Phone access: a paired phone calls the same handlers as this window, from an allowlist.
+  const remoteApi = createRemoteApi({
+    invoke: (channel, args, deviceId) =>
+      clientSync.run(deviceId, channel, args, () =>
+        handlers.get(channel)({ sender: null, remoteDevice: deviceId }, ...args),
+      ),
+    getWorkspaces,
+    getSessions: getSavedSessions,
+    messages: i18n.t,
+  });
+  remoteAccess = createRemoteAccess({
+    dir: path.dirname(dbPath),
+    api: remoteApi,
+    staticDir: path.join(__dirname, "../dist"),
+    storage: require("electron").safeStorage,
+    messages: i18n.t,
+    onChange: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send("remote-access-status", status);
+    },
+  });
+  handle("remote-access-status", () => remoteAccess.status());
+  handle("remote-access-set-enabled", (_event, enabled) => remoteAccess.setEnabled(enabled === true));
+  handle("remote-access-start-pairing", () => {
+    const pairing = remoteAccess.startPairing();
+    const qr = qrcode(0, "M");
+    qr.addData(pairing.url);
+    qr.make();
+    return { ...pairing, qrDataUrl: qr.createDataURL(6, 2) };
+  });
+  handle("remote-access-cancel-pairing", () => remoteAccess.cancelPairing());
+  handle("remote-access-revoke", (_event, id) => remoteAccess.revokeDevice(String(id || "")));
+
   createWindow();
   background.start();
+  void remoteAccess.start();
 
   refreshTimer = setInterval(() => {
     pushToolsUpdate().catch(() => {});

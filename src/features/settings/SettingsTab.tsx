@@ -6,6 +6,7 @@ import { AutoCompactCard } from "./AutoCompactCard";
 import { NewChatDefaultsCard } from "./NewChatDefaultsCard";
 import { ConversationModeCard } from "./ConversationModeCard";
 import { VoiceDictationCard } from "./VoiceDictationCard";
+import { RemoteAccessCard } from "../remote/RemoteAccessCard";
 
 export function SettingsTab() {
   return (
@@ -13,6 +14,7 @@ export function SettingsTab() {
               <div className="max-w-4xl w-full mx-auto space-y-6">
                 <AppearanceCard />
                 <BackgroundCard />
+                <RemoteAccessCard />
                 <ConversationModeCard />
                 <NewChatDefaultsCard />
                 <AutoCompactCard />
