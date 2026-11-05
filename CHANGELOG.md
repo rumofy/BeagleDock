@@ -4,6 +4,8 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-05
+
 ### Added
 
 - Phone access: use the full chat from a phone on the same Wi-Fi or private network, for Claude Code, Codex CLI and Antigravity: model, level and permission, attachments and photos, dictation, commands and skills, the queue, plan review, approvals, quotas and notifications, with both screens kept in sync live. Turn it on in Settings → Phone access (off by default) and pair the phone with a QR code; the connection is encrypted, only paired devices on private networks can connect, and each device can be revoked.
@@ -344,7 +346,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/rumofy/BeagleDock/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/rumofy/BeagleDock/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/rumofy/BeagleDock/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/rumofy/BeagleDock/compare/v0.13.0...v0.13.1
