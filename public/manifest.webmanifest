@@ -1,0 +1,12 @@
+{
+  "name": "BeagleDock",
+  "short_name": "BeagleDock",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#f7f5ef",
+  "icons": [
+    { "src": "./brand/beagledock-logo.png", "sizes": "1254x1254", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -38,7 +38,10 @@ async function waitFor(win, expression, timeout = 10000) {
     if (result) return result;
     await pause();
   }
-  throw new Error("Renderer timed out: " + expression);
+  const screen = await win.webContents
+    .executeJavaScript("document.body.innerText.slice(-700)")
+    .catch(() => "");
+  throw new Error("Renderer timed out: " + expression + "\n--- screen ---\n" + screen);
 }
 async function send(win, text, expected) {
   await win.webContents.executeJavaScript(
@@ -1258,6 +1261,100 @@ async function send(win, text, expected) {
     console.log("Desktop new chats: Claude, Codex and AGY repeat model, level and permission when the option is on.");
   }
   if (stage === "first") {
+    // Phone access: a phone-sized window opens the phone page over HTTPS, pairs and chats with the
+    // three CLIs through the real app, while the desktop window follows along (and the other way).
+    const { session: electronSession } = require("electron");
+    const js = (code) => win.webContents.executeJavaScript(code);
+    const status = await js(`window.beagleAPI.setRemoteAccessEnabled(true)`);
+    assert.equal(status.running, true, status.error || "phone access server running");
+    const pairing = await js(`window.beagleAPI.startRemotePairing()`);
+    assert.match(pairing.qrDataUrl, /^data:image\/gif;base64,/);
+    const phoneSession = electronSession.fromPartition("phone-smoke");
+    // The phone trusts the local certificate once installed; here, only this server's.
+    phoneSession.setCertificateVerifyProc((request, callback) =>
+      callback(request.hostname === "127.0.0.1" && request.certificate.issuerName === "BeagleDock Local Access" ? 0 : -2),
+    );
+    const phone = new BrowserWindow({ width: 390, height: 844, show: false, webPreferences: { partition: "phone-smoke", backgroundThrottling: false } });
+    const pjs = (code) => phone.webContents.executeJavaScript(code);
+    const shot = async (name) => {
+      if (!process.env.BEAGLEDOCK_SHOT_DIR) return;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      require("fs").writeFileSync(
+        require("path").join(process.env.BEAGLEDOCK_SHOT_DIR, `phone-${name}.png`),
+        (await phone.webContents.capturePage()).toPNG(),
+      );
+    };
+    await phone.loadURL(`https://127.0.0.1:${status.port}/#pair=${pairing.code}`);
+    await waitFor(phone, `!!document.querySelector('form button[type="submit"]')`);
+    await shot("pair");
+    await pjs(`(()=>{const input=document.querySelectorAll('form input')[1];Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Smoke phone');input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('form').requestSubmit();})()`);
+    // Paired: the desktop's own conversation list, quotas included.
+    await waitFor(phone, `document.querySelectorAll('button[title="Open a new conversation"]:not(:disabled)').length === 3`);
+    await waitFor(phone, `document.body.innerText.includes('5h: 34%')`);
+    await shot("list");
+    const phoneMessage = (text) =>
+      pjs(`(()=>{const input=document.querySelector('input[placeholder^="Message to"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(text)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`)
+        .then(() => waitFor(phone, `!document.querySelector('button[type="submit"]').disabled`))
+        .then(() => pjs(`document.querySelector('button[type="submit"]').form.requestSubmit()`));
+    const createdIds = [];
+    for (const [index, name] of ["claude", "codex", "agy"].entries()) {
+      const before = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>x.id))`);
+      await pjs(`document.querySelectorAll('button[title="Open a new conversation"]')[${index}].click()`);
+      await waitFor(phone, `!!document.querySelector('input[placeholder^="Message to"]')`);
+      const created = (await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.map(x=>x.id))`)).find((id) => !before.includes(id));
+      assert.ok(created, `${name} conversation created from the phone`);
+      createdIds.push(created);
+      // The desktop lists it on its own; open it there to follow the phone's turns.
+      await waitFor(win, `!!document.querySelector('[data-session-id="${created}"]')`);
+      await js(`document.querySelector('[data-session-id="${created}"]').click()`);
+
+      // Approval answered on the phone, while the turn is blocked; the desktop sees it all.
+      await phoneMessage("smoke-approval allow");
+      await waitFor(phone, `!!document.querySelector('[aria-label="Authorize the CLI action"]')`);
+      await waitFor(win, `document.body.innerText.includes('smoke-approval allow')`);
+      if (index === 0) await shot("approval");
+      await pjs(`[...document.querySelectorAll('[aria-label="Authorize the CLI action"] button')].find(b=>b.textContent.startsWith('Allow once')).click()`);
+      await waitFor(phone, `document.body.innerText.includes('APPROVED_ACTION_DONE') && !document.querySelector('[aria-label="Authorize the CLI action"]')`);
+      await waitFor(win, `document.body.innerText.includes('APPROVED_ACTION_DONE')`);
+      if (index === 0) {
+        await shot("chat");
+        await pjs(`document.querySelector('[aria-label="Chat controls"]').click()`);
+        await waitFor(phone, `!!document.querySelector('select[data-control="permission"]')`);
+        await shot("controls");
+        await pjs(`document.querySelector('[aria-label="Chat controls"]').click()`);
+      }
+
+      // And the other way: sent on the desktop, followed live on the phone.
+      await send(win, "from the desktop " + index, `${name} fixture resposta`);
+      await waitFor(phone, `document.body.innerText.includes('from the desktop ${index}') && !document.querySelector('button[aria-label="Stop the run and clear the queue"]')`);
+      const phoneText = await pjs(`document.body.innerText`);
+      assert.equal((phoneText.match(/from the desktop/g) || []).length, 1, "the desktop's message shows once on the phone");
+      // Partial text live on both screens before the end; stopped from the phone.
+      await phoneMessage("smoke-hang phone");
+      await waitFor(phone, `document.body.innerText.includes('PARTIAL_BEFORE_STOP')`);
+      await waitFor(win, `document.body.innerText.includes('PARTIAL_BEFORE_STOP') && document.querySelector('header').innerText.includes('RUNNING CLI')`);
+      if (index === 0) await shot("streaming");
+      await pjs(`document.querySelector('button[aria-label="Stop the run and clear the queue"]').click()`);
+      await waitFor(phone, `!document.querySelector('button[aria-label="Stop the run and clear the queue"]')`);
+      await waitFor(win, `!document.querySelector('header').innerText.includes('RUNNING CLI')`);
+
+      await pjs(`history.back()`);
+      await waitFor(phone, `document.querySelectorAll('button[title="Open a new conversation"]').length === 3`);
+    }
+    await shot("list-after");
+    phone.destroy();
+    for (const id of createdIds)
+      assert.equal((await js(`window.beagleAPI.deleteSession(${JSON.stringify(id)})`))?.success, true);
+
+    // Revoked, the phone loses access; turned off, the server stops.
+    const { devices } = await js(`window.beagleAPI.getRemoteAccessStatus()`);
+    assert.deepEqual(devices.map((d) => d.name), ["Smoke phone"]);
+    await js(`window.beagleAPI.revokeRemoteDevice(${JSON.stringify(devices[0].id)})`);
+    assert.equal((await js(`window.beagleAPI.getRemoteAccessStatus()`)).devices.length, 0);
+    assert.equal((await js(`window.beagleAPI.setRemoteAccessEnabled(false)`)).running, false);
+    console.log("Desktop phone access: the phone page pairs and chats with Claude, Codex and AGY (approval, live text, stop), in sync with the desktop both ways.");
+  }
+  if (stage === "first") {
     // Leave the original conversations planning, then verify the prior permission after a real app restart.
     const state = await win.webContents.executeJavaScript(`window.beagleAPI.getSavedState()`);
     for (const session of state.sessions.filter((s) => s.title === "smoke one")) {
@@ -1279,4 +1376,4 @@ async function send(win, text, expected) {
 setTimeout(() => {
   console.error("Desktop smoke timeout");
   app.exit(1);
-}, 45000).unref();
+}, 75000).unref();

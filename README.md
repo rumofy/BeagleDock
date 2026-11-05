@@ -90,6 +90,16 @@ npm run dev:vite
 
 Open **http://127.0.0.1:5173**. The bridge requires a local origin, a temporary token and a bounded JSON body. Don't expose the port through tunnels or proxies. The browser doesn't have Electron's keyring to save keys. The local contract is in [docs/openapi.json](docs/openapi.json).
 
+## Phone access
+
+BeagleDock can be used from a phone on the same Wi-Fi or private network: **Settings → Phone access**. It's off by default. Once on, the app opens an HTTPS server (port 47821) that serves the desktop chat laid out for a phone, for Claude Code, Codex CLI and AGY: the conversation list with quotas and notifications, the CLI history, and the full chat (model, level and permission, attachments and photos, dictation, commands and skills, the queue, plan review, context and the timeline, rename and archive) plus the CLIs' approval requests. The phone calls the same backend as the desktop, and each screen updates when the other changes a conversation, including replies still arriving. The phone has no access to the terminal, settings, project registration or memory maintenance, and only works in registered projects or in a conversation's own folder.
+
+1. Turn it on and click **Pair a phone**: a QR code and a one-time code appear (valid for 5 minutes, 5 attempts, one device).
+2. Scan it with the phone's camera. The first time, the browser warns that the connection isn't private: continue to the site, download the certificate and trust it (on iPhone: Settings → General → VPN & Device Management, then Settings → General → About → Certificate Trust Settings). Check that its fingerprint matches the one shown on the desktop.
+3. Enter the code and tap **Pair**. In Safari, **Share → Add to Home Screen** opens it like an app; the Home Screen app pairs on its own with a new code.
+
+Security: the server only accepts connections from private addresses (LAN, link-local and private overlay networks such as Tailscale) and only `.local`, localhost or private IP host names. Each paired device gets its own token, stored only as a hash and revocable in Settings; revoking closes its open connection. The certificate is signed by a local authority created on this computer, name-constrained to `.local` names so it can't vouch for internet domains; its keys are protected by the system keyring when available. Never forward the port through your router or a public tunnel. The phone interface comes from the built frontend (`dist/mobile.html`): in development, run `npm run build:vite` first.
+
 ## ai-memory explorer
 
 The memory tab lists the ai-memory server's projects, groups pages by folder, shows the base's health (orphaned, duplicated, stale) and renders each page in Markdown, with navigable `[[links]]`. **Assisted Maintenance** opens a conversation in the chosen CLI (model and level as in the chat) with a script to consolidate fragmented pages; by default it presents the plan and waits for your approval before any deletion. Pages in `decisions/` are never deleted by the script, and deleting a project requires typing `workspace/project`. The server and the token are read from `AI_MEMORY_SERVER_URL`/`AI_MEMORY_AUTH_TOKEN` or from the files in `~/.config/ai-memory` and `~/.local/share/ai-memory`; the token never reaches the interface.

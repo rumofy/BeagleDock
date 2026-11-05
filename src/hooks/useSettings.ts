@@ -42,6 +42,14 @@ export function useSettings(setAppError: (message: string) => void) {
       })
       .catch((error: Error) => setAppError(error.message));
   };
+  // Theme and language chosen on another screen (a paired phone follows the desktop's).
+  useEffect(() => {
+    if (typeof window.beagleAPI?.on !== "function") return;
+    return beagleApi.on("chat-sync", (event) => {
+      if (event.kind === "settings" && event.settings)
+        setSettings((prev) => ({ ...prev, ...event.settings }));
+    });
+  }, []);
   useEffect(() => {
     if (!backendAvailable()) return;
     beagleApi

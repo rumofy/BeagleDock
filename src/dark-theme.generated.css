@@ -160,6 +160,7 @@
 :root[data-theme="dark"] .border-\[\#eae4d7\] { border-color: #2a2b2c; }
 :root[data-theme="dark"] .border-\[\#ece7db\] { border-color: #292a2b; }
 :root[data-theme="dark"] .border-\[\#ede7d8\] { border-color: #292a2b; }
+:root[data-theme="dark"] .border-\[\#ede9de\] { border-color: #28292a; }
 :root[data-theme="dark"] .border-\[\#eee8d9\] { border-color: #292a2b; }
 :root[data-theme="dark"] .border-\[\#eeeae0\] { border-color: #272829; }
 :root[data-theme="dark"] .border-\[\#f0ebd9\] { border-color: #28292a; }
@@ -167,6 +168,7 @@
 :root[data-theme="dark"] .focus-within\:border-\[\#968d7a\]:focus-within { border-color: #757679; }
 :root[data-theme="dark"] .focus\:border-\[\#968d7a\]:focus { border-color: #757679; }
 :root[data-theme="dark"] .from-\[\#fcfbfa\] { --tw-gradient-from: #1d1e1f; }
+:root[data-theme="dark"] .hover\:bg-\[\#2c2822\]:hover { background-color: #d7d8d9; }
 :root[data-theme="dark"] .hover\:bg-\[\#2e2e33\]:hover { background-color: #303031; }
 :root[data-theme="dark"] .hover\:bg-\[\#32302b\]:hover { background-color: #d0d0d1; }
 :root[data-theme="dark"] .hover\:bg-\[\#d6cfbe\]:hover { background-color: #353638; }

@@ -33,12 +33,15 @@ if (process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS) {
   fs.mkdirSync(path.join(root, "data"), { recursive: true });
   fs.symlinkSync(path.resolve(process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS), path.join(root, "data", "models"));
 }
+// Phone access on a port the system picks, so the smoke never collides with a running BeagleDock.
+fs.mkdirSync(path.join(root, "data"), { recursive: true });
+fs.writeFileSync(path.join(root, "data", "remote-access.json"), JSON.stringify({ port: 0 }));
 try {
   for (const stage of ["first", "restart"]) {
     const result = spawnSync(
       require("electron"),
       [path.join(__dirname, "electron-smoke.cjs"), stage],
-      { env, stdio: "inherit", timeout: 50000 },
+      { env, stdio: "inherit", timeout: 80000 },
     );
     if (result.status !== 0)
       throw new Error(

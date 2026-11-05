@@ -66,7 +66,17 @@ export default defineConfig({
     },
   ],
   base: "./",
-  build: { outDir: "dist", emptyOutDir: true },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+    // mobile.html: the phone interface, served by the app's local-network server (phone access).
+    rollupOptions: {
+      input: {
+        main: path.join(projectDir, "index.html"),
+        mobile: path.join(projectDir, "mobile.html"),
+      },
+    },
+  },
   resolve: { alias: { "@": path.join(projectDir, "src") } },
   server: {
     host: "127.0.0.1",

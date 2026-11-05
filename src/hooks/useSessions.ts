@@ -22,6 +22,7 @@ import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import { hasLiveReply } from "../lib/backgroundWork";
+import { mergeLive, mergeSessions } from "../lib/liveMessages";
 import { precompactDue, turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
 import type {
   AIProviderId,
@@ -447,7 +448,43 @@ export function useSessions({
       if (payload?.sessionId && payload.event)
         streamBatcher.push({ kind: "event", payload, receivedAt: Date.now() });
     });
+    // Another screen (desktop or paired phone) changed a conversation: reload it from the database.
+    // Bursts (a turn saves several messages) are grouped.
+    const syncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const later = (key: string, run: () => void) => {
+      clearTimeout(syncTimers.get(key));
+      syncTimers.set(key, setTimeout(run, 200));
+    };
+    const reloadMessages = (sessionId: string, active: boolean) =>
+      beagleApi
+        .getChatMessages(sessionId)
+        .then((saved) =>
+          setMessages((prev) => ({ ...prev, [sessionId]: mergeLive(saved || [], prev[sessionId], active) })),
+        )
+        .catch((e: Error) => setAppError(e.message));
+    const reloadSessions = () =>
+      beagleApi
+        .getSessions()
+        .then((saved) => {
+          const known = new Set(providersRef.current.flatMap((p) => p.sessions.map((s) => s.id)));
+          setProviders((prev) =>
+            prev.map((p) => ({
+              ...p,
+              sessions: mergeSessions(p.sessions, saved.filter((s) => s.providerId === p.id)),
+            })),
+          );
+          // A conversation created on the other screen comes with its messages.
+          for (const session of saved)
+            if (!known.has(session.id) && !session.archived) void reloadMessages(session.id, false);
+        })
+        .catch((e: Error) => setAppError(e.message));
+    const unsubscribeSync = beagleApi.on("chat-sync", ({ kind, sessionId, active }) => {
+      if (kind === "sessions") later("sessions", () => void reloadSessions());
+      else if (sessionId) later(`messages:${sessionId}`, () => void reloadMessages(sessionId, !!active));
+    });
     return () => {
+      unsubscribeSync();
+      for (const timer of syncTimers.values()) clearTimeout(timer);
       unsubscribePty();
       unsubscribeStream();
       unsubscribeEvents();

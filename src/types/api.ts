@@ -332,6 +332,46 @@ export interface StreamEvents {
   };
   "cli-approvals": CliApproval[];
   "dictation-model-progress": DictationModelProgress;
+  /** Phone access state changed (server, pairing or devices). */
+  "remote-access-status": RemoteAccessStatus;
+  /**
+   * Another screen (the desktop or a paired phone) changed a conversation: reload its messages
+   * (`active`: a reply is still running, so the live one wins) or the conversation list.
+   */
+  "chat-sync": {
+    kind: "messages" | "sessions" | "settings";
+    sessionId?: string;
+    active?: boolean;
+    settings?: Pick<AppSettings, "theme" | "language">;
+  };
+}
+
+/** A device paired for phone access. */
+export interface RemoteDevice {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastSeenAt?: string;
+}
+export interface RemoteAccessStatus {
+  enabled: boolean;
+  running: boolean;
+  port: number;
+  /** Addresses the phone can open (LAN IPs first, then the `.local` name). */
+  urls: string[];
+  error: string | null;
+  /** SHA-256 of the local certificate authority installed on the phone. */
+  certificateFingerprint: string | null;
+  /** The certificate keys are protected by the system vault. */
+  encryptedKeys: boolean;
+  devices: RemoteDevice[];
+  pairing: { code: string; expiresAt: number } | null;
+}
+export interface RemotePairing {
+  code: string;
+  expiresAt: number;
+  url: string;
+  qrDataUrl: string;
 }
 
 /** Surface exposed by the preload (`window.beagleAPI`). */
@@ -379,6 +419,8 @@ export interface BeagleAPI {
   getUserProfile(): Promise<UserProfile>;
   getAppVersion(): Promise<string>;
   getSavedState(): Promise<SavedState>;
+  /** Conversations only, without messages (reloaded when another screen changes them). */
+  getSessions(): Promise<ChatSession[]>;
   saveSession(session: ChatSession): Promise<OkResult>;
   deleteSession(sessionId: string): Promise<OkResult>;
   saveWorkspace(workspace: WorkspaceItem): Promise<WorkspaceItem & OkResult>;
@@ -439,6 +481,11 @@ export interface BeagleAPI {
     request: QueuedPromptRequest & { providerId: AIProviderId; mode: "background" | "interrupt" },
   ): Promise<OkResult & { mode?: "background" | "interrupt" }>;
   executeCliPrompt(payload: ExecutePromptPayload): Promise<ExecutePromptResult>;
+  getRemoteAccessStatus(): Promise<RemoteAccessStatus>;
+  setRemoteAccessEnabled(enabled: boolean): Promise<RemoteAccessStatus>;
+  startRemotePairing(): Promise<RemotePairing>;
+  cancelRemotePairing(): Promise<void>;
+  revokeRemoteDevice(id: string): Promise<boolean>;
   on<K extends keyof StreamEvents>(channel: K, callback: (payload: StreamEvents[K]) => void): () => void;
 }
 

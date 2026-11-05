@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   getUserProfile: () => ipcRenderer.invoke("get-user-profile"),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   getSavedState: () => ipcRenderer.invoke("get-saved-state"),
+  getSessions: () => ipcRenderer.invoke("get-sessions"),
   saveSession: (session) => ipcRenderer.invoke("save-session", session),
   deleteSession: (sessionId) => ipcRenderer.invoke("delete-session", sessionId),
   compactSession: (id, providerId) =>
@@ -107,6 +108,14 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   answerNowPrompt: (request) => ipcRenderer.invoke("answer-now-prompt", request),
   executeCliPrompt: (payload) =>
     ipcRenderer.invoke("execute-cli-prompt", payload),
+  // Phone access over the local network.
+  getRemoteAccessStatus: () => ipcRenderer.invoke("remote-access-status"),
+  setRemoteAccessEnabled: (enabled) =>
+    ipcRenderer.invoke("remote-access-set-enabled", enabled),
+  startRemotePairing: () => ipcRenderer.invoke("remote-access-start-pairing"),
+  cancelRemotePairing: () => ipcRenderer.invoke("remote-access-cancel-pairing"),
+  revokeRemoteDevice: (id) => ipcRenderer.invoke("remote-access-revoke", id),
+
   on: (channel, callback) => {
     if (
       ![
@@ -126,6 +135,8 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "open-session",
         "cli-approvals",
         "dictation-model-progress",
+        "remote-access-status",
+        "chat-sync",
       ].includes(channel)
     )
       throw new Error("Event not allowed.");
