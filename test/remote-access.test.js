@@ -13,7 +13,7 @@ const {
 } = require("../electron/remote-cert");
 const { createRemoteAccess, allowedHost, localAddresses, mdnsName } = require("../electron/remote-access");
 const { createRemoteApi, METHODS } = require("../electron/remote-api");
-const { createClientSync } = require("../electron/client-sync");
+const { createClientSync, createLiveTurns } = require("../electron/client-sync");
 const { loadTs } = require("./load-ts.cjs");
 
 // Values built in the TypeScript modules' VM context: compared by structure.
@@ -368,6 +368,26 @@ test("a change on one screen reaches the others: live turns, messages and conver
     ["dev-1", "chat-sync", { kind: "sessions", sessionId: "s9" }],
     ["dev-1", "chat-sync", { kind: "messages", sessionId: "s1", active: true }],
   ], "reads don't notify; a failed change still makes the others reload");
+});
+
+test("a screen that opens or reconnects late learns which replies are still running", async () => {
+  const liveTurns = createLiveTurns();
+  const sync = createClientSync({ emitOthers: () => {}, liveTurns });
+  const turn = { sessionId: "s1", responseMessageId: "r1", providerId: "claude", model: "m" };
+  let finish;
+  const run = sync.run("desktop", "execute-cli-prompt", [{ ...turn, cwd: "/p" }], () => new Promise((resolve) => (finish = resolve)));
+  // The CLI replies on its own in another conversation (after a background agent).
+  liveTurns.observe("cli-turn-started", { sessionId: "s2", responseMessageId: "auto", providerId: "codex" });
+  assert.deepEqual(sync.liveTurns(), [turn, { sessionId: "s2", responseMessageId: "auto", providerId: "codex", model: undefined }]);
+  finish({ ok: true, output: "done" });
+  await run;
+  liveTurns.observe("cli-turn-finished", { sessionId: "s2", responseMessageId: "auto", ok: true });
+  assert.deepEqual(sync.liveTurns(), [], "finished replies leave the list");
+
+  // Delivered into the reply in progress: no "finished" event, but it isn't a turn of its own.
+  await sync.run("dev-1", "execute-cli-prompt", [turn], async () => ({ ok: false, injected: true }));
+  await assert.rejects(sync.run("dev-1", "execute-cli-prompt", [turn], async () => { throw new Error("boom"); }));
+  assert.deepEqual(sync.liveTurns(), [], "injected or failed: nothing stays running");
 });
 
 test("the phones follow the theme and language chosen on the desktop", async () => {

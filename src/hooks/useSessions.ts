@@ -36,7 +36,7 @@ import type {
   UserProfile,
   WorkspaceItem,
 } from "../types";
-import type { SavedState } from "../types/api";
+import type { LiveTurn, SavedState } from "../types/api";
 import type { AppTab } from "./useUi";
 
 import { t } from "../i18n";
@@ -84,6 +84,8 @@ export function useSessions({
   const activeRef = useRef("");
   activeRef.current = activeSessionId;
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   // Conversations with a new reply (from a spontaneous turn) you haven't seen yet.
   const [unreadSessionIds, setUnreadSessionIds] = useState<string[]>([]);
   const [contextBySession, setContextBySession] = useState<
@@ -146,6 +148,59 @@ export function useSessions({
     );
   };
 
+  // Reply started elsewhere (another screen, or the CLI on its own after a background agent): it
+  // shows up as a new live message.
+  const addLiveTurn = ({ sessionId, responseMessageId, providerId, model }: LiveTurn) => {
+    touchSession(sessionId);
+    setMessages((prev) => {
+      const list = prev[sessionId] || [];
+      if (list.some((m) => m.id === responseMessageId)) return prev;
+      const provider = providersRef.current.find((p) => p.id === providerId);
+      return {
+        ...prev,
+        [sessionId]: [
+          ...list,
+          {
+            id: responseMessageId,
+            sessionId,
+            sender: providerId,
+            senderName: provider?.name || PROVIDER_NAMES[providerId] || providerId,
+            modelBadge: model,
+            text: "",
+            isStreaming: true,
+            activity: t("session.replying"),
+            startedAt: Date.now(),
+            timestamp: new Date().toLocaleTimeString(),
+          },
+        ],
+      };
+    });
+  };
+  // The replies in progress on the computer, for a screen that opened or reconnected late: the
+  // missing ones show up live and the ones that ended meanwhile come back from the database.
+  const applyLiveTurns = (turns: LiveTurn[]) => {
+    for (const turn of turns) addLiveTurn(turn);
+    const live = new Set(turns.map((turn) => turn.responseMessageId));
+    const ended = (list: ChatMessage[] = []) => list.some((m) => m.isStreaming && !live.has(m.id));
+    for (const [sessionId, list] of Object.entries(messagesRef.current)) {
+      // This screen's own turns end with their own request.
+      if ((pendingTurns.current.get(sessionId) || 0) > 0 || !ended(list)) continue;
+      void beagleApi
+        .getChatMessages(sessionId)
+        .then((saved) =>
+          setMessages((prev) => ({
+            ...prev,
+            [sessionId]: mergeLive(
+              saved || [],
+              (prev[sessionId] || []).filter((m) => !m.isStreaming || live.has(m.id)),
+              true,
+            ),
+          })),
+        )
+        .catch((e: Error) => setAppError(e.message));
+    }
+  };
+
   // State saved in SQLite (sessions and messages) applied at startup
   const hydrateSessions = (saved: SavedState) => {
     const sessions: ChatSession[] = (saved.sessions || []).map(
@@ -174,6 +229,10 @@ export function useSessions({
     );
     setActiveSessionId(sessions.find((s) => !s.archived)?.id || "");
     setMessages(saved.messagesBySession || {});
+    void beagleApi
+      .getLiveTurns()
+      .then((turns) => applyLiveTurns(turns || []))
+      .catch(() => {});
     setContextBySession(
       Object.fromEntries(
         sessions
@@ -283,38 +342,8 @@ export function useSessions({
     });
     // Turn the CLI started on its own (the main agent got the result of a background agent and
     // replies): it shows up as a new live message.
-    const unsubscribeTurnStarted = beagleApi.on(
-      "cli-turn-started",
-      ({ sessionId, responseMessageId, providerId, model }) => {
-        touchSession(sessionId);
-        setMessages((prev) => {
-          const list = prev[sessionId] || [];
-          if (list.some((m) => m.id === responseMessageId)) return prev;
-          const provider = providersRef.current.find(
-            (p) => p.id === providerId,
-          );
-          return {
-            ...prev,
-            [sessionId]: [
-              ...list,
-              {
-                id: responseMessageId,
-                sessionId,
-                sender: providerId,
-                senderName:
-                  provider?.name || PROVIDER_NAMES[providerId] || providerId,
-                modelBadge: model,
-                text: "",
-                isStreaming: true,
-                activity: "Respondendo…",
-                startedAt: Date.now(),
-                timestamp: new Date().toLocaleTimeString(),
-              },
-            ],
-          };
-        });
-      },
-    );
+    const unsubscribeTurnStarted = beagleApi.on("cli-turn-started", addLiveTurn);
+    const unsubscribeLiveTurns = beagleApi.on("live-turns", (turns) => applyLiveTurns(turns || []));
     const unsubscribeNotice = beagleApi.on("cli-notice", ({ message }) =>
       setAppError(message),
     );
@@ -490,6 +519,7 @@ export function useSessions({
       unsubscribeEvents();
       unsubscribeContext();
       unsubscribeTurnStarted();
+      unsubscribeLiveTurns();
       unsubscribeOpen();
       unsubscribeTerminalHistory();
       unsubscribeNotice();
@@ -1163,7 +1193,7 @@ export function useSessions({
                                 deliveredFor: userMsg.id,
                                 activity: deliveredActivity(),
                               }
-                            : { activity: m.activity || "Respondendo…" }),
+                            : { activity: m.activity || t("session.replying") }),
                           startedAt: m.startedAt ?? Date.now(),
                         };
                       })()

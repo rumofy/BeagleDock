@@ -185,15 +185,16 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
               PLAN
             </span>
           )}
+          {/* Touch screens have no hover: the actions stay visible, with finger-sized targets. */}
           {!editing && (
-            <span className="hidden group-hover:flex group-focus-within:flex items-center">
+            <span className="hidden group-hover:flex group-focus-within:flex pointer-coarse:flex items-center">
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   startEditing();
                 }}
-                className="p-0.5 hover:text-[#181715] rounded"
+                className="p-0.5 pointer-coarse:p-2 hover:text-[#181715] rounded"
                 title={t("session.rename")}
                 aria-label={t("session.renameLabel")}
               >
@@ -205,7 +206,7 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
                   e.stopPropagation();
                   void setSessionArchived(session.id, true);
                 }}
-                className="p-0.5 hover:text-[#181715] rounded ml-0.5"
+                className="p-0.5 pointer-coarse:p-2 hover:text-[#181715] rounded ml-0.5"
                 title={t("session.closeHint")}
                 aria-label={t("session.closeLabel")}
               >

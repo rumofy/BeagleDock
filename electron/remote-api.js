@@ -35,6 +35,7 @@ const METHODS = {
   replaceChatMessages: "replace-chat-messages",
   saveChatMessage: "save-chat-message",
   getChatMessages: "get-chat-messages",
+  getLiveTurns: "get-live-turns",
   interruptCliSession: "interrupt-cli-session",
   cancelQueuedPrompt: "cancel-queued-prompt",
   forceQueuedPrompt: "force-queued-prompt",

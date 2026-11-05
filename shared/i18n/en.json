@@ -1063,5 +1063,7 @@
   "mobile.chatControls": "Chat controls",
   "remote.folderNotAllowed": "This folder isn't a registered project on the computer.",
   "remote.settingsOnDesktop": "Change settings on the computer.",
-  "composer.dictationModelOnComputer": "Download the voice model on the computer: Settings → Voice dictation"
+  "composer.dictationModelOnComputer": "Download the voice model on the computer: Settings → Voice dictation",
+  "context.cacheInUse": "cache in use",
+  "session.replying": "Replying…"
 }

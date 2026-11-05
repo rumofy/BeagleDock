@@ -114,8 +114,12 @@ function MobileShell({ offline }: { offline: boolean }) {
       <div
         className="h-dvh flex flex-col bg-[#ede9de] text-[#1c1b18] overflow-hidden pt-[env(safe-area-inset-top)]"
         onClickCapture={(e) => {
+          const target = e.target as HTMLElement;
+          const row = target.closest("[data-session-id]");
+          // Renaming or closing a conversation acts on its row without opening it.
+          if (row && target.closest("button, input")) return;
           // Same conversation tapped again: no change of selection, but still open it.
-          if ((e.target as HTMLElement).closest("[data-session-id]")) setTimeout(() => setView("chat"));
+          if (row) setTimeout(() => setView("chat"));
           // Creating one, or reopening one from the history, changes the selection.
           wantsChat.current = true;
         }}

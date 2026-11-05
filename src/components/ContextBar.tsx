@@ -51,7 +51,7 @@ function CacheTimer({ info, busy }: { info?: ContextInfo; busy: boolean }) {
   if (busy)
     return (
       <span className="shrink-0 flex items-center gap-1 text-emerald-700" data-testid="context-cache-timer">
-        <Timer size={11} /> cache em uso
+        <Timer size={11} /> {t("context.cacheInUse")}
       </span>
     );
   if (status.kind === "unknown")
@@ -131,12 +131,13 @@ export const ContextBar = memo(function ContextBar({
   const switched = selectedModel === undefined ? null : modelSwitch(info, selectedModel);
   return (
     <div
-      className="flex items-center gap-3 px-3 py-1.5 rounded-xl border border-[#e4dec9] bg-[#faf8f4] text-[11px]"
+      // Narrow screens (the phone): the items wrap onto more lines instead of overflowing.
+      className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5 rounded-xl border border-[#e4dec9] bg-[#faf8f4] text-[11px]"
       data-testid="context-bar"
     >
       <span className="font-bold text-[#443e33] shrink-0">{t("context.label")}</span>
       {!hasData ? (
-        <span className="text-[#938b7a] truncate">
+        <span className="text-[#938b7a] min-w-0 flex-1 truncate">
           {t("context.afterFirstReply")}
         </span>
       ) : (

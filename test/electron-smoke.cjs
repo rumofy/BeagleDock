@@ -1342,6 +1342,18 @@ async function send(win, text, expected) {
       await waitFor(phone, `document.querySelectorAll('button[title="Open a new conversation"]').length === 3`);
     }
     await shot("list-after");
+    // Touch screens have no hover: a conversation's close button shows in the list and a tap
+    // closes it without opening the chat.
+    phone.webContents.debugger.attach();
+    await phone.webContents.debugger.sendCommand("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await waitFor(phone, `matchMedia('(pointer: coarse)').matches`);
+    const closeOnPhone = `[data-session-id="${createdIds[0]}"] button[aria-label="Close conversation"]`;
+    await waitFor(phone, `document.querySelector('${closeOnPhone}')?.getBoundingClientRect().width >= 24`);
+    await pjs(`document.querySelector('${closeOnPhone}').click()`);
+    await waitFor(phone, `!document.querySelector('[data-session-id="${createdIds[0]}"]')`);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(await pjs(`!!document.querySelector('input[placeholder^="Message to"]')`), false, "closing from the list stays on the list");
+    await waitFor(win, `!document.querySelector('[data-session-id="${createdIds[0]}"]')`);
     phone.destroy();
     for (const id of createdIds)
       assert.equal((await js(`window.beagleAPI.deleteSession(${JSON.stringify(id)})`))?.success, true);

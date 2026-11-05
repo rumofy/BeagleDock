@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
   replaceChatMessages: (id, messages) =>
     ipcRenderer.invoke("replace-chat-messages", id, messages),
   saveChatMessage: (msg) => ipcRenderer.invoke("save-chat-message", msg),
+  getLiveTurns: () => ipcRenderer.invoke("get-live-turns"),
   getChatMessages: (sessionId) =>
     ipcRenderer.invoke("get-chat-messages", sessionId),
   ptySpawn: (payload) => ipcRenderer.invoke("pty-spawn", payload),

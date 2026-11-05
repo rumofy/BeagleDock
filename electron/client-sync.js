@@ -22,7 +22,33 @@ function sessionIdOf(channel, args) {
   return first?.sessionId;
 }
 
-function createClientSync({ emitOthers, activeIds = () => [] }) {
+// Replies in progress on the computer, so a screen that opens (or reconnects) late still sees which
+// conversations are running: a phone misses the live events while its screen is off.
+function createLiveTurns() {
+  const turns = new Map();
+  const start = (p) => {
+    if (!p?.sessionId || !p.responseMessageId) return;
+    turns.set(p.responseMessageId, {
+      sessionId: p.sessionId,
+      responseMessageId: p.responseMessageId,
+      providerId: p.providerId,
+      model: p.model,
+    });
+  };
+  const finish = (responseMessageId) => turns.delete(responseMessageId);
+  return {
+    start,
+    finish,
+    // Turns the CLI starts on its own reach the screens only as events.
+    observe(channel, payload) {
+      if (channel === "cli-turn-started") start(payload);
+      else if (channel === "cli-turn-finished" && payload?.responseMessageId) finish(payload.responseMessageId);
+    },
+    list: () => [...turns.values()],
+  };
+}
+
+function createClientSync({ emitOthers, activeIds = () => [], liveTurns = createLiveTurns() }) {
   const messagesChanged = (origin, sessionId) =>
     sessionId &&
     emitOthers(origin, "chat-sync", {
@@ -36,6 +62,7 @@ function createClientSync({ emitOthers, activeIds = () => [] }) {
     if (channel !== "execute-cli-prompt") return;
     const p = args[0] || {};
     if (!p.sessionId || !p.responseMessageId) return;
+    liveTurns.start(p);
     emitOthers(origin, "cli-turn-started", {
       sessionId: p.sessionId,
       responseMessageId: p.responseMessageId,
@@ -48,6 +75,8 @@ function createClientSync({ emitOthers, activeIds = () => [] }) {
     if (channel === "execute-cli-prompt") {
       const p = args[0] || {};
       if (!p.sessionId || !p.responseMessageId) return;
+      // Over, also when it was delivered into the reply in progress (that one stays live).
+      liveTurns.finish(p.responseMessageId);
       const base = { sessionId: p.sessionId, responseMessageId: p.responseMessageId, providerId: p.providerId };
       // Delivered into the reply in progress: it keeps streaming, the reload brings the rest.
       if (!result?.injected)
@@ -98,7 +127,7 @@ function createClientSync({ emitOthers, activeIds = () => [] }) {
     }
   }
 
-  return { run, before, after };
+  return { run, before, after, liveTurns: liveTurns.list };
 }
 
-module.exports = { createClientSync };
+module.exports = { createClientSync, createLiveTurns };
