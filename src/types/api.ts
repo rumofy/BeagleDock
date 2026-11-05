@@ -282,6 +282,9 @@ export type CliTerminalOpenResult =
   | ({ ok: true; replay: string } & CliTerminalInfo)
   | { ok: false; error: string };
 
+/** A reply in progress on the computer. */
+export type LiveTurn = StreamEvents["cli-turn-started"];
+
 export interface StreamEvents {
   "tools-update": ToolsUpdate;
   "pty-data": { sessionId: string; data: string; pid?: number; shellId?: string };
@@ -331,6 +334,8 @@ export interface StreamEvents {
     emittedAt?: number;
   };
   "cli-approvals": CliApproval[];
+  /** Phone back online: the replies in progress now (the ones missing ended meanwhile). */
+  "live-turns": LiveTurn[];
   "dictation-model-progress": DictationModelProgress;
   /** Phone access state changed (server, pairing or devices). */
   "remote-access-status": RemoteAccessStatus;
@@ -449,6 +454,8 @@ export interface BeagleAPI {
   replaceChatMessages(id: string, messages: Array<ChatMessage & { provider?: string }>): Promise<OkResult>;
   saveChatMessage(message: ChatMessage & { provider?: string }): Promise<OkResult>;
   getChatMessages(sessionId: string): Promise<ChatMessage[]>;
+  /** Replies in progress on the computer (for a screen that opened after they started). */
+  getLiveTurns(): Promise<LiveTurn[]>;
   ptySpawn(payload: PtyPayload): Promise<unknown>;
   ptyWrite(payload: PtyPayload): Promise<unknown>;
   ptyResize(payload: PtyPayload): Promise<unknown>;

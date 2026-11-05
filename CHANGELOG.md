@@ -9,6 +9,8 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 ### Fixed
 
 - On the phone, conversations can be renamed and closed from the list: their buttons are now always visible and large enough to tap, and tapping them no longer opens the chat.
+- On the phone, the conversation list shows which conversations are replying (green), have background work (orange, blinking) or are waiting, also for replies started before the phone opened or while its screen was off.
+- The context bar wraps onto more lines on narrow screens, such as the phone, instead of overflowing.
 
 ## [0.15.0] - 2026-11-05
 

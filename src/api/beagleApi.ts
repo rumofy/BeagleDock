@@ -102,6 +102,7 @@ export const beagleApi: BeagleAPI = {
   replaceChatMessages: (id, messages) => backend().replaceChatMessages(id, messages),
   saveChatMessage: (message) => backend().saveChatMessage(message),
   getChatMessages: (sessionId) => backend().getChatMessages(sessionId),
+  getLiveTurns: () => backend().getLiveTurns(),
   ptySpawn: (payload) => backend().ptySpawn(payload),
   ptyWrite: (payload) => backend().ptyWrite(payload),
   ptyResize: (payload) => backend().ptyResize(payload),

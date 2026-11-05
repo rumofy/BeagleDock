@@ -1063,5 +1063,7 @@
   "mobile.chatControls": "Controles del chat",
   "remote.folderNotAllowed": "Esta carpeta no es un proyecto registrado en el ordenador.",
   "remote.settingsOnDesktop": "Cambia los ajustes en el ordenador.",
-  "composer.dictationModelOnComputer": "Descarga el modelo de voz en el ordenador: Configuración → Dictado por voz"
+  "composer.dictationModelOnComputer": "Descarga el modelo de voz en el ordenador: Configuración → Dictado por voz",
+  "context.cacheInUse": "caché en uso",
+  "session.replying": "Respondiendo…"
 }

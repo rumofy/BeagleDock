@@ -35,6 +35,7 @@ export const REMOTE_METHODS = [
   "replaceChatMessages",
   "saveChatMessage",
   "getChatMessages",
+  "getLiveTurns",
   "interruptCliSession",
   "cancelQueuedPrompt",
   "forceQueuedPrompt",
@@ -66,6 +67,8 @@ export function createRemoteBridge(onState: (state: ConnectionState) => void) {
         void call<unknown>("getCliApprovals").then((list) => dispatch("cli-approvals", list)).catch(() => {});
         void call<unknown>("detectTools").then((update) => dispatch("tools-update", update)).catch(() => {});
         for (const sessionId of openSessions) dispatch("chat-sync", { kind: "messages", sessionId, active: true });
+        // Replies that started or ended while the phone was away (the dots in the list follow them).
+        void call<unknown>("getLiveTurns").then((turns) => dispatch("live-turns", turns)).catch(() => {});
       }
       connectedOnce = true;
     },

@@ -65,7 +65,7 @@ const { chatReplyNotice, terminalTurnNotice } = require("./reply-notices");
 const { Worker } = require("worker_threads");
 const { createRemoteAccess } = require("./remote-access");
 const { createRemoteApi } = require("./remote-api");
-const { createClientSync } = require("./client-sync");
+const { createClientSync, createLiveTurns } = require("./client-sync");
 const qrcode = require("qrcode-generator");
 const {
   initDatabase,
@@ -551,12 +551,14 @@ function ensurePtySession(sessionId, cwd, providerId) {
   return entry;
 }
 
+const liveTurns = createLiveTurns();
 function sendToRenderer(channel, payload) {
   // Emission stamp to measure the stream's delay to the screen.
   const stamped =
     channel === "cli-stream-chunk" || channel === "cli-activity-event"
       ? { ...payload, emittedAt: Date.now() }
       : payload;
+  liveTurns.observe(channel, payload);
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, stamped);
   // Paired phones get only the chat events (the filter lives in remote-access).
   remoteAccess?.broadcast(channel, stamped);
@@ -880,7 +882,11 @@ module.exports.ready = app.whenReady().then(async () => {
       mainWindow.webContents.send(channel, payload);
     remoteAccess?.broadcast(channel, payload, { except: origin });
   };
-  const clientSync = createClientSync({ emitOthers, activeIds: () => sessionService.activeIds() });
+  const clientSync = createClientSync({
+    emitOthers,
+    activeIds: () => sessionService.activeIds(),
+    liveTurns,
+  });
   const handle = (channel, handler) => {
     handlers.set(channel, handler);
     registerHandler(channel, (event, ...args) => {
@@ -1459,6 +1465,8 @@ module.exports.ready = app.whenReady().then(async () => {
     }
   });
 
+  // Replies in progress, for a screen that opened or reconnected after they started.
+  handle("get-live-turns", async () => clientSync.liveTurns());
   handle("get-chat-messages", async (_event, sessionId) => {
     try {
       return await getChatMessages(sessionId);
