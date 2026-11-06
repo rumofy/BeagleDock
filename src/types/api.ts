@@ -489,6 +489,7 @@ export interface BeagleAPI {
   ): Promise<OkResult & { mode?: "background" | "interrupt" }>;
   executeCliPrompt(payload: ExecutePromptPayload): Promise<ExecutePromptResult>;
   getRemoteAccessStatus(): Promise<RemoteAccessStatus>;
+  setRemoteAccessPort(port: number): Promise<RemoteAccessStatus>;
   setRemoteAccessEnabled(enabled: boolean): Promise<RemoteAccessStatus>;
   startRemotePairing(): Promise<RemotePairing>;
   cancelRemotePairing(): Promise<void>;

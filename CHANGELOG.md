@@ -4,6 +4,21 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-06
+
+### Added
+
+- Pending permissions and replies that arrive while BeagleDock is minimized now appear in the tray menu (with a blue badge for unread replies) and flag the window in the taskbar; click one to open its conversation.
+- Choose the phone access port in Settings to avoid conflicts with other apps, applying changes without restarting BeagleDock.
+
+### Removed
+
+- Native desktop notifications, which were unreliable on Linux; the tray replaces them.
+
+### Fixed
+
+- BeagleDock failing to open its window after the live conversation status update.
+
 ## [0.15.1] - 2026-11-05
 
 ### Fixed
@@ -354,7 +369,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.15.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/rumofy/BeagleDock/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/rumofy/BeagleDock/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/rumofy/BeagleDock/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/rumofy/BeagleDock/compare/v0.14.0...v0.14.1

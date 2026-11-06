@@ -12,7 +12,7 @@ function friendlyTool(tool) {
   return name || t("tray.toolGeneric");
 }
 
-function describeState({ running = 0, waiting = 0, sessions = [] } = {}) {
+function describeState({ running = 0, waiting = 0, unread = 0, sessions = [] } = {}) {
   const parts = [];
   if (running > 0)
     parts.push(tn("tray.running", running));
@@ -20,7 +20,9 @@ function describeState({ running = 0, waiting = 0, sessions = [] } = {}) {
     parts.push(
       tn("tray.waiting", waiting),
     );
-  const status = waiting > 0 ? "waiting" : running > 0 ? "running" : "idle";
+  if (unread > 0) parts.push(tn("tray.unread", unread));
+  // Permission first, then replies not seen yet, then plain activity.
+  const status = waiting > 0 ? "waiting" : unread > 0 ? "unread" : running > 0 ? "running" : "idle";
   return {
     status,
     summary: parts.length ? parts.join(" · ") : t("tray.idle"),
@@ -29,9 +31,9 @@ function describeState({ running = 0, waiting = 0, sessions = [] } = {}) {
   };
 }
 
-// State badge in the corner of the tray icon: amber running, red waiting for permission.
+// State badge in the corner of the tray icon: amber running, blue unread reply, red waiting for permission.
 // `bitmap` is BGRA (nativeImage's format on Linux); idle has no badge.
-const BADGES = { running: [245, 158, 11], waiting: [225, 29, 72] };
+const BADGES = { running: [245, 158, 11], unread: [59, 130, 246], waiting: [225, 29, 72] };
 function drawBadge(bitmap, size, status) {
   const color = BADGES[status];
   if (!color) return bitmap;
@@ -67,6 +69,26 @@ function sessionMenuItems(sessions, open) {
   return items;
 }
 
+const NOTICE_LIMIT = 6;
+const oneLine = (text, max) => String(text || "").replace(/\s+/g, " ").trim().slice(0, max);
+// The tray replaces the system notifications: pending permissions and replies not seen yet,
+// both open their conversation when clicked.
+function noticeMenuItems({ approvals, notices, titleOf }, open, clear) {
+  const items = approvals.slice(0, SESSION_LIMIT).map((a) => ({
+    label: `⚠ ${oneLine(titleOf(a.sessionId), 24) || oneLine(a.providerId, 24)} · ${oneLine(
+      t("tray.approvalBody", { provider: a.providerId, tool: friendlyTool(a.tool) }),
+      56,
+    )}`,
+    click: () => open(a.sessionId),
+  }));
+  const shown = notices.slice(0, NOTICE_LIMIT).map((n) => ({
+    label: `✉ ${oneLine(n.title, 28)}${n.body ? ` — ${oneLine(n.body, 48)}` : ""}`,
+    click: () => open(n.sessionId),
+  }));
+  if (shown.length) shown.push({ label: t("tray.clearNotices"), click: clear });
+  return [...items, ...shown];
+}
+
 // Closing never quits the app. Without a working tray (some Linux desktops don't show it),
 // it minimizes instead of hiding, so the window doesn't become unreachable.
 function closeAction({ quitting, trayReady, runInBackground = true }) {
@@ -85,7 +107,6 @@ function createBackgroundController({
   app,
   Tray,
   Menu,
-  Notification,
   nativeImage,
   powerSaveBlocker,
   dialog,
@@ -115,6 +136,8 @@ function createBackgroundController({
     onQuit();
   };
   const seenApprovals = new Set();
+  // Replies that arrived with the window out of focus, shown in the tray until seen.
+  let notices = [];
 
   const showWindow = () => {
     const win = getWindow();
@@ -125,6 +148,8 @@ function createBackgroundController({
   };
   // Brings the window up and takes the interface to the conversation.
   const showSession = (sessionId) => {
+    notices = notices.filter((n) => n.sessionId !== sessionId);
+    refresh(true);
     showWindow();
     if (sessionId) openSession(sessionId);
   };
@@ -178,16 +203,20 @@ function createBackgroundController({
     const state = describeState({
       running: runningCount(),
       waiting: approvals.length,
+      unread: notices.length,
       sessions,
     });
+    const busy = runningCount() > 0 || approvals.length > 0;
     // While a session is running, the system doesn't suspend the app (the screen may turn off).
-    if (state.status !== "idle" && blockerId === null)
+    if (busy && blockerId === null)
       blockerId = powerSaveBlocker.start("prevent-app-suspension");
-    if (state.status === "idle" && blockerId !== null) {
+    if (!busy && blockerId !== null) {
       powerSaveBlocker.stop(blockerId);
       blockerId = null;
     }
-    const key = `${state.status}|${state.summary}|${sessions.map((s) => `${s.id}:${s.title}:${s.waiting}`).join(",")}`;
+    const titleOf = (id) => sessionInfoTitle(id, sessions);
+    const noticeItems = noticeMenuItems({ approvals, notices, titleOf }, showSession, clearNotices);
+    const key = `${state.status}|${state.summary}|${sessions.map((s) => `${s.id}:${s.title}:${s.waiting}`).join(",")}|${noticeItems.map((i) => i.label).join(",")}`;
     if (!tray || (!force && key === lastKey)) return state;
     lastKey = key;
     tray.setToolTip(state.tooltip);
@@ -199,6 +228,7 @@ function createBackgroundController({
         { label: t("tray.open"), click: showWindow },
         { type: "separator" },
         { label: state.summary, enabled: false },
+        ...(noticeItems.length ? [{ type: "separator" }, ...noticeItems, { type: "separator" }] : []),
         ...items,
         { type: "separator" },
         { label: t("tray.quit"), click: requestQuit },
@@ -207,23 +237,35 @@ function createBackgroundController({
     return state;
   }
 
-  function notifyNewApprovals() {
+  const windowInFront = () => {
     const win = getWindow();
-    const visible = win && !win.isDestroyed() && win.isVisible() && win.isFocused();
+    return !!win && !win.isDestroyed() && win.isVisible() && win.isFocused();
+  };
+  // Asks the desktop to flag the window (taskbar/dock urgency) when it is minimized or behind others.
+  const flashWindow = () => {
+    const win = getWindow();
+    if (win && !win.isDestroyed() && !windowInFront()) win.flashFrame?.(true);
+  };
+  function clearNotices() {
+    notices = [];
+    refresh(true);
+  }
+  function sessionInfoTitle(id, sessions) {
+    return sessions.find((s) => s.id === id)?.title || "";
+  }
+  // New pending permissions show up in the tray menu (via refresh) and flag the window.
+  function notifyNewApprovals() {
     const current = approvalsList();
     const ids = new Set(current.map((a) => a.id));
     for (const id of [...seenApprovals]) if (!ids.has(id)) seenApprovals.delete(id);
+    let fresh = false;
     for (const approval of current) {
       if (seenApprovals.has(approval.id)) continue;
       seenApprovals.add(approval.id);
-      if (visible || !Notification.isSupported()) continue;
-      const note = new Notification({
-        title: t("tray.approvalTitle"),
-        body: t("tray.approvalBody", { provider: approval.providerId, tool: friendlyTool(approval.tool) }),
-      });
-      note.on("click", () => showSession(approval.sessionId));
-      note.show();
+      fresh = true;
     }
+    if (fresh) flashWindow();
+    refresh();
   }
 
   return {
@@ -245,6 +287,11 @@ function createBackgroundController({
     },
     trayReady: () => !!tray,
     attachWindow(win) {
+      // Back in front: whatever was waiting in the tray has been seen.
+      win.on("focus", () => {
+        win.flashFrame?.(false);
+        if (notices.length) clearNotices();
+      });
       win.on("close", (event) => {
         const action = closeAction({ quitting, trayReady: !!tray, runInBackground });
         if (action === "allow") return;
@@ -284,12 +331,10 @@ function createBackgroundController({
     onApprovalsChanged: notifyNewApprovals,
     // Spontaneous CLI reply: notify only if the window isn't in front.
     notifyTurnFinished({ title, body, sessionId }) {
-      const win = getWindow();
-      const visible = win && !win.isDestroyed() && win.isVisible() && win.isFocused();
-      if (visible || !Notification.isSupported()) return;
-      const note = new Notification({ title, body });
-      note.on("click", () => showSession(sessionId));
-      note.show();
+      if (windowInFront()) return;
+      notices = [{ sessionId, title, body }, ...notices.filter((n) => n.sessionId !== sessionId)].slice(0, NOTICE_LIMIT);
+      flashWindow();
+      refresh();
     },
     showWindow,
     showSession,
@@ -317,6 +362,7 @@ module.exports = {
   closeAction,
   drawBadge,
   sessionMenuItems,
+  noticeMenuItems,
   quitAction,
   friendlyTool,
 };

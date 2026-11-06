@@ -12,6 +12,7 @@ export function RemoteAccessCard() {
   const [status, setStatus] = useState<RemoteAccessStatus | null>(null);
   const [pairing, setPairing] = useState<RemotePairing | null>(null);
   const [busy, setBusy] = useState(false);
+  const [port, setPort] = useState("");
   // Revoking takes a second click on the same device.
   const [armed, setArmed] = useState<string | null>(null);
   const now = useNow(!!pairing);
@@ -29,6 +30,9 @@ export function RemoteAccessCard() {
   useEffect(() => {
     if (expired) setPairing(null);
   }, [expired]);
+  useEffect(() => {
+    if (status) setPort(String(status.port));
+  }, [status?.port]);
 
   if (!remoteAccessAvailable() || !status) return null;
 
@@ -48,6 +52,11 @@ export function RemoteAccessCard() {
       setStatus(await beagleApi.setRemoteAccessEnabled(enabled));
     });
   const pair = () => run(async () => setPairing(await beagleApi.startRemotePairing()));
+  const validPort = /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
+  const applyPort = () => run(async () => {
+    setPairing(null);
+    setStatus(await beagleApi.setRemoteAccessPort(Number(port)));
+  });
   const cancel = () =>
     run(async () => {
       await beagleApi.cancelRemotePairing();
@@ -80,6 +89,45 @@ export function RemoteAccessCard() {
           <span className="block text-xs text-[#7d7565]">{t("remote.enableHint")}</span>
         </span>
       </label>
+
+      <form
+        className="mt-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!busy && validPort) void applyPort();
+        }}
+      >
+        <label htmlFor="remote-access-port" className="block text-sm text-[#2c2822] mb-2">
+          {t("remote.portLabel")}
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            id="remote-access-port"
+            type="number"
+            min={1}
+            max={65535}
+            step={1}
+            required
+            value={port}
+            disabled={busy}
+            onChange={(event) => setPort(event.target.value)}
+            aria-describedby="remote-access-port-hint"
+            aria-invalid={!validPort}
+            className="w-28 border border-[#d6cfbe] rounded-lg bg-[#ffffff] px-3 py-2 text-sm text-[#2c2822]"
+          />
+          <button
+            type="submit"
+            disabled={busy || !validPort || (Number(port) === status.port && !status.error)}
+            className="px-3 py-2 rounded-lg text-xs font-bold bg-[#1c1b18] text-white hover:bg-[#2c2822] disabled:opacity-50"
+          >
+            {t("remote.applyPort")}
+          </button>
+        </div>
+        <p id="remote-access-port-hint" className="mt-2 text-xs text-[#7d7565]">
+          {t("remote.portHint")}
+        </p>
+        {!validPort && <p role="alert" className="mt-2 text-xs text-rose-700">{t("remote.invalidPort")}</p>}
+      </form>
 
       {status.error && (
         <p className="mt-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">

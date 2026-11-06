@@ -111,6 +111,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
     ipcRenderer.invoke("execute-cli-prompt", payload),
   // Phone access over the local network.
   getRemoteAccessStatus: () => ipcRenderer.invoke("remote-access-status"),
+  setRemoteAccessPort: (port) => ipcRenderer.invoke("remote-access-set-port", port),
   setRemoteAccessEnabled: (enabled) =>
     ipcRenderer.invoke("remote-access-set-enabled", enabled),
   startRemotePairing: () => ipcRenderer.invoke("remote-access-start-pairing"),
@@ -138,6 +139,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "dictation-model-progress",
         "remote-access-status",
         "chat-sync",
+        "live-turns",
       ].includes(channel)
     )
       throw new Error("Event not allowed.");

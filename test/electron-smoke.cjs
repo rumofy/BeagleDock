@@ -1364,6 +1364,21 @@ async function send(win, text, expected) {
     await js(`window.beagleAPI.revokeRemoteDevice(${JSON.stringify(devices[0].id)})`);
     assert.equal((await js(`window.beagleAPI.getRemoteAccessStatus()`)).devices.length, 0);
     assert.equal((await js(`window.beagleAPI.setRemoteAccessEnabled(false)`)).running, false);
+    // The desktop can save a different port while access is off, then use it on enable.
+    const portReservation = require("net").createServer();
+    await new Promise((resolve) => portReservation.listen(0, "::", resolve));
+    const newPort = portReservation.address().port;
+    await new Promise((resolve) => portReservation.close(resolve));
+    await js(`document.querySelector('button[title^="Settings"]').click()`);
+    await waitFor(win, `!!document.querySelector('#remote-access-port')`);
+    await js(`(()=>{const input=document.querySelector('#remote-access-port');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(String(newPort))});input.dispatchEvent(new Event('input',{bubbles:true}));})()`);
+    await waitFor(win, `!document.querySelector('#remote-access-port').form.querySelector('button').disabled`);
+    await js(`document.querySelector('#remote-access-port').form.requestSubmit()`);
+    await waitFor(win, `window.beagleAPI.getRemoteAccessStatus().then(s=>s.port===${newPort}&&!s.running)`);
+    const updated = await js(`window.beagleAPI.setRemoteAccessEnabled(true)`);
+    assert.equal(updated.running, true, updated.error || "phone access restarts on the chosen port");
+    assert.equal(updated.port, newPort);
+    await js(`window.beagleAPI.setRemoteAccessEnabled(false)`);
     console.log("Desktop phone access: the phone page pairs and chats with Claude, Codex and AGY (approval, live text, stop), in sync with the desktop both ways.");
   }
   if (stage === "first") {
