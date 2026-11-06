@@ -35,7 +35,28 @@ function createLiveTurns() {
       model: p.model,
     });
   };
-  const finish = (responseMessageId) => turns.delete(responseMessageId);
+  const finish = (responseMessageId) => {
+    turns.delete(responseMessageId);
+    progress.delete(responseMessageId);
+  };
+  // What each reply has shown so far (latest text and activity, every step): a screen that missed
+  // the live events (phone in the background, connection dropped) catches up from it.
+  const progress = new Map();
+  const track = (channel, payload) => {
+    const id = payload?.responseMessageId;
+    if (!id || !turns.has(id)) return;
+    const state = progress.get(id) || { events: new Map() };
+    progress.set(id, state);
+    if (channel === "cli-activity-event") {
+      if (payload.event?.id) state.events.set(payload.event.id, payload.event);
+      return;
+    }
+    if (typeof payload.fullText === "string") state.text = payload.fullText;
+    if (payload.activity !== undefined) {
+      state.activity = payload.activity;
+      state.detail = payload.detail;
+    }
+  };
   return {
     start,
     finish,
@@ -43,12 +64,54 @@ function createLiveTurns() {
     observe(channel, payload) {
       if (channel === "cli-turn-started") start(payload);
       else if (channel === "cli-turn-finished" && payload?.responseMessageId) finish(payload.responseMessageId);
+      else if (channel === "cli-stream-chunk" || channel === "cli-activity-event") track(channel, payload);
     },
-    list: () => [...turns.values()],
+    list: () =>
+      [...turns.values()].map((turn) => {
+        const state = progress.get(turn.responseMessageId);
+        if (!state) return turn;
+        const snapshot = { ...turn, events: [...state.events.values()] };
+        if (state.text !== undefined) snapshot.text = state.text;
+        if (state.activity !== undefined) {
+          snapshot.activity = state.activity;
+          snapshot.detail = state.detail;
+        }
+        return snapshot;
+      }),
+  };
+}
+
+// Outcome of each prompt a phone sent, kept for a while: a phone that leaves the app (iOS cuts its
+// requests) loses the answer to its own request, so it asks for it again once it is back. The
+// desktop window's requests don't get cut, so its turns aren't kept.
+const RESULT_LIMIT = 20;
+function createTurnResults() {
+  const results = new Map(); // responseMessageId -> result of execute-cli-prompt
+  const waiting = new Map(); // responseMessageId -> resolvers, while the turn runs
+  return {
+    started(id) {
+      if (!waiting.has(id)) waiting.set(id, []);
+    },
+    finished(id, result) {
+      if (!waiting.has(id)) return;
+      results.delete(id);
+      results.set(id, result);
+      while (results.size > RESULT_LIMIT) results.delete(results.keys().next().value);
+      for (const resolve of waiting.get(id) || []) resolve(result);
+      waiting.delete(id);
+    },
+    // The turn's result; waits while it runs. null when this computer never got the prompt.
+    wait(id) {
+      if (results.has(id)) return Promise.resolve(results.get(id));
+      const list = waiting.get(id);
+      if (!list) return Promise.resolve(null);
+      return new Promise((resolve) => list.push(resolve));
+    },
   };
 }
 
 function createClientSync({ emitOthers, activeIds = () => [], liveTurns = createLiveTurns() }) {
+  const turnResults = createTurnResults();
   const messagesChanged = (origin, sessionId) =>
     sessionId &&
     emitOthers(origin, "chat-sync", {
@@ -63,6 +126,7 @@ function createClientSync({ emitOthers, activeIds = () => [], liveTurns = create
     const p = args[0] || {};
     if (!p.sessionId || !p.responseMessageId) return;
     liveTurns.start(p);
+    if (origin !== "desktop") turnResults.started(p.responseMessageId);
     emitOthers(origin, "cli-turn-started", {
       sessionId: p.sessionId,
       responseMessageId: p.responseMessageId,
@@ -71,12 +135,17 @@ function createClientSync({ emitOthers, activeIds = () => [], liveTurns = create
     });
   }
 
-  function after(origin, channel, args, result) {
+  function after(origin, channel, args, result, failure) {
     if (channel === "execute-cli-prompt") {
       const p = args[0] || {};
       if (!p.sessionId || !p.responseMessageId) return;
       // Over, also when it was delivered into the reply in progress (that one stays live).
       liveTurns.finish(p.responseMessageId);
+      // Failed halfway (no result): the phone that lost its request still learns it ended, and why.
+      turnResults.finished(
+        p.responseMessageId,
+        result ?? { ok: false, output: "", error: failure ? String(failure.message || failure) : undefined },
+      );
       const base = { sessionId: p.sessionId, responseMessageId: p.responseMessageId, providerId: p.providerId };
       // Delivered into the reply in progress: it keeps streaming, the reload brings the rest.
       if (!result?.injected)
@@ -117,17 +186,21 @@ function createClientSync({ emitOthers, activeIds = () => [], liveTurns = create
   async function run(origin, channel, args, handler) {
     before(origin, channel, args);
     let result;
+    let failure;
     try {
       result = await handler();
       return result;
+    } catch (error) {
+      failure = error;
+      throw error;
     } finally {
       try {
-        after(origin, channel, args, result);
+        after(origin, channel, args, result, failure);
       } catch {}
     }
   }
 
-  return { run, before, after, liveTurns: liveTurns.list };
+  return { run, before, after, liveTurns: liveTurns.list, awaitTurn: turnResults.wait };
 }
 
 module.exports = { createClientSync, createLiveTurns };

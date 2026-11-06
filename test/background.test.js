@@ -59,9 +59,22 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
     minimize() { state.minimized++; },
     on(name, cb) { this.handlers[name] = cb; },
   };
+  class Notification {
+    static isSupported() { return true; }
+    constructor(options) {
+      this.options = options;
+      this.handlers = {};
+      this.closed = false;
+      state.notes.push(this);
+    }
+    on(name, cb) { this.handlers[name] = cb; }
+    show() { this.shown = true; }
+    close() { this.closed = true; }
+  }
   const controller = createBackgroundController({
     app: { quit: () => state.quitCalls++ },
     Tray,
+    Notification,
     Menu: { buildFromTemplate: (t) => t },
     nativeImage: {
       createFromPath: () => ({
@@ -178,6 +191,50 @@ test("a pending permission is listed in the tray menu once and flags the window"
   item.click();
   assert.deepEqual(state.opened, ["s1"]);
   assert.equal(state.images.at(-1).width, 22, "red badge icon is drawn");
+});
+
+test("a permission with the window out of view pops up once, opens its conversation and leaves when answered", () => {
+  const { controller, state } = harness({ approvals: [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "Bash" }], focused: false });
+  controller.start();
+  controller.onApprovalsChanged();
+  controller.onApprovalsChanged();
+  assert.equal(state.notes.length, 1, "a single pop-up per permission");
+  const [note] = state.notes;
+  assert.equal(note.shown, true);
+  assert.deepEqual([note.options.title, note.options.body, note.options.urgency], ["BeagleDock · pending permission", "codex wants: Bash", "critical"]);
+  note.handlers.click();
+  assert.deepEqual(state.opened, ["s1"]);
+  state.approvals = [];
+  controller.onApprovalsChanged();
+  assert.equal(note.closed, true, "answered elsewhere: the pop-up leaves the screen");
+
+  state.approvals = [{ id: "a2", sessionId: "s1", providerId: "claude", tool: "Edit" }];
+  controller.onApprovalsChanged();
+  controller.dispose();
+  assert.equal(state.notes.at(-1).closed, true, "quitting takes the pending pop-ups off the screen");
+});
+
+test("system pop-ups can be turned off, and a window in front gets none", () => {
+  const off = harness({ approvals: [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "Bash" }], focused: false });
+  off.controller.setPopups(false);
+  off.controller.start();
+  off.controller.onApprovalsChanged();
+  off.controller.notifyTurnFinished({ sessionId: "s1", title: "T", body: "B" });
+  assert.equal(off.state.notes.length, 0);
+  assert.ok(off.state.menu.some((i) => i.label?.startsWith("⚠")), "the tray still lists it");
+
+  const front = harness({ approvals: [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "Bash" }], focused: true });
+  front.controller.start();
+  front.controller.onApprovalsChanged();
+  front.controller.notifyTurnFinished({ sessionId: "s1", title: "T", body: "B" });
+  assert.equal(front.state.notes.length, 0);
+
+  const back = harness({ focused: false });
+  back.controller.start();
+  back.controller.notifyTurnFinished({ sessionId: "s2", title: "Claude Code replied", body: "All done" });
+  assert.deepEqual([back.state.notes[0].options.title, back.state.notes[0].options.body], ["Claude Code replied", "All done"]);
+  back.state.notes[0].handlers.click();
+  assert.deepEqual(back.state.opened, ["s2"]);
 });
 
 test("a window in front is not flagged for a permission", () => {

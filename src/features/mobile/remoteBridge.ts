@@ -36,6 +36,7 @@ export const REMOTE_METHODS = [
   "saveChatMessage",
   "getChatMessages",
   "getLiveTurns",
+  "awaitTurnResult",
   "interruptCliSession",
   "cancelQueuedPrompt",
   "forceQueuedPrompt",
@@ -44,6 +45,39 @@ export const REMOTE_METHODS = [
 ] as const;
 
 export type ConnectionState = "connecting" | "connected" | "offline" | "unpaired";
+
+// fetch rejects with a TypeError when the connection itself fails ("Load failed" on iOS); answers
+// from the computer (HTTP errors) come as plain errors.
+const isNetworkError = (error: unknown) => (error as Error | null)?.name === "TypeError";
+const RECOVER_RETRY_MAX_MS = 5000;
+
+/**
+ * Outcome of a prompt whose request was lost: asks the computer (waiting while the reply runs),
+ * again and again while offline. Fails with the original error if the computer never got it.
+ */
+export async function recoverTurn(
+  responseMessageId: string,
+  original: unknown,
+  ask: (id: string) => Promise<unknown> = (id) => call("awaitTurnResult", [id]),
+  wait: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+) {
+  let delay = 1000;
+  for (;;) {
+    // Also before the first ask: a request cut right after it reached the computer may not have
+    // started the turn there yet, and an early ask would wrongly hear "never got it".
+    await wait(delay);
+    delay = Math.min(delay * 2, RECOVER_RETRY_MAX_MS);
+    let result: unknown;
+    try {
+      result = await ask(responseMessageId);
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      result = undefined;
+    }
+    if (result === null) throw original;
+    if (result !== undefined) return result;
+  }
+}
 
 export function createRemoteBridge(onState: (state: ConnectionState) => void) {
   const subscribers = new Map<string, Set<(payload: unknown) => void>>();
@@ -80,6 +114,16 @@ export function createRemoteBridge(onState: (state: ConnectionState) => void) {
       return call(method, args);
     };
   Object.assign(api, {
+    // The request lasts the whole reply: leaving the app (iOS cuts it) or a Wi-Fi drop doesn't stop
+    // the reply on the computer, so the phone waits for its outcome there instead of failing.
+    executeCliPrompt: async (payload: { responseMessageId?: string }) => {
+      try {
+        return await call("executeCliPrompt", [payload]);
+      } catch (error) {
+        if (!isNetworkError(error) || !payload?.responseMessageId) throw error;
+        return recoverTurn(payload.responseMessageId, error);
+      }
+    },
     // On the phone, links open in the phone's own browser.
     openExternalUrl: async (url: string) => {
       window.open(url, "_blank", "noopener,noreferrer");

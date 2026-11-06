@@ -180,6 +180,25 @@ export function useSessions({
   // missing ones show up live and the ones that ended meanwhile come back from the database.
   const applyLiveTurns = (turns: LiveTurn[]) => {
     for (const turn of turns) addLiveTurn(turn);
+    // What a reply showed while this screen was away (phone in the background, dropped
+    // connection): the events it missed never come again.
+    const now = Date.now();
+    const caughtUp = turns.flatMap((turn): StreamItem[] => {
+      const base = { sessionId: turn.sessionId, responseMessageId: turn.responseMessageId };
+      return [
+        ...(turn.events || []).map((event) => ({ kind: "event" as const, payload: { ...base, event }, receivedAt: now })),
+        ...(turn.text !== undefined || turn.activity !== undefined
+          ? [
+              {
+                kind: "chunk" as const,
+                payload: { ...base, fullText: turn.text, activity: turn.activity, detail: turn.detail },
+                receivedAt: now,
+              },
+            ]
+          : []),
+      ];
+    });
+    if (caughtUp.length) setMessages((prev) => applyStreamItems(prev, caughtUp, now));
     const live = new Set(turns.map((turn) => turn.responseMessageId));
     const ended = (list: ChatMessage[] = []) => list.some((m) => m.isStreaming && !live.has(m.id));
     for (const [sessionId, list] of Object.entries(messagesRef.current)) {

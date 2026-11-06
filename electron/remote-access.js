@@ -21,6 +21,11 @@ const PAIRING_TTL_MS = 5 * 60 * 1000;
 const PAIRING_ATTEMPTS = 5;
 // Photos and files attached in the chat travel in the request (as on the desktop).
 const MAX_BODY = 40 * 1024 * 1024;
+// Live events queued for a phone that isn't reading (screen off, out of Wi-Fi) before its stream is
+// closed. Each stream chunk carries the reply's full text, so a busy reply queues a lot quickly; a
+// phone that is reading drains it, one that stopped reconnects and reloads.
+const STREAM_BACKLOG_LIMIT = 8 * 1024 * 1024;
+const STREAM_HEARTBEAT_MS = 15000;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 // Events the phone receives: the chat, approvals, quotas and notifications; never the terminal or the shell.
 const REMOTE_EVENTS = new Set([
@@ -402,9 +407,12 @@ function createRemoteAccess({
           "Cache-Control": "no-store",
           Connection: "keep-alive",
         });
+        // Sent at once (not held for Nagle) so each live chunk reaches the phone as it is written.
+        req.socket.setNoDelay?.(true);
         res.write(": connected\n\n");
         streams.set(res, device.id);
-        const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 20000);
+        // Also lets the phone notice a connection that died silently (it expects one regularly).
+        const heartbeat = setInterval(() => send(res, ": heartbeat\n\n"), STREAM_HEARTBEAT_MS);
         res.on("close", () => {
           clearInterval(heartbeat);
           streams.delete(res);
@@ -431,17 +439,24 @@ function createRemoteAccess({
     }
   }
 
+  // `write()` returning false only means the socket buffer is past 16 KB, which one long reply chunk
+  // already is: the stream is closed only when the phone has stopped reading what was queued.
+  function send(res, message) {
+    if (!streams.has(res)) return;
+    if (res.writableLength > STREAM_BACKLOG_LIMIT) {
+      // A phone that stops reading (screen off) doesn't hold up memory: it reconnects and reloads.
+      streams.delete(res);
+      res.destroy();
+      return;
+    }
+    res.write(message);
+  }
+
   // `except`: the device that caused the change (it already has it).
   function broadcast(channel, payload, { except } = {}) {
     if (!REMOTE_EVENTS.has(channel) || !streams.size) return;
     const message = `data: ${JSON.stringify({ channel, payload })}\n\n`;
-    for (const [res, deviceId] of streams)
-      if (deviceId === except) continue;
-      else if (!res.write(message)) {
-        // A phone that stops reading (screen off) doesn't hold up memory: it reconnects and reloads.
-        res.end();
-        streams.delete(res);
-      }
+    for (const [res, deviceId] of streams) if (deviceId !== except) send(res, message);
   }
 
   function start() {

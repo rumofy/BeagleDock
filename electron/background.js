@@ -71,7 +71,7 @@ function sessionMenuItems(sessions, open) {
 
 const NOTICE_LIMIT = 6;
 const oneLine = (text, max) => String(text || "").replace(/\s+/g, " ").trim().slice(0, max);
-// The tray replaces the system notifications: pending permissions and replies not seen yet,
+// Besides the system pop-ups, the tray keeps pending permissions and replies not seen yet,
 // both open their conversation when clicked.
 function noticeMenuItems({ approvals, notices, titleOf }, open, clear) {
   const items = approvals.slice(0, SESSION_LIMIT).map((a) => ({
@@ -108,6 +108,8 @@ function createBackgroundController({
   Tray,
   Menu,
   nativeImage,
+  // System pop-ups (Electron's Notification); without it, only the tray and the taskbar flag.
+  Notification = null,
   powerSaveBlocker,
   dialog,
   getWindow,
@@ -129,6 +131,7 @@ function createBackgroundController({
   let lastKey = "";
   let shutDown = false;
   let runInBackground = true;
+  let popupsEnabled = true;
   const iconCache = new Map();
   const runShutdown = () => {
     if (shutDown) return;
@@ -136,6 +139,29 @@ function createBackgroundController({
     onQuit();
   };
   const seenApprovals = new Set();
+  // Pop-ups on screen, kept referenced: one that gets garbage-collected loses its click.
+  const popups = new Set();
+  // A system pop-up (with the window minimized or behind others); clicking opens the conversation.
+  function popup({ title, body, sessionId, urgency }) {
+    if (!popupsEnabled || !Notification?.isSupported?.()) return null;
+    try {
+      const note = new Notification({ title, body, urgency, ...(iconPath ? { icon: iconPath } : {}) });
+      popups.add(note);
+      const drop = () => popups.delete(note);
+      note.on("click", () => {
+        drop();
+        showSession(sessionId);
+      });
+      note.on("close", drop);
+      note.on("failed", drop);
+      note.show();
+      return note;
+    } catch {
+      return null;
+    }
+  }
+  // Permission pop-ups by approval id: answered anywhere (window, phone), it leaves the screen.
+  const approvalPopups = new Map();
   // Replies that arrived with the window out of focus, shown in the tray until seen.
   let notices = [];
 
@@ -258,11 +284,30 @@ function createBackgroundController({
     const current = approvalsList();
     const ids = new Set(current.map((a) => a.id));
     for (const id of [...seenApprovals]) if (!ids.has(id)) seenApprovals.delete(id);
+    for (const [id, note] of approvalPopups)
+      if (!ids.has(id)) {
+        approvalPopups.delete(id);
+        popups.delete(note);
+        try {
+          note.close();
+        } catch {}
+      }
     let fresh = false;
+    const behind = !windowInFront();
     for (const approval of current) {
       if (seenApprovals.has(approval.id)) continue;
       seenApprovals.add(approval.id);
       fresh = true;
+      // Critical: stays on screen until seen, the CLI is stopped waiting for it.
+      const note =
+        behind &&
+        popup({
+          title: t("tray.approvalTitle"),
+          body: t("tray.approvalBody", { provider: approval.providerId, tool: friendlyTool(approval.tool) }),
+          sessionId: approval.sessionId,
+          urgency: "critical",
+        });
+      if (note) approvalPopups.set(approval.id, note);
     }
     if (fresh) flashWindow();
     refresh();
@@ -333,6 +378,7 @@ function createBackgroundController({
     notifyTurnFinished({ title, body, sessionId }) {
       if (windowInFront()) return;
       notices = [{ sessionId, title, body }, ...notices.filter((n) => n.sessionId !== sessionId)].slice(0, NOTICE_LIMIT);
+      popup({ title, body, sessionId, urgency: "normal" });
       flashWindow();
       refresh();
     },
@@ -347,9 +393,20 @@ function createBackgroundController({
       runInBackground = value !== false;
     },
     getRunInBackground: () => runInBackground,
+    // "Show system pop-ups" preference.
+    setPopups(value) {
+      popupsEnabled = value !== false;
+    },
     refresh,
     dispose() {
       clearInterval(timer);
+      // Critical pop-ups stay on the desktop after the app quits, with a click that does nothing.
+      for (const note of popups)
+        try {
+          note.close();
+        } catch {}
+      popups.clear();
+      approvalPopups.clear();
       if (blockerId !== null) powerSaveBlocker.stop(blockerId);
       tray?.destroy();
     },
