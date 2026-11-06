@@ -282,6 +282,8 @@ export interface AppSettings {
   zoomFactor?: number;
   /** Keep the app in the tray when the window closes (default: on). */
   runInBackground?: boolean;
+  /** System pop-ups for pending permissions and new replies with the window out of view (default: on). */
+  desktopNotifications?: boolean;
   /** Start with the system, straight to the tray (Linux). */
   launchAtLogin?: boolean;
   /** Closes the tab of a successfully finished command on its own (default: on). */

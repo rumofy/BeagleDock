@@ -8,6 +8,7 @@ export function BackgroundCard() {
   const { settings, setSettings, setAppError } = useApp();
   const inBackground = settings.runInBackground !== false;
   const atLogin = settings.launchAtLogin === true;
+  const popups = settings.desktopNotifications !== false;
 
   // Only the changed key: the server merges it with the rest. If it can't be applied (e.g. the
   // autostart file), the interface goes back to the previous value.
@@ -41,6 +42,18 @@ export function BackgroundCard() {
           <span className="block text-xs text-[#7d7565]">
             {t("backgroundSettings.trayHint")}
           </span>
+        </span>
+      </label>
+      <label className="mt-3 flex items-start gap-3 text-sm text-[#2c2822]">
+        <input
+          type="checkbox"
+          checked={popups}
+          onChange={(e) => void save({ desktopNotifications: e.target.checked })}
+          className="mt-1"
+        />
+        <span>
+          {t("backgroundSettings.popups")}
+          <span className="block text-xs text-[#7d7565]">{t("backgroundSettings.popupsHint")}</span>
         </span>
       </label>
       <label className="mt-3 flex items-start gap-3 text-sm text-[#2c2822]">

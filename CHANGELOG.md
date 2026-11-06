@@ -4,6 +4,23 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.16.2] - 2026-11-06
+
+### Added
+
+- Pending permissions and new replies pop up as system notifications again while BeagleDock is minimized or behind other windows; a permission pop-up stays until seen and goes away once answered. Turn them off in Settings → Background.
+
+### Changed
+
+- The weekly usage badge in the sidebar now reads "7D" in every language, instead of "S" or "Wk".
+
+### Fixed
+
+- The phone no longer loses its connection over and over during long replies, which left what was written on the desktop missing on the phone.
+- A message sent from the phone keeps its reply when you switch to another app midway: the reply goes on on the computer and shows up when you come back, instead of a "Load failed" error.
+- The phone notices a connection that died without warning (Wi-Fi switch, computer asleep) and reconnects on its own.
+- A reply in progress no longer freezes on the phone after it reconnects (back from another app, Wi-Fi drop): the text and steps it missed show up at once instead of staying stuck on "Running in the local CLI…".
+
 ## [0.16.0] - 2026-11-06
 
 ### Added
@@ -369,7 +386,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...HEAD
+[0.16.2]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...v0.16.2
 [0.16.0]: https://github.com/rumofy/BeagleDock/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/rumofy/BeagleDock/compare/v0.15.0...v0.15.1
 [0.15.0]: https://github.com/rumofy/BeagleDock/compare/v0.14.1...v0.15.0

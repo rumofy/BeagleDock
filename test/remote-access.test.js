@@ -250,6 +250,13 @@ test("the HTTPS server verifies against the local authority, pairs, authenticate
   assert.match(text, /"partial"/, "intermediate text arrives before the turn ends");
   assert.doesNotMatch(text, /rm -rf|cli-terminal-data/);
 
+  // A long reply (each chunk carries the full text so far) keeps the stream open while the phone reads.
+  for (let i = 1; i <= 20; i++)
+    remote.broadcast("cli-stream-chunk", { sessionId: "s", responseMessageId: "r", fullText: "x".repeat(i * 8000) + `#end${i}` });
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(closed, false, "a big burst doesn't drop a phone that is reading");
+  assert.match(received.join(""), /#end20/);
+
   // Revoking closes the open stream and the token stops working.
   remote.revokeDevice(paired.json.deviceId);
   await new Promise((resolve) => setTimeout(resolve, 100));
@@ -420,6 +427,49 @@ test("a change on one screen reaches the others: live turns, messages and conver
   ], "reads don't notify; a failed change still makes the others reload");
 });
 
+test("a phone that lost the request of its own prompt (left the app) gets the outcome when it comes back", async () => {
+  const sync = createClientSync({ emitOthers: () => {} });
+  const payload = { sessionId: "s1", responseMessageId: "r1", providerId: "claude" };
+  let finish;
+  const run = sync.run("dev-1", "execute-cli-prompt", [payload], () => new Promise((resolve) => (finish = resolve)));
+  // The phone's request died; it asks while the reply still runs on the computer.
+  const waiting = sync.awaitTurn("r1");
+  let settled = false;
+  waiting.then(() => (settled = true));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false, "waits while the reply runs");
+  const result = { ok: true, output: "done", nativeSessionId: "n1" };
+  finish(result);
+  await run;
+  assert.deepEqual(await waiting, result);
+  assert.deepEqual(await sync.awaitTurn("r1"), result, "still there for a phone that comes back after the end");
+  assert.equal(await sync.awaitTurn("never-sent"), null, "a prompt the computer never got");
+
+  await assert.rejects(sync.run("dev-1", "execute-cli-prompt", [{ ...payload, responseMessageId: "r2" }], async () => { throw new Error("boom"); }));
+  assert.deepEqual(await sync.awaitTurn("r2"), { ok: false, output: "", error: "boom" }, "a failed run still ends, with its error");
+
+  // The desktop window's own requests aren't cut: its turns aren't kept.
+  await sync.run("desktop", "execute-cli-prompt", [{ ...payload, responseMessageId: "r3" }], async () => ({ ok: true, output: "big" }));
+  assert.equal(await sync.awaitTurn("r3"), null);
+});
+
+test("the phone retries for the outcome while offline and gives up only when the prompt never arrived", async () => {
+  const { recoverTurn } = loadTs("src/features/mobile/remoteBridge.ts", { globals: { window: {}, document: { addEventListener() {}, removeEventListener() {} } } });
+  const lost = new TypeError("Load failed");
+  const answers = [new TypeError("Load failed"), new TypeError("Load failed"), { ok: true, output: "done" }];
+  const waits = [];
+  const ask = async () => {
+    const next = answers.shift();
+    if (next instanceof Error) throw next;
+    return next;
+  };
+  assert.deepEqual(plain(await recoverTurn("r1", lost, ask, async (ms) => waits.push(ms))), { ok: true, output: "done" });
+  assert.deepEqual(waits, [1000, 2000, 4000], "waits before each ask, the first one included");
+  await assert.rejects(recoverTurn("r1", lost, async () => null, async () => {}), (error) => error === lost);
+  const httpError = new Error("HTTP 500");
+  await assert.rejects(recoverTurn("r1", lost, async () => { throw httpError; }, async () => {}), (error) => error === httpError);
+});
+
 test("a screen that opens or reconnects late learns which replies are still running", async () => {
   const liveTurns = createLiveTurns();
   const sync = createClientSync({ emitOthers: () => {}, liveTurns });
@@ -438,6 +488,35 @@ test("a screen that opens or reconnects late learns which replies are still runn
   await sync.run("dev-1", "execute-cli-prompt", [turn], async () => ({ ok: false, injected: true }));
   await assert.rejects(sync.run("dev-1", "execute-cli-prompt", [turn], async () => { throw new Error("boom"); }));
   assert.deepEqual(sync.liveTurns(), [], "injected or failed: nothing stays running");
+});
+
+test("a phone that missed live events gets what the reply showed so far", async () => {
+  const liveTurns = createLiveTurns();
+  const sync = createClientSync({ emitOthers: () => {}, liveTurns });
+  const turn = { sessionId: "s1", responseMessageId: "r1", providerId: "claude", model: "m" };
+  let finish;
+  const run = sync.run("dev-1", "execute-cli-prompt", [turn], () => new Promise((resolve) => (finish = resolve)));
+  const thinking = { id: "e1", kind: "reasoning", status: "running" };
+  liveTurns.observe("cli-activity-event", { ...turn, event: thinking });
+  liveTurns.observe("cli-stream-chunk", { ...turn, activity: "Thinking", detail: "d" });
+  liveTurns.observe("cli-activity-event", { ...turn, event: { ...thinking, status: "done" } });
+  liveTurns.observe("cli-activity-event", { ...turn, event: { id: "e2", kind: "tool", status: "running" } });
+  liveTurns.observe("cli-stream-chunk", { ...turn, fullText: "Hello" });
+  liveTurns.observe("cli-stream-chunk", { ...turn, fullText: "Hello there" });
+  // Events of replies that aren't running (or carry no id) aren't kept.
+  liveTurns.observe("cli-stream-chunk", { sessionId: "s9", responseMessageId: "gone", fullText: "x" });
+  assert.deepEqual(sync.liveTurns(), [
+    {
+      ...turn,
+      text: "Hello there",
+      activity: "Thinking",
+      detail: "d",
+      events: [{ ...thinking, status: "done" }, { id: "e2", kind: "tool", status: "running" }],
+    },
+  ]);
+  finish({ ok: true, output: "Hello there" });
+  await run;
+  assert.deepEqual(sync.liveTurns(), []);
 });
 
 test("the phones follow the theme and language chosen on the desktop", async () => {

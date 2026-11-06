@@ -3,6 +3,11 @@
 const TOKEN_KEY = "beagledock.remote.token";
 const NAME_KEY = "beagledock.remote.device";
 
+// Three missed heartbeats from the computer (see electron/remote-access.js).
+const SILENCE_LIMIT_MS = 45000;
+// Time for the computer to answer a new connection (asleep or off the network: it never does).
+const CONNECT_LIMIT_MS = 10000;
+
 export class NotPairedError extends Error {}
 
 export const getToken = () => {
@@ -74,9 +79,25 @@ export function subscribe(
   let controller: AbortController | null = null;
   let retry = 1000;
   let quick = false;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+  // The computer sends a heartbeat every 15 s: silence for longer means the connection died without
+  // an error (Wi-Fi switch, computer asleep), so it's dropped and opened again at once. A connection
+  // the computer never answers counts as a normal drop: offline, with the growing wait.
+  const watch = (current: AbortController, open: boolean) => {
+    clearTimeout(watchdog);
+    watchdog = setTimeout(
+      () => {
+        quick = open;
+        current.abort();
+      },
+      open ? SILENCE_LIMIT_MS : CONNECT_LIMIT_MS,
+    );
+  };
   async function connect() {
     while (!stopped) {
-      controller = new AbortController();
+      const current = new AbortController();
+      controller = current;
+      watch(current, false);
       try {
         const res = await fetch("/api/events", {
           headers: { Authorization: `Bearer ${getToken() || ""}` },
@@ -90,12 +111,14 @@ export function subscribe(
         if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
         onState("connected");
         retry = 1000;
+        watch(current, true);
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
         for (;;) {
           const { value, done } = await reader.read();
           if (done) break;
+          watch(current, true);
           buffer += decoder.decode(value, { stream: true });
           let cut;
           while ((cut = buffer.indexOf("\n\n")) >= 0) {
@@ -115,6 +138,7 @@ export function subscribe(
       } catch {
         if (stopped) return;
       }
+      clearTimeout(watchdog);
       if (stopped) return;
       if (quick) {
         quick = false;
@@ -135,6 +159,7 @@ export function subscribe(
   document.addEventListener("visibilitychange", wake);
   return () => {
     stopped = true;
+    clearTimeout(watchdog);
     controller?.abort();
     document.removeEventListener("visibilitychange", wake);
   };

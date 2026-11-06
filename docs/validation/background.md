@@ -8,9 +8,12 @@ this version:
   permission).
 - The menu lists the conversations in progress (the ones waiting for permission first, up to 8) and clicking one
   opens the app on that conversation.
-- There are no native desktop notifications (the Linux ones are unreliable). Pending permissions (⚠) and replies that
-  arrived with the window out of focus (✉) are listed in the tray menu until opened, cleared or the window gets focus;
-  clicking one opens its conversation. A new permission or reply also flags the window in the taskbar.
+- With the window minimized or behind others, a new permission and a reply pop up as system notifications
+  (permissions as critical, so they stay until seen, and leave the screen once answered anywhere); clicking one opens
+  its conversation. Each pop-up stays referenced until closed, so its click isn't lost to garbage collection. Pending
+  permissions (⚠) and replies that arrived with the window out of focus (✉) are also listed in the tray menu until
+  opened, cleared or the window gets focus. A new permission or reply also flags the window in the taskbar.
+- Settings: “Show system pop-ups” (on by default; off leaves only the tray menu and the taskbar flag).
 - Settings: “Keep BeagleDock in the tray when closing the window” (off, closing the window asks to quit, with the
   same confirmation) and “Start with the system” (Linux: `~/.config/autostart/beagledock.desktop`, opening
   straight to the tray with `--hidden`; if the tray doesn't work, the window shows normally).
@@ -24,5 +27,7 @@ this version:
   the preferences survive the restart, and sends `open-session` with the settings screen open to check that the
   interface goes back to the chat on the requested conversation. Closing the window with a session running and
   keeping it active was already covered.
+- Real environment (Linux Mint, Cinnamon): Electron's `Notification` is supported and shows a pop-up from the project's
+  Electron, and a minimized window reports `isFocused() === false`, so the pop-ups fire when minimized.
 - Not verified: the badge drawn in a real desktop environment's tray (the tests use simulated `nativeImage` and
   `Tray`) or the real start with the system; check the icon on the first run.

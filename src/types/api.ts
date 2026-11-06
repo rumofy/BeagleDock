@@ -282,8 +282,13 @@ export type CliTerminalOpenResult =
   | ({ ok: true; replay: string } & CliTerminalInfo)
   | { ok: false; error: string };
 
-/** A reply in progress on the computer. */
-export type LiveTurn = StreamEvents["cli-turn-started"];
+/** A reply in progress on the computer, with what it has shown so far (for a screen catching up). */
+export type LiveTurn = StreamEvents["cli-turn-started"] & {
+  text?: string;
+  activity?: string;
+  detail?: string;
+  events?: ChatEvent[];
+};
 
 export interface StreamEvents {
   "tools-update": ToolsUpdate;

@@ -5,6 +5,7 @@ const {
   Tray,
   Menu,
   nativeImage,
+  Notification,
   powerSaveBlocker,
   dialog,
   shell: electronShell,
@@ -726,6 +727,8 @@ function shutdown() {
     } catch {}
   }
   activePtySessions.clear();
+  // Tray, power blocker and pop-ups still on screen (a critical one would outlive the app).
+  background?.dispose();
 }
 module.exports = { shutdown };
 
@@ -736,6 +739,7 @@ background = createBackgroundController({
   Tray,
   Menu,
   nativeImage,
+  Notification,
   powerSaveBlocker,
   dialog,
   getWindow: () => mainWindow,
@@ -1264,6 +1268,7 @@ module.exports.ready = app.whenReady().then(async () => {
       for (const saved of sessions)
         sessionInfo.set(saved.id, { title: saved.title, providerId: saved.providerId });
       background.setRunInBackground(appSettings?.runInBackground !== false);
+      background.setPopups(appSettings?.desktopNotifications !== false);
       savedAutoCompactTokens = appSettings?.autoCompactTokens;
       let workspaces = savedWorkspaces;
       if (!workspaces || workspaces.length === 0) {
@@ -1403,6 +1408,8 @@ module.exports.ready = app.whenReady().then(async () => {
         savedAutoCompactTokens = result?.settings?.autoCompactTokens;
       if (Object.hasOwn(settingsObj || {}, "runInBackground"))
         background.setRunInBackground(settingsObj.runInBackground !== false);
+      if (Object.hasOwn(settingsObj || {}, "desktopNotifications"))
+        background.setPopups(settingsObj.desktopNotifications !== false);
       return result;
     } catch (e) {
       return { success: false, error: e.message };
@@ -1465,6 +1472,10 @@ module.exports.ready = app.whenReady().then(async () => {
 
   // Replies in progress, for a screen that opened or reconnected after they started.
   handle("get-live-turns", async () => clientSync.liveTurns());
+  // A phone that lost the answer to its own prompt (left the app midway) asks for it again.
+  handle("await-turn-result", (_event, responseMessageId) =>
+    typeof responseMessageId === "string" ? clientSync.awaitTurn(responseMessageId) : null,
+  );
   handle("get-chat-messages", async (_event, sessionId) => {
     try {
       return await getChatMessages(sessionId);
