@@ -59,17 +59,10 @@ function harness({ emptyIcon = false, running = 0, approvals = [], confirmChoice
     minimize() { state.minimized++; },
     on(name, cb) { this.handlers[name] = cb; },
   };
-  class Notification {
-    static isSupported() { return true; }
-    constructor(opts) { state.notes.push(opts); }
-    on(name, cb) { if (name === "click") state.clicks.push(cb); }
-    show() {}
-  }
   const controller = createBackgroundController({
     app: { quit: () => state.quitCalls++ },
     Tray,
     Menu: { buildFromTemplate: (t) => t },
-    Notification,
     nativeImage: {
       createFromPath: () => ({
         isEmpty: () => emptyIcon,
@@ -171,18 +164,60 @@ test("the system doesn't suspend the app while a session is running", () => {
   assert.match(state.tooltip, /^BeagleDock$/);
 });
 
-test("notifies a pending permission only with the window out of focus and once per request", () => {
-  const hidden = harness({ approvals: [{ id: "a1", providerId: "codex", tool: "Bash" }], focused: false });
-  hidden.controller.start();
-  hidden.controller.onApprovalsChanged();
-  hidden.controller.onApprovalsChanged();
-  assert.equal(hidden.state.notes.length, 1);
-  assert.match(hidden.state.notes[0].body, /codex wants: Bash/);
+test("a pending permission is listed in the tray menu once and flags the window", () => {
+  const { controller, state, win } = harness({ approvals: [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "Bash" }], focused: false });
+  const flashes = [];
+  win.flashFrame = (on) => flashes.push(on);
+  state.sessions = [{ id: "s1", title: "Fix build" }];
+  controller.start();
+  controller.onApprovalsChanged();
+  controller.onApprovalsChanged();
+  assert.deepEqual(flashes, [true], "flags the window a single time");
+  const item = state.menu.find((i) => i.label?.startsWith("⚠"));
+  assert.match(item.label, /Fix build · codex wants: Bash/);
+  item.click();
+  assert.deepEqual(state.opened, ["s1"]);
+  assert.equal(state.images.at(-1).width, 22, "red badge icon is drawn");
+});
 
-  const focused = harness({ approvals: [{ id: "a1", providerId: "codex", tool: "Bash" }], focused: true });
-  focused.controller.start();
-  focused.controller.onApprovalsChanged();
-  assert.equal(focused.state.notes.length, 0);
+test("a window in front is not flagged for a permission", () => {
+  const { controller, win } = harness({ approvals: [{ id: "a1", sessionId: "s1", providerId: "codex", tool: "Bash" }], focused: true });
+  const flashes = [];
+  win.flashFrame = (on) => flashes.push(on);
+  controller.start();
+  controller.onApprovalsChanged();
+  assert.deepEqual(flashes, []);
+});
+
+test("a reply with the window out of focus waits in the tray until it is opened or cleared", () => {
+  const { controller, state, win } = harness({ focused: false });
+  controller.start();
+  controller.attachWindow(win);
+  controller.notifyTurnFinished({ sessionId: "s1", title: "Claude Code replied", body: "All done" });
+  controller.notifyTurnFinished({ sessionId: "s2", title: "Codex CLI replied", body: "Fixed" });
+  assert.match(state.tooltip, /2 unread replies/);
+  const items = state.menu.filter((i) => i.label?.startsWith("✉"));
+  assert.equal(items.length, 2);
+  items.find((i) => /Claude Code/.test(i.label)).click();
+  assert.deepEqual(state.opened, ["s1"]);
+  assert.match(state.tooltip, /1 unread reply/);
+  state.menu.find((i) => i.label === "Clear notifications").click();
+  assert.equal(state.tooltip, "BeagleDock");
+  assert.equal(state.menu.some((i) => i.label?.startsWith("✉")), false);
+});
+
+test("a reply is not queued when the window is in front, and focusing clears the queue", () => {
+  const front = harness({ focused: true });
+  front.controller.start();
+  front.controller.notifyTurnFinished({ sessionId: "s1", title: "T", body: "B" });
+  assert.equal(front.state.tooltip, "BeagleDock");
+
+  const back = harness({ focused: false });
+  back.controller.start();
+  back.controller.attachWindow(back.win);
+  back.controller.notifyTurnFinished({ sessionId: "s1", title: "T", body: "B" });
+  back.win.handlers.focus();
+  assert.equal(back.state.tooltip, "BeagleDock");
 });
 
 test("the test environment (bypass) lets the app quit normally", () => {
@@ -239,7 +274,7 @@ test("friendly action name in Codex notifications", () => {
   const h = harness({ approvals: [{ id: "x", providerId: "codex", tool: "item/commandExecution/requestApproval" }], focused: false });
   h.controller.start();
   h.controller.onApprovalsChanged();
-  assert.equal(h.state.notes[0].body, "codex wants: run a command");
+  assert.match(h.state.menu.find((i) => i.label?.startsWith("⚠")).label, /codex wants: run a command/);
 });
 
 test("active window = visible and not minimized", () => {
@@ -318,15 +353,14 @@ test("menu items: the one waiting for permission comes first and the list has a 
   assert.deepEqual(opened, ["s0"]);
 });
 
-test("clicking the notification brings the window and opens the source conversation", () => {
+test("clicking a tray notice brings the window and opens the source conversation", () => {
   const h = harness({ running: 1 });
   h.controller.start();
-  h.controller.notifyTurnFinished({ title: "Codex respondeu", body: "ok", sessionId: "s7" });
+  h.controller.notifyTurnFinished({ title: "Codex replied", body: "ok", sessionId: "s7" });
   h.state.approvals = [{ id: "a9", sessionId: "s3", providerId: "claude", tool: "Bash" }];
   h.controller.onApprovalsChanged();
-  assert.equal(h.state.notes.length, 2);
-  h.state.clicks[0]();
-  h.state.clicks[1]();
+  h.state.menu.find((i) => i.label?.startsWith("✉")).click();
+  h.state.menu.find((i) => i.label?.startsWith("⚠")).click();
   assert.deepEqual(h.state.opened, ["s7", "s3"]);
   assert.ok(h.state.shown >= 2, "the window shows up again");
 });

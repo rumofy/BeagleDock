@@ -119,6 +119,7 @@ export const beagleApi: BeagleAPI = {
   answerNowPrompt: (request) => backend().answerNowPrompt(request),
   executeCliPrompt: (payload) => backend().executeCliPrompt(payload),
   getRemoteAccessStatus: () => backend().getRemoteAccessStatus(),
+  setRemoteAccessPort: (port) => backend().setRemoteAccessPort(port),
   setRemoteAccessEnabled: (enabled) => backend().setRemoteAccessEnabled(enabled),
   startRemotePairing: () => backend().startRemotePairing(),
   cancelRemotePairing: () => backend().cancelRemotePairing(),

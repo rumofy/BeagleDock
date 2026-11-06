@@ -4,7 +4,6 @@ const {
   ipcMain,
   Tray,
   Menu,
-  Notification,
   nativeImage,
   powerSaveBlocker,
   dialog,
@@ -736,7 +735,6 @@ background = createBackgroundController({
   app,
   Tray,
   Menu,
-  Notification,
   nativeImage,
   powerSaveBlocker,
   dialog,
@@ -1578,6 +1576,7 @@ module.exports.ready = app.whenReady().then(async () => {
   });
   handle("remote-access-status", () => remoteAccess.status());
   handle("remote-access-set-enabled", (_event, enabled) => remoteAccess.setEnabled(enabled === true));
+  handle("remote-access-set-port", (_event, port) => remoteAccess.setPort(port));
   handle("remote-access-start-pairing", () => {
     const pairing = remoteAccess.startPairing();
     const qr = qrcode(0, "M");

@@ -275,6 +275,56 @@ test("the server stays off by default and survives a busy port", async (t) => {
   assert.equal(result.error, `remote.portInUse:${blocker.address().port}`);
 });
 
+test("changing the phone port validates, persists and recovers from a collision", async (t) => {
+  const blocker = https.createServer();
+  await new Promise((resolve) => blocker.listen(0, "::", resolve));
+  t.after(() => blocker.close());
+  const port = blocker.address().port;
+  const dir = tempDir();
+  const remote = createRemoteAccess({ dir, api: fakeApi(), staticDir: tempDir(), log: { warn() {} } });
+  t.after(() => remote.stop());
+  for (const invalid of [0, -1, 65536, 1.5, "47822", null, NaN])
+    await assert.rejects(remote.setPort(invalid), /remote.invalidPort/);
+  const off = await remote.setPort(port);
+  assert.equal(off.port, port);
+  assert.equal(off.running, false);
+  assert.equal(off.enabled, false);
+  const reloaded = createRemoteAccess({ dir, api: fakeApi(), staticDir: tempDir() });
+  assert.equal(reloaded.status().port, port);
+  const busy = await remote.setEnabled(true);
+  assert.equal(busy.error, "remote.portInUse");
+  assert.equal(busy.running, false);
+  await new Promise((resolve) => blocker.close(resolve));
+  const recovered = await remote.setPort(port);
+  assert.equal(recovered.running, true, "applying the same port retries a failed listener");
+  assert.equal(recovered.error, null);
+});
+
+test("changing a running phone port closes the old listener and preserves paired devices", async (t) => {
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, "remote-access.json"), JSON.stringify({ enabled: true, port: 0 }));
+  const remote = createRemoteAccess({ dir, api: fakeApi(), staticDir: tempDir() });
+  t.after(() => remote.stop());
+  const original = await remote.start();
+  const device = remote.pair(remote.startPairing().code, "Test phone");
+  const fingerprint = original.certificateFingerprint;
+  remote.startPairing();
+  const reservation = https.createServer();
+  await new Promise((resolve) => reservation.listen(0, "::", resolve));
+  const port = reservation.address().port;
+  await new Promise((resolve) => reservation.close(resolve));
+  const changed = await remote.setPort(port);
+  assert.equal(changed.running, true);
+  assert.equal(changed.port, port);
+  assert.equal(changed.pairing, null);
+  assert.equal(changed.certificateFingerprint, fingerprint);
+  assert.equal(remote.authenticate(`Bearer ${device.token}`).id, device.deviceId);
+  assert.ok(changed.urls.every((url) => new URL(url).port === String(port)));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(dir, "remote-access.json"))).port, port);
+  assert.equal((await request(port, remote.certificate(), "GET", "/api/events", {})).status, 401);
+  await assert.rejects(request(original.port, remote.certificate(), "GET", "/"), /ECONNREFUSED/);
+});
+
 function remoteApi() {
   const invoked = [];
   const api = createRemoteApi({
@@ -297,7 +347,7 @@ test("the phone calls the desktop's own handlers, from an allowlist that leaves 
     ["get-saved-state", "dev-1"],
     ["resolve-cli-approval", "dev-1"],
   ]);
-  for (const method of ["ptySpawn", "cliTerminalOpen", "updateCli", "saveWorkspace", "pickDirectory", "openInEditor", "runAIMemoryCommand", "saveGlobalPermissions", "downloadDictationModel"])
+  for (const method of ["ptySpawn", "cliTerminalOpen", "updateCli", "saveWorkspace", "pickDirectory", "openInEditor", "runAIMemoryCommand", "saveGlobalPermissions", "downloadDictationModel", "setRemoteAccessPort"])
     await assert.rejects(api.call(method, [], device), /Unknown method/, method);
   await assert.rejects(api.call("getSavedState", {}, device), /Invalid arguments/);
   // Settings: only the chat's remembered choices.

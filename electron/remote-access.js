@@ -137,7 +137,7 @@ function createRemoteAccess({
       const data = JSON.parse(fs.readFileSync(file, "utf8"));
       return {
         enabled: data.enabled === true,
-        port: Number.isInteger(data.port) ? data.port : DEFAULT_PORT,
+        port: Number.isInteger(data.port) && data.port >= 0 && data.port <= 65535 ? data.port : DEFAULT_PORT,
         authority: data.authority || null,
         server: data.server || null,
         devices: Array.isArray(data.devices) ? data.devices : [],
@@ -504,12 +504,33 @@ function createRemoteAccess({
     save();
     return state.enabled ? start() : stop();
   }
+  async function setPort(port) {
+    if (!Number.isInteger(port) || port < 1 || port > 65535)
+      throw new Error(messages("remote.invalidPort"));
+    if (state.port === port && (!state.enabled || listening)) return status();
+    await stop();
+    state.port = port;
+    lastError = null;
+    save();
+    if (state.enabled) return start();
+    changed();
+    return status();
+  }
+
+  // Settings changes wait for startup and each other before replacing the listener.
+  let pending = Promise.resolve();
+  function enqueue(action) {
+    const result = pending.then(action);
+    pending = result.catch(() => {});
+    return result;
+  }
 
   return {
     status,
-    start: () => (state.enabled ? start() : Promise.resolve(status())),
-    stop,
-    setEnabled,
+    start: () => enqueue(() => (state.enabled ? start() : status())),
+    stop: () => enqueue(stop),
+    setEnabled: (enabled) => enqueue(() => setEnabled(enabled)),
+    setPort: (port) => enqueue(() => setPort(port)),
     startPairing,
     cancelPairing,
     revokeDevice,
