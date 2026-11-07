@@ -1068,6 +1068,7 @@
   "mobile.offline": "Offline",
   "mobile.offlineHint": "No connection to the computer. Check that it's on the same network and that BeagleDock is open; reconnecting…",
   "mobile.running": "Replying…",
+  "mobile.terminalKey": "Send {key} to CLI",
   "mobile.back": "Back",
   "mobile.chatControls": "Chat controls",
   "remote.folderNotAllowed": "This folder isn't a registered project on the computer.",

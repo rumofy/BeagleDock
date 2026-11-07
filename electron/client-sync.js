@@ -12,7 +12,7 @@ const MESSAGE_CHANNELS = new Set([
   "answer-now-prompt",
   "compact-session",
 ]);
-const INHERITED_SETTINGS = ["theme", "language"];
+const INHERITED_SETTINGS = ["theme", "language", "conversationMode"];
 const SESSION_CHANNELS = new Set(["save-session", "delete-session", "set-session-archived"]);
 
 function sessionIdOf(channel, args) {

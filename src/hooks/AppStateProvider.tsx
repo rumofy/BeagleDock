@@ -111,7 +111,7 @@ function useAppStateValue() {
   const { terminals, closeTerminal } = cliTerminals;
   const sessionIds = sessions.allSessions.map((s) => s.id).join("|");
   useEffect(() => {
-    if (!sessions.allSessions.length) return;
+    if (window.beagleAPI?.remote || !sessions.allSessions.length) return;
     const known = new Set(sessions.allSessions.map((s) => s.id));
     for (const id of Object.keys(terminals)) if (!known.has(id)) void closeTerminal(id);
   }, [sessionIds, terminals, closeTerminal]);

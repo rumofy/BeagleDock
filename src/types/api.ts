@@ -267,6 +267,8 @@ export interface MaintenancePromptOptions {
 export type PtyPayload = Record<string, unknown>;
 
 export interface CliTerminalInfo {
+  cols: number;
+  rows: number;
   status?: "running" | "idle" | "waiting_input";
   sessionId: string;
   providerId: AIProviderId;
@@ -296,6 +298,9 @@ export interface StreamEvents {
   "pty-data": { sessionId: string; data: string; pid?: number; shellId?: string };
   "pty-exit": { sessionId: string; [key: string]: unknown };
   /** CLI screen open in terminal mode (raw pty output). */
+  "remote-reconnected": Record<string, never>;
+  "cli-terminal-size": { sessionId: string; cols: number; rows: number };
+  "cli-terminal-opened": { sessionId: string; pid: number };
   "cli-terminal-data": { sessionId: string; data: string; end: number };
   "cli-terminal-exit": { sessionId: string; exitCode: number | null };
   "cli-terminal-history": { sessionId: string; added: number; hasReply?: boolean };
@@ -354,7 +359,7 @@ export interface StreamEvents {
     kind: "messages" | "sessions" | "settings";
     sessionId?: string;
     active?: boolean;
-    settings?: Pick<AppSettings, "theme" | "language">;
+    settings?: Pick<AppSettings, "theme" | "language" | "conversationMode">;
   };
 }
 
@@ -388,6 +393,7 @@ export interface RemotePairing {
 
 /** Surface exposed by the preload (`window.beagleAPI`). */
 export interface BeagleAPI {
+  readonly remote?: boolean;
   getGlobalPermissions(): Promise<GlobalPolicy[]>;
   saveGlobalPermissions(id: string, changes: Record<string, string>): Promise<GlobalPolicy>;
   checkCliUpdates(): Promise<ToolsUpdate>;

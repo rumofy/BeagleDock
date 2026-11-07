@@ -83,6 +83,8 @@ function createCliTerminals({
       providerId: entry.providerId,
       cwd: entry.cwd,
       pid: entry.pid,
+      cols: entry.cols,
+      rows: entry.rows,
       resumed: entry.resumed,
       exited: entry.exited,
       exitCode: entry.exitCode,
@@ -143,6 +145,8 @@ function createCliTerminals({
       const entry = {
         proc,
         pid: proc.pid,
+        cols: cols > 0 ? Math.min(cols, 1000) : 100,
+        rows: rows > 0 ? Math.min(rows, 500) : 30,
         providerId,
         cwd: target,
         resumed: !!link?.nativeId,
@@ -168,6 +172,7 @@ function createCliTerminals({
       });
       terminals.set(sessionId, entry);
       hook("opened", { sessionId, providerId, cwd: target, nativeId: link?.nativeId, newNativeId });
+      emit("cli-terminal-opened", { sessionId, pid: entry.pid });
       return { ok: true, ...info(sessionId, entry), replay: "" };
     } catch (error) {
       return { ok: false, error: error.message, cwdLocked };
@@ -187,6 +192,9 @@ function createCliTerminals({
     if (!entry || entry.exited || !(cols > 0) || !(rows > 0)) return { ok: false };
     try {
       entry.proc.resize(Math.min(cols, 1000), Math.min(rows, 500));
+      entry.cols = Math.min(cols, 1000);
+      entry.rows = Math.min(rows, 500);
+      emit("cli-terminal-size", { sessionId, cols: entry.cols, rows: entry.rows });
     } catch {}
     return { ok: true };
   }

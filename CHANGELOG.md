@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-07
+
+### Added
+
+- Paired phones can follow and control the same native CLI conversations as the desktop, with live output, terminal keys and reconnection recovery for Claude Code, Codex CLI and Antigravity.
+
 ## [0.16.4] - 2026-11-07
 
 ### Fixed
@@ -403,7 +409,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...v0.17.0
 [0.16.4]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...v0.16.2

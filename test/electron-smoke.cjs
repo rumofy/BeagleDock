@@ -1310,6 +1310,8 @@ async function send(win, text, expected) {
     const js = (code) => win.webContents.executeJavaScript(code);
     const status = await js(`window.beagleAPI.setRemoteAccessEnabled(true)`);
     assert.equal(status.running, true, status.error || "phone access server running");
+    // Pin the ephemeral test port so stopping/restarting access keeps the phone's address.
+    await js(`window.beagleAPI.setRemoteAccessPort(${status.port})`);
     const pairing = await js(`window.beagleAPI.startRemotePairing()`);
     assert.match(pairing.qrDataUrl, /^data:image\/gif;base64,/);
     const phoneSession = electronSession.fromPartition("phone-smoke");
@@ -1381,6 +1383,51 @@ async function send(win, text, expected) {
       await waitFor(phone, `!document.querySelector('button[aria-label="Stop the run and clear the queue"]')`);
       await waitFor(win, `!document.querySelector('header').innerText.includes('RUNNING CLI')`);
 
+      // The same conversation switches to its native terminal on both screens.
+      await js(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="terminal"]')`);
+      await js(`document.querySelector('[data-testid="conversation-mode"] input[value="terminal"]').click()`);
+      await js(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Back to chat')).click()`);
+      phone.showInactive();
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${name}')`);
+      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${name}')`);
+      const desktopTerminal = await js(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}'))`);
+      const mobileTerminal = await pjs(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}'))`);
+      assert.equal(mobileTerminal.pid, desktopTerminal.pid, "both screens share one native process");
+      assert.equal(mobileTerminal.cols, desktopTerminal.cols, "opening the phone preserves desktop dimensions");
+      await pjs(`document.querySelector('[data-testid="cli-terminal"] textarea').focus()`);
+      await phone.webContents.insertText(`mobile-live-${index}`);
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('mobile-live-${index}')`);
+      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('mobile-live-${index}')`);
+      // Intermediate output is visible before Enter submits the turn.
+      await pjs(`document.querySelector('[aria-label="Send Enter to CLI"]').click()`);
+      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
+      // Wait for the fixture's animated reply before checking a stable replay line.
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}')?.status==='idle')`);
+      // Output emitted while disconnected must come back through replay, in the same process.
+      await pjs(`window.__terminalBeforeReconnect=document.querySelector('[data-testid="cli-terminal"] textarea')`);
+      await js(`window.beagleAPI.setRemoteAccessEnabled(false)`);
+      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'missed-output-${index}'})`);
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('missed-output-${index}')`);
+      await js(`window.beagleAPI.setRemoteAccessEnabled(true)`);
+      await pjs(`document.dispatchEvent(new Event('visibilitychange'))`);
+      await waitFor(phone, `!window.__terminalBeforeReconnect.isConnected && document.querySelector('[data-testid="cli-terminal"]').innerText.includes('missed-output-${index}')`);
+      assert.equal(await pjs(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}').pid)`), desktopTerminal.pid);
+      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'desktop-live-${index}'})`);
+      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('desktop-live-${index}')`);
+      await shot(`terminal-${name}`);
+      await js(`window.beagleAPI.cliTerminalClose('${created}')`);
+      const restarted = await js(`window.beagleAPI.cliTerminalOpen(${JSON.stringify(desktopTerminal)})`);
+      assert.equal(restarted.ok, true);
+      assert.notEqual(restarted.pid, desktopTerminal.pid);
+      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'after-restart-${index}'})`);
+      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('after-restart-${index}')`);
+      await js(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
+      await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="chat"]')`);
+      await js(`document.querySelector('[data-testid="conversation-mode"] input[value="chat"]').click()`);
+      await js(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Back to chat')).click()`);
+      await waitFor(phone, `!!document.querySelector('input[placeholder^="Message to"]')`);
       await pjs(`history.back()`);
       await waitFor(phone, `document.querySelectorAll('button[title="Open a new conversation"]').length === 3`);
     }
