@@ -37,6 +37,14 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
         }),
       )
       .catch(() => undefined);
+    const unsubscribeReconnect = window.beagleAPI?.remote ? beagleApi.on("remote-reconnected", () => {
+      void beagleApi.cliTerminalList().then((list) => setTerminals(Object.fromEntries(
+        list.map((item) => [item.sessionId, { exited: item.exited, exitCode: item.exitCode, status: item.status || "idle" }]),
+      ))).catch(() => undefined);
+    }) : () => {};
+    const unsubscribeOpened = beagleApi.on("cli-terminal-opened", ({ sessionId }) => {
+      setTerminals((prev) => ({ ...prev, [sessionId]: { exited: false, exitCode: null, status: "idle" } }));
+    });
     const unsubscribeState = beagleApi.on("cli-terminal-state", ({ sessionId, status }) => {
       setTerminals((prev) => ({
         ...prev,
@@ -48,7 +56,7 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
         prev[sessionId] ? { ...prev, [sessionId]: { exited: true, exitCode, status: "idle" } } : prev,
       ),
     );
-    return () => { unsubscribeState(); unsubscribeExit(); };
+    return () => { unsubscribeReconnect(); unsubscribeOpened(); unsubscribeState(); unsubscribeExit(); };
   }, []);
 
   const active = enabled && terminalAvailable();
@@ -78,7 +86,7 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
   // conversations.
   const openIds = Object.keys(terminals).join("|");
   useEffect(() => {
-    if (active || !openIds) return;
+    if (window.beagleAPI?.remote || active || !openIds) return;
     for (const id of openIds.split("|")) void closeTerminal(id);
   }, [active, openIds, closeTerminal]);
 

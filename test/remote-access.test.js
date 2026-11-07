@@ -229,7 +229,7 @@ test("the HTTPS server verifies against the local authority, pairs, authenticate
     415,
   );
 
-  // Live events: the chat stream arrives, the terminal output never does.
+  // Live chat and native CLI output arrive; unrestricted shell output stays local.
   const received = [];
   let closed = false;
   const stream = await new Promise((resolve, reject) => {
@@ -248,7 +248,8 @@ test("the HTTPS server verifies against the local authority, pairs, authenticate
   await new Promise((resolve) => setTimeout(resolve, 100));
   const text = received.join("");
   assert.match(text, /"partial"/, "intermediate text arrives before the turn ends");
-  assert.doesNotMatch(text, /rm -rf|cli-terminal-data/);
+  assert.match(text, /cli-terminal-data/);
+  assert.doesNotMatch(text, /rm -rf/);
 
   // A long reply (each chunk carries the full text so far) keeps the stream open while the phone reads.
   for (let i = 1; i <= 20; i++)
@@ -346,7 +347,7 @@ function remoteApi() {
 }
 const device = { id: "dev-1", name: "iPhone" };
 
-test("the phone calls the desktop's own handlers, from an allowlist that leaves out the terminal and settings", async () => {
+test("the phone calls the desktop's own handlers, from an allowlist that leaves out the shell and settings", async () => {
   const { api, invoked } = remoteApi();
   await api.call("getSavedState", [], device);
   await api.call("resolveCliApproval", ["ap1", "allow"], device);
@@ -354,7 +355,7 @@ test("the phone calls the desktop's own handlers, from an allowlist that leaves 
     ["get-saved-state", "dev-1"],
     ["resolve-cli-approval", "dev-1"],
   ]);
-  for (const method of ["ptySpawn", "cliTerminalOpen", "updateCli", "saveWorkspace", "pickDirectory", "openInEditor", "runAIMemoryCommand", "saveGlobalPermissions", "downloadDictationModel", "setRemoteAccessPort"])
+  for (const method of ["ptySpawn", "cliTerminalClipboard", "updateCli", "saveWorkspace", "pickDirectory", "openInEditor", "runAIMemoryCommand", "saveGlobalPermissions", "downloadDictationModel", "setRemoteAccessPort"])
     await assert.rejects(api.call(method, [], device), /Unknown method/, method);
   await assert.rejects(api.call("getSavedState", {}, device), /Invalid arguments/);
   // Settings: only the chat's remembered choices.
@@ -519,14 +520,17 @@ test("a phone that missed live events gets what the reply showed so far", async 
   assert.deepEqual(sync.liveTurns(), []);
 });
 
-test("the phones follow the theme and language chosen on the desktop", async () => {
+test("the phones follow theme, language and conversation mode chosen on the desktop", async () => {
   const sent = [];
   const sync = createClientSync({ emitOthers: (origin, channel, payload) => sent.push([origin, channel, payload]) });
-  const saved = { success: true, settings: { theme: "dark", language: "pt-BR", defaultProvider: "claude" } };
+  const saved = { success: true, settings: { theme: "dark", language: "pt-BR", conversationMode: "terminal", defaultProvider: "claude" } };
   await sync.run("desktop", "save-app-settings", [{ theme: "dark" }], async () => saved);
+  await sync.run("desktop", "save-app-settings", [{ conversationMode: "terminal" }], async () => saved);
   await sync.run("desktop", "save-app-settings", [{ autoCompactTokens: 1 }], async () => saved);
   await sync.run("desktop", "save-app-settings", [{ language: "es" }], async () => ({ success: false }));
-  assert.deepEqual(sent, [["desktop", "chat-sync", { kind: "settings", settings: { theme: "dark", language: "pt-BR" } }]]);
+  assert.deepEqual(sent, Array.from({ length: 2 }, () => ["desktop", "chat-sync", {
+    kind: "settings", settings: { theme: "dark", language: "pt-BR", conversationMode: "terminal" },
+  }]));
 });
 
 test("reloading after another screen's change keeps the replies still arriving here", () => {
@@ -552,4 +556,29 @@ test("pairing links and device names", () => {
   assert.equal(state.pairingCodeFromHash("#pair=abcd2345"), "ABCD2345");
   assert.equal(state.pairingCodeFromHash("#other=1"), "");
   assert.equal(state.suggestedDeviceName("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"), "iPhone");
+});
+
+test("mobile terminal calls keep the saved provider and folder for all three CLIs", async () => {
+  for (const providerId of ["claude", "codex", "antigravity"]) {
+    const calls = [];
+    const api = createRemoteApi({
+      getWorkspaces: async () => [],
+      getSessions: async () => [{ id: "cli", providerId, cwd: "/project" }],
+      invoke: async (channel, args) => { calls.push([channel, args]); return { ok: true }; },
+    });
+    const request = { sessionId: "cli", providerId, cwd: "/project", cols: 80, rows: 24 };
+    await api.call("cliTerminalOpen", [request], device);
+    await api.call("cliTerminalWrite", [{ sessionId: "cli", data: "hello\r" }], device);
+    await api.call("cliTerminalResize", [{ sessionId: "cli", cols: 90, rows: 30 }], device);
+    await api.call("cliTerminalList", [], device);
+    await api.call("cliTerminalClose", ["cli"], device);
+    assert.equal(calls.length, 5);
+    assert.deepEqual(calls[0], ["cli-terminal-open", [request]]);
+    for (const invalid of [{ cwd: "/other" }, { providerId: "other" }, { sessionId: "missing" }])
+      await assert.rejects(api.call("cliTerminalOpen", [{ ...request, ...invalid }], device));
+    for (const method of ["cliTerminalWrite", "cliTerminalResize"])
+      await assert.rejects(api.call(method, [{ sessionId: "missing" }], device));
+    await assert.rejects(api.call("cliTerminalClose", ["missing"], device));
+    assert.equal(calls.length, 5, "invalid requests never reach the terminal manager");
+  }
 });

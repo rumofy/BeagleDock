@@ -4,7 +4,7 @@ import { t } from "../i18n";
 /** Whether the backend (Electron preload or development bridge) is available. */
 export const backendAvailable = (): boolean => !!window.beagleAPI;
 
-/** Terminal mode only exists in the desktop app (the browser bridge doesn't expose the pty). */
+/** Native CLI terminals are available on the desktop and on paired phones. */
 export const terminalAvailable = (): boolean =>
   typeof window.beagleAPI?.cliTerminalOpen === "function";
 

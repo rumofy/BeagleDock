@@ -1,10 +1,15 @@
 // `window.beagleAPI` on the phone: the desktop app's own interface runs here and reaches the
 // computer's backend over the paired HTTPS connection. Methods the phone isn't allowed to call
-// (terminal, settings, folders, memory maintenance) don't exist, so the interface hides them.
+// (shell, settings, folders, memory maintenance) don't exist, so the interface hides them.
 import { call, subscribe, type RemoteEvent } from "./mobileClient";
 
 /** Same list as electron/remote-api.js (checked by the tests). */
 export const REMOTE_METHODS = [
+  "cliTerminalOpen",
+  "cliTerminalWrite",
+  "cliTerminalResize",
+  "cliTerminalClose",
+  "cliTerminalList",
   "detectTools",
   "getAppVersion",
   "getUserProfile",
@@ -97,6 +102,10 @@ export function createRemoteBridge(onState: (state: ConnectionState) => void) {
       if (state !== "connected") return;
       // Back after a drop (screen off, Wi-Fi change): catch up on what happened meanwhile.
       if (connectedOnce) {
+        dispatch("remote-reconnected", {});
+        void call<{ settings?: Record<string, unknown> }>("getSavedState").then((saved) => {
+          if (saved.settings) dispatch("chat-sync", { kind: "settings", settings: saved.settings });
+        }).catch(() => {});
         dispatch("chat-sync", { kind: "sessions" });
         void call<unknown>("getCliApprovals").then((list) => dispatch("cli-approvals", list)).catch(() => {});
         void call<unknown>("detectTools").then((update) => dispatch("tools-update", update)).catch(() => {});
@@ -107,6 +116,7 @@ export function createRemoteBridge(onState: (state: ConnectionState) => void) {
       connectedOnce = true;
     },
   );
+  const writes = new Map<string, Promise<unknown>>();
   const api: Record<string, unknown> = {};
   for (const method of REMOTE_METHODS)
     api[method] = (...args: unknown[]) => {
@@ -114,6 +124,18 @@ export function createRemoteBridge(onState: (state: ConnectionState) => void) {
       return call(method, args);
     };
   Object.assign(api, {
+    remote: true,
+    // Keep keystrokes ordered even when HTTPS requests take different amounts of time.
+    cliTerminalWrite: (request: { sessionId: string; data: string }) => {
+      const pending = (writes.get(request.sessionId) || Promise.resolve())
+        .then(() => call("cliTerminalWrite", [request]));
+      const settled = pending.catch(() => undefined);
+      writes.set(request.sessionId, settled);
+      void settled.then(() => {
+        if (writes.get(request.sessionId) === settled) writes.delete(request.sessionId);
+      });
+      return pending;
+    },
     // The request lasts the whole reply: leaving the app (iOS cuts it) or a Wi-Fi drop doesn't stop
     // the reply on the computer, so the phone waits for its outcome there instead of failing.
     executeCliPrompt: async (payload: { responseMessageId?: string }) => {

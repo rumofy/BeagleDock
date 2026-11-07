@@ -1068,6 +1068,7 @@
   "mobile.offline": "Sem conexão",
   "mobile.offlineHint": "Sem conexão com o computador. Confira se ele está na mesma rede e com o BeagleDock aberto; reconectando…",
   "mobile.running": "Respondendo…",
+  "mobile.terminalKey": "Enviar {key} para a CLI",
   "mobile.back": "Voltar",
   "mobile.chatControls": "Controles do chat",
   "remote.folderNotAllowed": "Esta pasta não é um projeto cadastrado no computador.",

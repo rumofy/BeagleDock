@@ -27,8 +27,14 @@ const MAX_BODY = 40 * 1024 * 1024;
 const STREAM_BACKLOG_LIMIT = 8 * 1024 * 1024;
 const STREAM_HEARTBEAT_MS = 15000;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-// Events the phone receives: the chat, approvals, quotas and notifications; never the terminal or the shell.
+// Events the phone receives: the chat, approvals, quotas, notifications and native CLI terminals; never the shell.
 const REMOTE_EVENTS = new Set([
+  "cli-terminal-opened",
+  "cli-terminal-data",
+  "cli-terminal-exit",
+  "cli-terminal-state",
+  "cli-terminal-history",
+  "cli-terminal-size",
   "tools-update",
   "cli-stream-chunk",
   "cli-activity-event",
