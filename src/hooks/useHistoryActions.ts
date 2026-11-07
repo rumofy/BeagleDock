@@ -9,10 +9,12 @@ import type {
 } from "../types";
 import type { AppTab } from "./useUi";
 import type { useSessions } from "./useSessions";
+import type { useCliTerminals } from "./useCliTerminals";
 
 import { t, tn } from "../i18n";
 interface Params {
   sessions: ReturnType<typeof useSessions>;
+  cliTerminals: ReturnType<typeof useCliTerminals>;
   setProviders: React.Dispatch<React.SetStateAction<AIProviderStatus[]>>;
   setAppError: (message: string) => void;
   setActiveTab: (tab: AppTab) => void;
@@ -21,9 +23,10 @@ interface Params {
   setShowHistoryModal: (show: boolean) => void;
 }
 
-/** Actions of the skills and history modals that fill the chat or import conversations. */
+/** Actions of the skills and history modals that fill the conversation or import history. */
 export function useHistoryActions({
   sessions,
+  cliTerminals,
   setProviders,
   setAppError,
   setActiveTab,
@@ -38,15 +41,24 @@ export function useHistoryActions({
     setMessages,
     reopenSession,
     forgetSession,
+    currentSession,
   } = sessions;
+  const fillPrompt = (text: string) => {
+    if (currentSession && cliTerminals.isTerminal(currentSession.id)) {
+      setActiveTab("chat");
+      void cliTerminals.pasteToTerminal(currentSession.id, text);
+    } else {
+      setInputMessage(text);
+    }
+  };
   const handleSelectSkill = (skill: SkillItem) => {
     setShowSkillsModal(false);
     if (skill.name === "revisao-interna") {
-      setInputMessage("manda pro revisor");
+      fillPrompt("manda pro revisor");
     } else if (skill.name === "revisao-seguranca") {
-      setInputMessage("revisar seguranca");
+      fillPrompt("revisar seguranca");
     } else {
-      setInputMessage(`use skill ${skill.name}`);
+      fillPrompt(`use skill ${skill.name}`);
     }
   };
 
@@ -56,7 +68,7 @@ export function useHistoryActions({
   ) => {
     if (e) e.stopPropagation();
     setShowHistoryModal(false);
-    setInputMessage(item.prompt);
+    fillPrompt(item.prompt);
   };
 
   // BeagleDock conversation: reopen its own session. Terminal-only conversation: import the CLI's
@@ -165,7 +177,7 @@ export function useHistoryActions({
       }
     }
 
-    setInputMessage(item.prompt);
+    fillPrompt(item.prompt);
   };
   // Delete permanently: messages, attachments and the CLI's native conversation. Returns whether it did.
   const handleDeleteConversation = async (item: HistorySessionItem) => {

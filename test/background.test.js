@@ -24,6 +24,21 @@ test("the tray state sums up running sessions and pending approvals", () => {
   assert.equal(waiting.tooltip, "BeagleDock · 2 sessions running · 1 waiting for permission");
 });
 
+test("the tray distinguishes native CLI interaction from chat permission requests", () => {
+  const { controller, state } = harness();
+  controller.start();
+  state.sessions = [{ id: "native-cli", title: "Native work", providerName: "Codex CLI", waiting: true }];
+  controller.refreshMenu();
+  assert.match(state.tooltip, /1 CLI waiting for interaction/);
+  assert.ok(state.menu.some((item) => item.label?.includes("⚠ Native work")));
+  assert.doesNotMatch(state.tooltip, /permission/);
+  assert.equal(describeState({ inputWaiting: 1 }).status, "waiting");
+  state.sessions = [];
+  controller.refreshMenu();
+  assert.equal(state.tooltip, "BeagleDock");
+  controller.dispose();
+});
+
 test("closing the window never quits the app; without a working tray it minimizes", () => {
   assert.equal(closeAction({ quitting: false, trayReady: true }), "hide");
   assert.equal(closeAction({ quitting: false, trayReady: false }), "minimize");

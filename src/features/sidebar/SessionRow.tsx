@@ -21,10 +21,12 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
     setSessionArchived,
     contextBySession,
     messages,
+    cliTerminals,
   } = useApp();
+  const terminal = cliTerminals.isTerminal(session.id) ? cliTerminals.terminals[session.id] : undefined;
   const background = backgroundWork(messages[session.id]);
   // Running also covers a turn the CLI started on its own (no prompt sent from the app).
-  const running = session.status === "running" || hasLiveReply(messages[session.id]);
+  const running = terminal ? terminal.status === "running" : session.status === "running" || hasLiveReply(messages[session.id]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(session.title);
   const input = useRef<HTMLInputElement>(null);
@@ -102,10 +104,10 @@ export function SessionRow({ session, now }: { session: ChatSession; now: number
               className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"
               title={t("session.backgroundHint", { work: backgroundLabel(background) })}
             />
-          ) : session.status === "waiting_input" ? (
+          ) : terminal?.status === "waiting_input" || (!terminal && session.status === "waiting_input") ? (
             <span
               className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"
-              title={t("session.waitingConfirmation")}
+              title={t(terminal ? "terminal.waitingInput" : "session.waitingConfirmation")}
             />
           ) : (
             <span

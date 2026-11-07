@@ -5,6 +5,7 @@ import { beagleApi, terminalAvailable } from "../api/beagleApi";
 export interface TerminalState {
   exited: boolean;
   exitCode: number | null;
+  status: "running" | "idle" | "waiting_input";
 }
 
 // Paste the way a terminal does: the CLI gets the whole block at once, without submitting midway.
@@ -27,16 +28,23 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
       .then((list) =>
         setTerminals((prev) => {
           const next = { ...prev };
-          for (const t of list) next[t.sessionId] = { exited: t.exited, exitCode: t.exitCode };
+          for (const t of list) next[t.sessionId] = { exited: t.exited, exitCode: t.exitCode, status: t.status || "idle" };
           return next;
         }),
       )
       .catch(() => undefined);
-    return beagleApi.on("cli-terminal-exit", ({ sessionId, exitCode }) =>
+    const unsubscribeState = beagleApi.on("cli-terminal-state", ({ sessionId, status }) => {
+      setTerminals((prev) => ({
+        ...prev,
+        [sessionId]: { ...(prev[sessionId] || { exited: false, exitCode: null }), status },
+      }));
+    });
+    const unsubscribeExit = beagleApi.on("cli-terminal-exit", ({ sessionId, exitCode }) =>
       setTerminals((prev) =>
-        prev[sessionId] ? { ...prev, [sessionId]: { exited: true, exitCode } } : prev,
+        prev[sessionId] ? { ...prev, [sessionId]: { exited: true, exitCode, status: "idle" } } : prev,
       ),
     );
+    return () => { unsubscribeState(); unsubscribeExit(); };
   }, []);
 
   const active = enabled && terminalAvailable();
@@ -70,7 +78,7 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
   }, [active, openIds, closeTerminal]);
 
   const markStarted = useCallback((sessionId: string) => {
-    setTerminals((prev) => ({ ...prev, [sessionId]: { exited: false, exitCode: null } }));
+    setTerminals((prev) => ({ ...prev, [sessionId]: { exited: false, exitCode: null, status: prev[sessionId]?.status || "idle" } }));
   }, []);
 
   const registerPaster = useCallback((sessionId: string, paste: ((text: string) => void) | null) => {

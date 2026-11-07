@@ -9,6 +9,9 @@ if (process.platform !== "linux")
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-desktop-smoke-"));
 const bin = path.join(root, ".local", "bin");
 fs.mkdirSync(bin, { recursive: true });
+const skillDir = path.join(root, ".agents", "skills", "smoke-skill");
+fs.mkdirSync(skillDir, { recursive: true });
+fs.writeFileSync(path.join(skillDir, "SKILL.md"), "---\nname: smoke-skill\ndescription: Desktop selection fixture\n---\n");
 const fixture = fs.readFileSync(
   path.join(__dirname, "cli-fixture.cjs"),
   "utf8",

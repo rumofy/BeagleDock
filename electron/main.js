@@ -59,7 +59,7 @@ const { createCliTerminals, readTerminalClipboard } = require("./cli-terminal");
 const { resolveModelSelection } = require("./model-options");
 const { createSessionService } = require("./session-service");
 const { createHistory } = require("./history");
-const { createTerminalHistory } = require("./terminal-history");
+const { createTerminalHistory, syncTerminalTurn } = require("./terminal-history");
 const { createTurnWatcher } = require("./terminal-turns");
 const { chatReplyNotice, terminalTurnNotice } = require("./reply-notices");
 const { Worker } = require("worker_threads");
@@ -660,21 +660,16 @@ const terminalHistory = createTerminalHistory({
 const terminalWatchers = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function terminalTurnEnded(sessionId, providerId) {
-  void (async () => {
-    // The CLI shows the end on screen a bit before saving the reply to the conversation file
-    // (Claude Code 2.1.317): wait a little and retry if the reply hasn't arrived yet.
-    await wait(800);
-    let result = await terminalHistory.sync(sessionId);
-    for (const delay of [1500, 3000]) {
-      if (result?.lastReply) break;
-      await wait(delay);
-      const again = await terminalHistory.sync(sessionId);
-      result = { ...again, added: (result?.added || 0) + (again?.added || 0) };
-    }
-    return result;
-  })().then((result) =>
-    background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, result?.lastReply) }),
-  );
+  const watcher = terminalWatchers.get(sessionId);
+  const revision = watcher?.getState().revision;
+  const isCurrent = () => terminalWatchers.get(sessionId) === watcher && watcher?.getState().revision === revision;
+  // Native history may be saved after the idle signal; retry without letting an old turn consume a new reply.
+  void syncTerminalTurn({ sessionId, history: terminalHistory, isCurrent, wait }).then((result) => {
+    // A new turn or a reopened terminal must not inherit the previous turn's waiting state.
+    if (!result || !isCurrent()) return;
+    if (!result?.lastReply) watcher?.waitingForInput();
+    background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, result?.lastReply) });
+  }).catch(() => {});
 }
 function notifyChatReply(payload, result) {
   const notice = chatReplyNotice(payload?.providerId, result);
@@ -683,6 +678,8 @@ function notifyChatReply(payload, result) {
 function stopWatchingTerminal(sessionId) {
   terminalWatchers.get(sessionId)?.dispose();
   terminalWatchers.delete(sessionId);
+  sendToRenderer("cli-terminal-state", { sessionId, status: "idle" });
+  background?.refreshMenu();
   if (terminalHistory.has(sessionId)) void terminalHistory.end(sessionId);
 }
 const cliTerminals = createCliTerminals({
@@ -691,7 +688,14 @@ const cliTerminals = createCliTerminals({
       terminalWatchers.get(sessionId)?.dispose();
       terminalWatchers.set(
         sessionId,
-        createTurnWatcher({ providerId, onTurnEnd: () => terminalTurnEnded(sessionId, providerId) }),
+        createTurnWatcher({
+          providerId,
+          onTurnEnd: () => terminalTurnEnded(sessionId, providerId),
+          onStateChange: ({ status }) => {
+            sendToRenderer("cli-terminal-state", { sessionId, status });
+            background?.refreshMenu();
+          },
+        }),
       );
       void terminalHistory.begin({ sessionId, providerId, cwd, nativeId, newNativeId });
     },
@@ -745,13 +749,15 @@ background = createBackgroundController({
   getWindow: () => mainWindow,
   iconPath: path.join(__dirname, "../dist/brand/beagledock-logo.png"),
   // Turns running or queued in any session.
-  runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()),
+  runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()) +
+    [...terminalWatchers.values()].filter((w) => w.getState().status === "running").length,
   approvalsList: () => approvals.list(),
   runningSessions: () =>
-    sessionService.activeIds().map((id) => ({
+    [...new Set([...sessionService.activeIds(), ...[...terminalWatchers].filter(([, w]) => w.getState().status !== "idle").map(([id]) => id)])].map((id) => ({
       id,
       title: sessionInfo.get(id)?.title,
       providerName: providerNames[sessionInfo.get(id)?.providerId],
+      waiting: terminalWatchers.get(id)?.getState().status === "waiting_input",
     })),
   // The interface takes the chat to the conversation (click on the tray menu or the notification).
   openSession: (sessionId) => sendToRenderer("open-session", { sessionId }),
@@ -1559,7 +1565,9 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("cli-terminal-write", (_event, request) => cliTerminals.write(request));
   handle("cli-terminal-resize", (_event, request) => cliTerminals.resize(request));
   handle("cli-terminal-close", (_event, sessionId) => cliTerminals.close(sessionId));
-  handle("cli-terminal-list", () => cliTerminals.list());
+  handle("cli-terminal-list", () => cliTerminals.list().map((item) => ({
+    ...item, status: terminalWatchers.get(item.sessionId)?.getState().status || "idle",
+  })));
   handle("cli-terminal-clipboard", () => readTerminalClipboard(require("electron").clipboard));
 
   // Conversations only (no messages): what another screen reloads after a change.

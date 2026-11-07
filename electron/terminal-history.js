@@ -86,13 +86,16 @@ function createTerminalHistory({
     return found;
   }
 
-  async function run(sessionId) {
-    const entry = entries.get(sessionId);
-    if (!entry) return { added: 0 };
+  async function run(sessionId, entry, isCurrent) {
+    const active = () => entries.get(sessionId) === entry && isCurrent();
+    if (!active()) return { added: 0 };
     if (store.sessionExists && !(await store.sessionExists(sessionId))) return { added: 0 };
+    if (!active()) return { added: 0 };
     const nativeId = await findNativeId(sessionId, entry).catch(() => null);
-    if (!nativeId) return { added: 0 };
+    if (!nativeId || !active()) return { added: 0 };
     const messages = (await read(entry.providerId, nativeId, entry.cwd)) || [];
+    // A turn may have changed while the file was being read. Leave its messages for the current sync.
+    if (!active()) return { added: 0 };
     const fresh = messages.filter((m) => !entry.baseline.has(m.id) && !entry.saved.has(m.id));
     let lastReply = "";
     for (const m of fresh) {
@@ -113,15 +116,15 @@ function createTerminalHistory({
       entry.saved.add(m.id);
       if (!user && m.text) lastReply = String(m.text);
     }
-    if (fresh.length) emit("cli-terminal-history", { sessionId, added: fresh.length });
+    if (fresh.length) emit("cli-terminal-history", { sessionId, added: fresh.length, hasReply: !!lastReply });
     return { added: fresh.length, lastReply, nativeId };
   }
 
   /** Saves the new messages of the native conversation; one sync at a time per conversation. */
-  function sync(sessionId) {
+  function sync(sessionId, isCurrent = () => true) {
     const entry = entries.get(sessionId);
     if (!entry) return Promise.resolve({ added: 0 });
-    const next = entry.chain.then(() => run(sessionId));
+    const next = entry.chain.then(() => run(sessionId, entry, isCurrent));
     entry.chain = next.catch(() => {});
     return next.catch(() => ({ added: 0 }));
   }
@@ -138,4 +141,18 @@ function createTerminalHistory({
   return { begin, sync, end, has: (sessionId) => entries.has(sessionId) };
 }
 
-module.exports = { createTerminalHistory };
+/** Retry only for the turn that requested the sync, including reads queued behind another sync. */
+async function syncTerminalTurn({ sessionId, history, isCurrent, wait }) {
+  let result = { added: 0 };
+  for (const delay of [800, 1500, 3000]) {
+    await wait(delay);
+    if (!isCurrent()) return null;
+    const next = await history.sync(sessionId, isCurrent);
+    if (!isCurrent()) return null;
+    result = { ...next, added: result.added + (next?.added || 0) };
+    if (result.lastReply) break;
+  }
+  return result;
+}
+
+module.exports = { createTerminalHistory, syncTerminalTurn };

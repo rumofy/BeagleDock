@@ -123,3 +123,32 @@ test("AGY: silence after a reply ends it; short activity (echo, slash command) d
   assert.equal(ends.length, 1);
   w.dispose();
 });
+
+for (const providerId of ["claude", "codex", "antigravity"]) {
+  test(`${providerId}: publishes live activity, idle and generic interaction states`, () => {
+    const c = clock();
+    const states = [];
+    const w = createTurnWatcher({ providerId, onStateChange: ({ status }) => states.push(status), ...c });
+    assert.equal(w.getState().status, "idle");
+    if (providerId === "codex") w.output("\x1b]7501;state=idle:app=codex\x07");
+    w.input("request\r");
+    const working = providerId === "claude" ? title("◐ Working") : providerId === "codex" ? "\x1b]7501;state=working:app=codex\x07" : "working";
+    w.output(working);
+    assert.equal(w.getState().status, "running", "visible before the reply finishes");
+    c.advance(3000);
+    w.output(working);
+    c.advance(3000);
+    if (providerId === "claude") w.output(title("✳ Ready"));
+    if (providerId === "codex") w.output("\x1b]7501;state=idle:app=codex\x07");
+    assert.equal(w.getState().status, "idle");
+    w.waitingForInput();
+    const revision = w.getState().revision;
+    assert.equal(w.getState().status, "waiting_input");
+    w.input("continue\r");
+    w.output(working);
+    assert.equal(w.getState().status, "running");
+    assert.ok(w.getState().revision > revision, "new work invalidates delayed waiting detection");
+    assert.deepEqual(states, ["running", "idle", "waiting_input", "running"]);
+    w.dispose();
+  });
+}

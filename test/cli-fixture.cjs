@@ -20,6 +20,7 @@ if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsW
   fs.writeFileSync(path.join(root, "tui-" + name + ".json"), JSON.stringify({ args, cwd: process.cwd() }));
   // Like the real CLIs, turns on bracketed paste (the terminal marks the start and end of the block).
   process.stdout.write(`\x1b[?2004hFIXTURE TUI ${name} ${args.join(" ")}\r\n> `);
+  if (name === "codex") process.stdout.write("\x1b]7501;state=idle:app=codex\x07");
   process.stdin.setRawMode(true);
   let pending = "";
   process.stdin.on("data", (chunk) => {
@@ -33,7 +34,15 @@ if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsW
     // AGY: like the real CLI, animates the screen while it works, saves the conversation in brain/<id> and goes
     // silent when done (that's how BeagleDock notices the end and reads the history).
     const conversation = args[0] === "--conversation" ? args[1] : null;
-    if (name !== "agy" || !prompt || !conversation) return;
+    if (name !== "agy") {
+      const state = (busy) => name === "codex"
+        ? `\x1b]7501;state=${busy ? "working" : "idle"}:app=codex\x07`
+        : `\x1b]0;${busy ? "◐" : "✳"} Claude Code\x07`;
+      process.stdout.write(state(true));
+      setTimeout(() => process.stdout.write(state(false)), 1200);
+      return;
+    }
+    if (!prompt || !conversation) return;
     const started = Date.now();
     const timer = setInterval(() => {
       process.stdout.write("\r⠋ trabalhando " + (Date.now() - started));

@@ -108,6 +108,7 @@ export function ChatHeader() {
   // Terminal mode: the CLI handles model, plan, permissions and approvals; the header only keeps
   // what belongs to BeagleDock (project, VS Code, handoff, dictation and quota).
   const terminalMode = cliTerminals.isTerminal(currentSession?.id);
+  const terminalState = currentSession ? cliTerminals.terminals[currentSession.id] : undefined;
   const waitingApproval = cliApprovals.some(
     (a) => a.sessionId === currentSession?.id,
   );
@@ -248,9 +249,9 @@ export function ChatHeader() {
               </span>
             )}
             {terminalMode ? (
-              <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-zinc-100 bg-[#27272a] px-2 py-0.5 rounded-full">
-                <Terminal size={10} />
-                TERMINAL
+              <span data-testid="terminal-status" className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-zinc-100 bg-[#27272a] px-2 py-0.5 rounded-full">
+                <span className={`w-1.5 h-1.5 rounded-full ${terminalState?.status === "running" ? "bg-emerald-500 animate-pulse" : terminalState?.status === "waiting_input" ? "bg-amber-500" : "bg-zinc-400"}`} />
+                {t(terminalState?.status === "running" ? "session.running" : terminalState?.status === "waiting_input" ? "terminal.waitingInput" : "session.idle")}
               </span>
             ) : isExecutingPrompt ? (
               <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">

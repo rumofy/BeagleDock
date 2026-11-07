@@ -392,12 +392,14 @@ export function useSessions({
     });
     // Terminal mode: what was said in the CLI's interface reached the history; reload the
     // conversation and title it from the first message, as in the chat.
-    const unsubscribeTerminalHistory = beagleApi.on("cli-terminal-history", ({ sessionId }) => {
+    const unsubscribeTerminalHistory = beagleApi.on("cli-terminal-history", ({ sessionId, hasReply }) => {
       void beagleApi
         .getChatMessages(sessionId)
         .then((saved) => {
           const list: ChatMessage[] = saved || [];
           setMessages((prev) => ({ ...prev, [sessionId]: list }));
+          if (activeRef.current !== sessionId && hasReply)
+            setUnreadSessionIds((prev) => prev.includes(sessionId) ? prev : [...prev, sessionId]);
           touchSession(sessionId);
           setProviders((prev) =>
             prev.map((p) => ({

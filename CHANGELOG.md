@@ -4,6 +4,17 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.16.3] - 2026-11-07
+
+### Changed
+
+- Conversations now default to the recommended native CLI interface on desktop; the BeagleDock chat remains available as an experimental option, and saved interface choices are preserved.
+
+### Fixed
+
+- Native CLI conversations now show activity and waiting indicators in the sidebar, header and tray, and mark new replies in other conversations.
+- Selecting a skill or reusing a prompt from history now pastes it into the active CLI terminal for review before sending.
+
 ## [0.16.2] - 2026-11-06
 
 ### Added
@@ -386,7 +397,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...HEAD
+[0.16.3]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...v0.16.2
 [0.16.0]: https://github.com/rumofy/BeagleDock/compare/v0.15.1...v0.16.0
 [0.15.1]: https://github.com/rumofy/BeagleDock/compare/v0.15.0...v0.15.1

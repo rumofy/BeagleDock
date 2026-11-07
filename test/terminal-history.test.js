@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createTerminalHistory } = require("../electron/terminal-history");
+const { createTerminalHistory, syncTerminalTurn } = require("../electron/terminal-history");
 
 const msg = (id, sender, text, timestamp = "2026-11-03T20:00:00.000Z") => ({ id, sender, text, timestamp });
 
@@ -39,7 +39,7 @@ test("saves only what was said after the terminal opened, without repeating", as
     ["term-d", "claude", "Claude Code", "**feito** no terminal"],
   ]);
   assert.equal(t.saved[0].createdAt, "2026-11-03 20:00:00.000", "the order follows the native conversation's time");
-  assert.deepEqual(t.emitted, [["cli-terminal-history", { sessionId: "s1", added: 2 }]]);
+  assert.deepEqual(t.emitted, [["cli-terminal-history", { sessionId: "s1", added: 2, hasReply: true }]]);
   assert.equal((await t.h.sync("s1")).added, 0, "the second sync doesn't repeat");
   await t.h.end("s1");
   assert.equal(t.h.has("s1"), false);
@@ -91,4 +91,77 @@ test("a sync requested during the opening waits for the initial snapshot", async
   await opening;
   assert.equal((await syncing).added, 0, "what came from the chat isn't imported again");
   assert.deepEqual(saved, []);
+});
+
+for (const providerId of ["claude", "codex", "antigravity"]) {
+  test(`${providerId}: an old retry cannot consume the next turn's completed reply`, async () => {
+    let messages = [];
+    const t = setup({ conversations: { [`${providerId}:native-1`]: () => messages } });
+    await t.h.begin({ sessionId: "s1", providerId, cwd: "/proj", nativeId: "native-1" });
+    let revision = 1;
+    const waits = [];
+    const wait = (ms) => new Promise((resolve) => waits.push({ ms, resolve }));
+    const old = syncTerminalTurn({ sessionId: "s1", history: t.h, isCurrent: () => revision === 1, wait });
+    waits.shift().resolve();
+    await new Promise(setImmediate);
+    assert.equal(waits[0].ms, 1500, "the previous turn has a retry pending");
+    revision = 2;
+    const current = syncTerminalTurn({ sessionId: "s1", history: t.h, isCurrent: () => revision === 2, wait });
+    messages = [msg("u2", "user", "next request"), msg("r2", providerId, "next reply")];
+    waits.shift().resolve();
+    assert.equal(await old, null, "the stale retry exits before importing the new reply");
+    assert.equal(t.saved.length, 0);
+    waits.shift().resolve();
+    assert.equal((await current).lastReply, "next reply");
+    assert.deepEqual(t.saved.map((m) => m.id), ["term-u2", "term-r2"]);
+  });
+}
+
+test("a turn invalidated during an in-flight history read leaves the new reply for the current sync", async () => {
+  let releaseRead, startRead;
+  const enteredRead = new Promise((resolve) => { startRead = resolve; });
+  const pendingRead = new Promise((resolve) => { releaseRead = resolve; });
+  let deferred = false;
+  let messages = [];
+  const saved = [];
+  const history = createTerminalHistory({
+    readConversation: async () => {
+      if (deferred) { startRead(); await pendingRead; }
+      return { messages };
+    },
+    store: { saveChatMessage: async (message) => saved.push(message) },
+  });
+  await history.begin({ sessionId: "s1", providerId: "codex", cwd: "/proj", nativeId: "native-1" });
+  deferred = true;
+  let revision = 1;
+  const old = syncTerminalTurn({ sessionId: "s1", history, isCurrent: () => revision === 1, wait: async () => {} });
+  await enteredRead;
+  revision = 2;
+  messages = [msg("u2", "user", "next request"), msg("r2", "codex", "next reply")];
+  const current = syncTerminalTurn({ sessionId: "s1", history, isCurrent: () => revision === 2, wait: async () => {} });
+  releaseRead();
+  assert.equal(await old, null);
+  assert.equal((await current).lastReply, "next reply");
+  assert.deepEqual(saved.map((m) => m.id), ["term-u2", "term-r2"]);
+});
+
+test("an invalidated history sync queued during opening imports no new messages", async () => {
+  let releaseRead;
+  const gate = new Promise((resolve) => { releaseRead = resolve; });
+  let messages = [];
+  const saved = [];
+  const history = createTerminalHistory({
+    readConversation: async () => { await gate; return { messages }; },
+    store: { saveChatMessage: async (message) => saved.push(message) },
+  });
+  const opening = history.begin({ sessionId: "s1", providerId: "claude", cwd: "/proj", nativeId: "native-1" });
+  let current = true;
+  const queued = history.sync("s1", () => current);
+  current = false;
+  releaseRead();
+  await opening;
+  messages = [msg("u2", "user", "next request"), msg("r2", "claude", "next reply")];
+  assert.equal((await queued).added, 0);
+  assert.equal(saved.length, 0);
+  assert.equal((await history.sync("s1")).lastReply, "next reply");
 });

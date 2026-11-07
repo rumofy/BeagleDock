@@ -247,11 +247,11 @@
   "continue.menuNote": "Creates a new conversation with a summary of the local history; this one stays as it is.",
   "continue.noReading": "no reading",
   "continue.used": "{percent}% used",
-  "conversationMode.chat": "BeagleDock chat",
-  "conversationMode.chatHint": "History, approvals with buttons, attachments, plan, queue and steps shown in the chat. Some CLI features may not exist here.",
+  "conversationMode.chat": "BeagleDock chat (experimental)",
+  "conversationMode.chatHint": "Experimental interface with history, approval buttons, attachments, plans and a message queue. Compatibility with CLI features may be incomplete.",
   "conversationMode.intro": "Applies to Claude Code, Codex CLI and Antigravity. You can switch whenever you like: the conversation continues where it stopped.",
-  "conversationMode.terminal": "CLI terminal",
-  "conversationMode.terminalHint": "Each conversation opens in the CLI's own interface, continuing the same conversation: you type, attach and approve there, with all the shortcuts. Only BeagleDock's Handoff and Dictation remain. Messages exchanged in the terminal go into the conversation history at the end of each reply, and BeagleDock flags it in the tray menu when the CLI finishes or waits for you.",
+  "conversationMode.terminal": "CLI terminal (recommended)",
+  "conversationMode.terminalHint": "Default desktop interface. Each conversation opens in the CLI's own interface: type, attach, choose models and approve actions there. BeagleDock keeps Handoff, Dictation, the skill picker and prompt reuse from history. Messages enter the conversation history at the end of each reply, with tray notices when the CLI finishes or waits for you.",
   "conversationMode.title": "Conversation interface",
   "conversationMode.waitRunning": "Wait for the replies in progress to finish before switching to the terminal.",
   "dialogs.chooseProjectFolder": "Choose the project folder",
@@ -1074,5 +1074,8 @@
   "remote.settingsOnDesktop": "Change settings on the computer.",
   "composer.dictationModelOnComputer": "Download the voice model on the computer: Settings → Voice dictation",
   "context.cacheInUse": "cache in use",
-  "session.replying": "Replying…"
+  "session.replying": "Replying…",
+  "terminal.waitingInput": "Waiting for interaction",
+  "tray.inputWaiting_one": "1 CLI waiting for interaction",
+  "tray.inputWaiting_other": "{count} CLIs waiting for interaction"
 }

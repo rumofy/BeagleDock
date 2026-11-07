@@ -6,15 +6,15 @@ import { t } from "../../i18n";
 type Mode = NonNullable<AppSettings["conversationMode"]>;
 
 const options = (): Array<{ id: Mode; label: string; description: string }> => [
-  { id: "chat", label: t("conversationMode.chat"), description: t("conversationMode.chatHint") },
   { id: "terminal", label: t("conversationMode.terminal"), description: t("conversationMode.terminalHint") },
+  { id: "chat", label: t("conversationMode.chat"), description: t("conversationMode.chatHint") },
 ];
 
 /** How conversations open: in the BeagleDock chat or in each CLI's own interface. */
 export function ConversationModeCard() {
   const { settings, setSettings, setAppError, hasRunningPrompts } = useApp();
   if (!terminalAvailable()) return null;
-  const mode: Mode = settings.conversationMode === "terminal" ? "terminal" : "chat";
+  const mode: Mode = settings.conversationMode === "chat" ? "chat" : "terminal";
 
   const save = async (conversationMode: Mode) => {
     const previous = settings;

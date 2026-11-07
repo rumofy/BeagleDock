@@ -296,7 +296,7 @@ export interface AppSettings {
   aiMemoryTempCleanupDays?: number;
   /** New chats start with the model, level and permission last chosen in the same CLI. */
   rememberSessionChoices?: boolean;
-  /** How conversations open: in the BeagleDock chat (default) or in the CLI's own interface. */
+  /** How conversations open: the CLI's own interface (desktop default) or the experimental chat. */
   conversationMode?: "chat" | "terminal";
   /** Last choice of model, level and permission for each CLI. */
   lastSessionChoices?: Partial<Record<AIProviderId, { model: string; effort: string; permission: PermissionLevel }>>;

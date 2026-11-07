@@ -20,7 +20,7 @@ export function SidebarNav() {
     cliTerminals,
   } = useApp();
   // Running shells: commands running now in any conversation (the same as the shell tabs).
-  const runningShells = Object.values(messages).reduce(
+  const runningShells = Object.values(cliTerminals.terminals).filter((terminal) => terminal.status === "running").length + Object.values(messages).reduce(
     (total, list) =>
       total +
       list.reduce(

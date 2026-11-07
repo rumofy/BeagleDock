@@ -81,6 +81,16 @@ async function send(win, text, expected) {
     `(()=>{const logo=document.querySelector('img[alt="BeagleDock — beagle mascot"]');return logo?.complete && logo.naturalWidth>0;})()`,
   );
 
+  if (stage === "first") {
+    // Fresh desktop settings recommend the CLI; explicitly select chat for the chat scenarios below.
+    await win.webContents.executeJavaScript(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
+    await waitFor(win, `document.querySelector('[data-testid="conversation-mode"] input[value="terminal"]')?.checked`);
+    assert.match(await win.webContents.executeJavaScript(`document.querySelector('[data-testid="conversation-mode"]').innerText`), /experimental/);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-testid="conversation-mode"] input[value="chat"]').click()`);
+    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings.conversationMode==='chat')`);
+    await win.webContents.executeJavaScript(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Back to chat')).click()`);
+  }
+
   // The quota details start collapsed: nothing from them shows until opened.
   await waitFor(win, `!document.querySelector('[data-testid="quota-details"]')`);
   await win.webContents.executeJavaScript(
@@ -168,7 +178,7 @@ async function send(win, text, expected) {
       await js(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
       await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="${mode}"]')`);
       await js(`document.querySelector('[data-testid="conversation-mode"] input[value="${mode}"]').click()`);
-      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>(s.settings.conversationMode||'chat')==='${mode}')`);
+      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>(s.settings.conversationMode||'terminal')==='${mode}')`);
       await js(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Back to chat')).click()`);
     };
     await setMode("terminal");
@@ -192,9 +202,11 @@ async function send(win, text, expected) {
       if (typed.includes("ai-memory-handoff") && typed.endsWith("\r")) break;
       await pause();
     }
-    assert.ok(typed.startsWith("k"), JSON.stringify(typed.slice(0, 20)));
-    assert.match(typed, /\x1b\[200~Use the ai-memory handoff skill/);
+    assert.match(typed, /k\x1b\[200~Use the ai-memory handoff skill/);
     assert.ok(typed.endsWith("\x1b[201~\r"), JSON.stringify(typed.slice(-40)));
+    await waitFor(win, `document.querySelector('[data-testid="terminal-status"]')?.innerText==='Process running'`);
+    await waitFor(win, `!!document.querySelector('[aria-current="true"] [title="Process running"]')`);
+    assert.equal(await js(`window.beagleAPI.cliTerminalList().then(l=>l[0].status)`), "running");
     await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
     // The end of the reply in the terminal (the screen stopped animating) saves the conversation in the history.
     const terminalSession = await js(`window.beagleAPI.cliTerminalList().then(l=>l[0].sessionId)`);
@@ -203,6 +215,24 @@ async function send(win, text, expected) {
       `window.beagleAPI.getChatMessages(${JSON.stringify(terminalSession)}).then(list=>list.some(m=>m.sender==='antigravity'&&m.text==='FIXTURE TUI RESPOSTA')&&list.some(m=>m.sender==='user'&&m.text.includes('Use the ai-memory handoff skill')))`,
       20000,
     );
+    await waitFor(win, `document.querySelector('[data-testid="terminal-status"]')?.innerText==='History / Idle'`);
+    // Both app pickers paste into the actual terminal without pressing Enter.
+    let inputBefore = fs.readFileSync(file("tui-input-agy.txt"), "utf8");
+    await js(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Skills & Reviewer')).click()`);
+    await waitFor(win, `[...document.querySelectorAll('span')].some(s=>s.textContent==='smoke-skill')`);
+    await js(`[...document.querySelectorAll('span')].find(s=>s.textContent==='smoke-skill').closest('div.group').click()`);
+    await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('use skill smoke-skill')`);
+    assert.equal(fs.readFileSync(file("tui-input-agy.txt"), "utf8").slice(inputBefore.length), "\x1b[200~use skill smoke-skill\x1b[201~");
+    inputBefore = fs.readFileSync(file("tui-input-agy.txt"), "utf8");
+    await js(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Conversation history')).click()`);
+    await waitFor(win, `!!document.querySelector('[data-history-id="beagledock:${terminalSession}"] button[title="Copy only this prompt to the input"]')`);
+    await js(`document.querySelector('[data-history-id="beagledock:${terminalSession}"] button[title="Copy only this prompt to the input"]').click()`);
+    await waitFor(win, `!document.querySelector('[data-history-id]')`);
+    // Wait for the pty fixture to record the paste, independently of React closing the modal.
+    for (let attempt = 0; attempt < 100 && fs.readFileSync(file("tui-input-agy.txt"), "utf8").length === inputBefore.length; attempt++) await pause();
+    const reused = fs.readFileSync(file("tui-input-agy.txt"), "utf8").slice(inputBefore.length);
+    assert.match(reused, /^\x1b\[200~.+\x1b\[201~$/s);
+    assert.equal(reused.includes("\r"), false);
     const shot = async (name) => {
       if (!process.env.BEAGLEDOCK_SHOT_DIR) return;
       await new Promise((resolve) => setTimeout(resolve, 500));
@@ -225,6 +255,19 @@ async function send(win, text, expected) {
     );
     assert.equal(refused.ok, false);
     assert.match(refused.error, /open in the terminal/);
+    for (const provider of ["claude", "codex"]) {
+      const id = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.find(x=>x.providerId==='${provider}').id)`);
+      await js(`document.querySelector('[data-session-id="${id}"]').click()`);
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${provider}')`);
+      await js(`window.beagleAPI.cliTerminalWrite({sessionId:${JSON.stringify(id)},data:'status probe\\r'})`);
+      await waitFor(win, `document.querySelector('[data-testid="terminal-status"]')?.innerText==='Process running'`);
+      await waitFor(win, `!!document.querySelector('[data-session-id="${id}"] [title="Process running"]')`);
+      // The fixture stops without saving a reply, like a CLI waiting for a native interaction.
+      await waitFor(win, `document.querySelector('[data-testid="terminal-status"]')?.innerText==='Waiting for interaction'`);
+      await waitFor(win, `!!document.querySelector('[data-session-id="${id}"] [title="Waiting for interaction"]')`);
+      assert.equal(await js(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId===${JSON.stringify(id)}).status)`), "waiting_input");
+    }
+    await js(`document.querySelector('[data-session-id="${terminalSession}"]').click()`);
     // Back to the chat: the terminal's CLI is closed and the chat continues the conversation.
     await setMode("chat");
     await waitFor(win, `!!document.querySelector('input[placeholder^="Message to"]')`);

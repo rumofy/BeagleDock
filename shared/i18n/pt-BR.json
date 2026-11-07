@@ -247,11 +247,11 @@
   "continue.menuNote": "Cria uma conversa nova com o resumo do histórico local; esta continua como está.",
   "continue.noReading": "sem leitura",
   "continue.used": "{percent}% usado",
-  "conversationMode.chat": "Chat do BeagleDock",
-  "conversationMode.chatHint": "Histórico, aprovações com botões, anexos, plano, fila e etapas mostradas no chat. Algumas funções da CLI podem não existir aqui.",
+  "conversationMode.chat": "Chat do BeagleDock (experimental)",
+  "conversationMode.chatHint": "Interface experimental com histórico, botões de aprovação, anexos, planos e fila de mensagens. A compatibilidade com funções das CLIs pode ser incompleta.",
   "conversationMode.intro": "Vale para o Claude Code, o Codex CLI e o Antigravity. Dá para trocar quando quiser: a conversa continua de onde parou.",
-  "conversationMode.terminal": "Terminal da CLI",
-  "conversationMode.terminalHint": "Cada conversa abre na interface da própria CLI, continuando a mesma conversa: você digita, anexa e aprova nela, com todos os atalhos. Ficam só o Handoff e o Ditado do BeagleDock. As mensagens trocadas no terminal entram no histórico da conversa ao fim de cada resposta, e o BeagleDock avisa no menu da bandeja quando a CLI termina ou espera você.",
+  "conversationMode.terminal": "Terminal da CLI (recomendado)",
+  "conversationMode.terminalHint": "Interface padrão no desktop. Cada conversa abre na própria CLI: digite, anexe, escolha modelos e aprove ações por ela. O BeagleDock mantém Handoff, Ditado, o seletor de skills e a reutilização de prompts do histórico. As mensagens entram no histórico ao fim de cada resposta, com avisos na bandeja quando a CLI termina ou espera você.",
   "conversationMode.title": "Interface das conversas",
   "conversationMode.waitRunning": "Espere as respostas em andamento terminarem para trocar para o terminal.",
   "dialogs.chooseProjectFolder": "Escolher a pasta do projeto",
@@ -1074,5 +1074,8 @@
   "remote.settingsOnDesktop": "Altere as configurações no computador.",
   "composer.dictationModelOnComputer": "Baixe o modelo de voz no computador: Configurações → Ditado por voz",
   "context.cacheInUse": "cache em uso",
-  "session.replying": "Respondendo…"
+  "session.replying": "Respondendo…",
+  "terminal.waitingInput": "Aguardando interação",
+  "tray.inputWaiting_one": "1 CLI aguardando interação",
+  "tray.inputWaiting_other": "{count} CLIs aguardando interação"
 }
