@@ -247,11 +247,11 @@
   "continue.menuNote": "Crea una conversación nueva con el resumen del historial local; esta queda como está.",
   "continue.noReading": "sin lectura",
   "continue.used": "{percent}% usado",
-  "conversationMode.chat": "Chat de BeagleDock",
-  "conversationMode.chatHint": "Historial, aprobaciones con botones, adjuntos, plan, cola y pasos mostrados en el chat. Algunas funciones de la CLI pueden no existir aquí.",
+  "conversationMode.chat": "Chat de BeagleDock (experimental)",
+  "conversationMode.chatHint": "Interfaz experimental con historial, botones de aprobación, adjuntos, planes y cola de mensajes. La compatibilidad con las funciones de la CLI puede ser incompleta.",
   "conversationMode.intro": "Sirve para Claude Code, Codex CLI y Antigravity. Puedes cambiar cuando quieras: la conversación continúa donde se quedó.",
-  "conversationMode.terminal": "Terminal de la CLI",
-  "conversationMode.terminalHint": "Cada conversación se abre en la interfaz de la propia CLI, continuando la misma conversación: escribes, adjuntas y apruebas allí, con todos los atajos. Solo quedan el Handoff y el Dictado de BeagleDock. Los mensajes intercambiados en el terminal entran en el historial de la conversación al final de cada respuesta, y BeagleDock avisa en el menú de la bandeja cuando la CLI termina o te espera.",
+  "conversationMode.terminal": "Terminal de la CLI (recomendado)",
+  "conversationMode.terminalHint": "Interfaz predeterminada en el escritorio. Cada conversación se abre en la propia CLI: escribe, adjunta, elige modelos y aprueba acciones allí. BeagleDock conserva Handoff, Dictado, el selector de skills y la reutilización de prompts del historial. Los mensajes entran en el historial al final de cada respuesta, con avisos en la bandeja cuando la CLI termina o te espera.",
   "conversationMode.title": "Interfaz de las conversaciones",
   "conversationMode.waitRunning": "Espera a que terminen las respuestas en curso para cambiar al terminal.",
   "dialogs.chooseProjectFolder": "Elegir la carpeta del proyecto",
@@ -1074,5 +1074,8 @@
   "remote.settingsOnDesktop": "Cambia los ajustes en el ordenador.",
   "composer.dictationModelOnComputer": "Descarga el modelo de voz en el ordenador: Configuración → Dictado por voz",
   "context.cacheInUse": "caché en uso",
-  "session.replying": "Respondiendo…"
+  "session.replying": "Respondiendo…",
+  "terminal.waitingInput": "Esperando interacción",
+  "tray.inputWaiting_one": "1 CLI esperando interacción",
+  "tray.inputWaiting_other": "{count} CLIs esperando interacción"
 }

@@ -267,6 +267,7 @@ export interface MaintenancePromptOptions {
 export type PtyPayload = Record<string, unknown>;
 
 export interface CliTerminalInfo {
+  status?: "running" | "idle" | "waiting_input";
   sessionId: string;
   providerId: AIProviderId;
   cwd: string;
@@ -297,7 +298,8 @@ export interface StreamEvents {
   /** CLI screen open in terminal mode (raw pty output). */
   "cli-terminal-data": { sessionId: string; data: string; end: number };
   "cli-terminal-exit": { sessionId: string; exitCode: number | null };
-  "cli-terminal-history": { sessionId: string; added: number };
+  "cli-terminal-history": { sessionId: string; added: number; hasReply?: boolean };
+  "cli-terminal-state": { sessionId: string; status: "running" | "idle" | "waiting_input" };
   /** Backend request (tray, notification) to open a conversation. */
   "open-session": { sessionId: string };
   /** Backend notice about the send (e.g. the CLI has no native field for the attachment). */

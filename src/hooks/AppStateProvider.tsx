@@ -34,7 +34,7 @@ function useAppStateValue() {
   // Applied during render so every string drawn in this pass already uses the chosen language.
   const locale = resolveLocale(settings.settings.language);
   setLocale(locale);
-  const cliTerminals = useCliTerminals(setAppError, settings.settings.conversationMode === "terminal");
+  const cliTerminals = useCliTerminals(setAppError, settings.settings.conversationMode !== "chat");
   const approvals = useApprovals(setAppError);
   const library = useInstalledSkills();
   const memory = useMemoryStatus();
@@ -64,6 +64,7 @@ function useAppStateValue() {
   });
   const historyActions = useHistoryActions({
     sessions,
+    cliTerminals,
     setProviders,
     setAppError,
     setActiveTab,

@@ -26,6 +26,7 @@ function lastMatch(text, pattern) {
 function createTurnWatcher({
   providerId,
   onTurnEnd,
+  onStateChange,
   now = Date.now,
   setTimer = (fn, ms) => {
     const t = setTimeout(fn, ms);
@@ -47,6 +48,14 @@ function createTurnWatcher({
   let firstOutput = null;
   let quietTimer = null;
   let tail = "";
+  let status = "idle";
+  let revision = 0;
+  function setStatus(next) {
+    if (status === next) return;
+    status = next;
+    revision++;
+    onStateChange?.({ status, revision });
+  }
 
   function end() {
     const startedAt = busySince ?? firstOutput;
@@ -55,26 +64,33 @@ function createTurnWatcher({
     firstOutput = null;
     if (quietTimer) clearTimer(quietTimer);
     quietTimer = null;
+    setStatus("idle");
     onTurnEnd?.({ providerId, startedAt, endedAt: now() });
   }
 
   function busy() {
     if (busySince === null) busySince = now();
+    setStatus("running");
   }
   function idle() {
     if (busySince === null) return;
     if (now() - busySince < minBusyMs) {
       busySince = null;
+      setStatus("idle");
       return;
     }
     end();
   }
 
   return {
+    getState: () => ({ status, revision }),
+    // With no saved reply after activity stops, the CLI may be waiting for interaction.
+    waitingForInput: () => setStatus("waiting_input"),
     // What the person typed in the terminal: Enter arms the wait for the end of the reply.
     input(data) {
       if (typeof data !== "string" || !data.includes("\r")) return;
       if (providerId === "codex" && !ready) return;
+      revision++;
       armed = true;
       firstOutput = null;
       if (providerId !== "claude") busySince = null;
@@ -105,6 +121,7 @@ function createTurnWatcher({
       // AGY: only the screen's activity.
       if (!armed) return;
       if (firstOutput === null) firstOutput = now();
+      busy();
       if (quietTimer) clearTimer(quietTimer);
       quietTimer = setTimer(() => {
         quietTimer = null;
@@ -113,6 +130,8 @@ function createTurnWatcher({
           // Short activity (Enter echo, a slash command): it wasn't a reply.
           armed = false;
           firstOutput = null;
+          busySince = null;
+          setStatus("idle");
         }
       }, quietMs);
     },

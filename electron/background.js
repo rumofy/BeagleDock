@@ -12,7 +12,7 @@ function friendlyTool(tool) {
   return name || t("tray.toolGeneric");
 }
 
-function describeState({ running = 0, waiting = 0, unread = 0, sessions = [] } = {}) {
+function describeState({ running = 0, waiting = 0, inputWaiting = 0, unread = 0, sessions = [] } = {}) {
   const parts = [];
   if (running > 0)
     parts.push(tn("tray.running", running));
@@ -21,8 +21,9 @@ function describeState({ running = 0, waiting = 0, unread = 0, sessions = [] } =
       tn("tray.waiting", waiting),
     );
   if (unread > 0) parts.push(tn("tray.unread", unread));
+  if (inputWaiting > 0) parts.push(tn("tray.inputWaiting", inputWaiting));
   // Permission first, then replies not seen yet, then plain activity.
-  const status = waiting > 0 ? "waiting" : unread > 0 ? "unread" : running > 0 ? "running" : "idle";
+  const status = waiting > 0 || inputWaiting > 0 ? "waiting" : unread > 0 ? "unread" : running > 0 ? "running" : "idle";
   return {
     status,
     summary: parts.length ? parts.join(" · ") : t("tray.idle"),
@@ -225,10 +226,11 @@ function createBackgroundController({
   function refresh(force = false) {
     const approvals = approvalsList();
     const waitingIds = new Set(approvals.map((a) => a.sessionId));
-    const sessions = runningSessions().map((s) => ({ ...s, waiting: waitingIds.has(s.id) }));
+    const sessions = runningSessions().map((s) => ({ ...s, waiting: s.waiting || waitingIds.has(s.id) }));
     const state = describeState({
       running: runningCount(),
       waiting: approvals.length,
+      inputWaiting: sessions.filter((s) => s.waiting && !waitingIds.has(s.id)).length,
       unread: notices.length,
       sessions,
     });
