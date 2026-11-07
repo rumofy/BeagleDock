@@ -45,6 +45,10 @@ export function useHistoryActions({
   } = sessions;
   const fillPrompt = (text: string) => {
     if (currentSession && cliTerminals.isTerminal(currentSession.id)) {
+      if (!currentSession.nativeSessionId && !currentSession.cwdLocked && !cliTerminals.hasStarted(currentSession.id)) {
+        setAppError(t("terminal.startBeforePrompt"));
+        return;
+      }
       setActiveTab("chat");
       void cliTerminals.pasteToTerminal(currentSession.id, text);
     } else {

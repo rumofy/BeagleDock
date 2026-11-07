@@ -102,6 +102,7 @@ export function ChatHeader() {
     handleTriggerHandoff,
     memoryStatus,
     cliTerminals,
+    isChangingWorkspace,
     currentMessages,
   } = useApp();
   const background = backgroundWork(currentMessages);
@@ -109,6 +110,8 @@ export function ChatHeader() {
   // what belongs to BeagleDock (project, VS Code, handoff, dictation and quota).
   const terminalMode = cliTerminals.isTerminal(currentSession?.id);
   const terminalState = currentSession ? cliTerminals.terminals[currentSession.id] : undefined;
+  const terminalStarted = !!currentSession && (!!currentSession.nativeSessionId || !!currentSession.cwdLocked || cliTerminals.hasStarted(currentSession.id));
+  const terminalOpening = cliTerminals.isOpening(currentSession?.id);
   const waitingApproval = cliApprovals.some(
     (a) => a.sessionId === currentSession?.id,
   );
@@ -251,7 +254,7 @@ export function ChatHeader() {
             {terminalMode ? (
               <span data-testid="terminal-status" className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-zinc-100 bg-[#27272a] px-2 py-0.5 rounded-full">
                 <span className={`w-1.5 h-1.5 rounded-full ${terminalState?.status === "running" ? "bg-emerald-500 animate-pulse" : terminalState?.status === "waiting_input" ? "bg-amber-500" : "bg-zinc-400"}`} />
-                {t(terminalState?.status === "running" ? "session.running" : terminalState?.status === "waiting_input" ? "terminal.waitingInput" : "session.idle")}
+                {t(terminalOpening ? "terminal.starting" : !terminalStarted ? "terminal.notStarted" : terminalState?.status === "running" ? "session.running" : terminalState?.status === "waiting_input" ? "terminal.waitingInput" : "session.idle")}
               </span>
             ) : isExecutingPrompt ? (
               <span className="flex items-center gap-1 whitespace-nowrap shrink-0 text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
@@ -286,6 +289,7 @@ export function ChatHeader() {
             <div className="flex items-center gap-1.5 bg-[#f4f1e8] hover:bg-[#ede9de] px-2 py-0.5 rounded-md border border-[#dfdacd] transition">
               <FolderGit2 size={12} className="text-[#8c8270]" />
               <select
+                data-testid="conversation-workspace"
                 value={currentSession?.cwd || ""}
                 onChange={(e) => {
                   if (e.target.value === "__add_new__") {
@@ -296,9 +300,9 @@ export function ChatHeader() {
                 }}
                 className="max-w-[55vw] sm:max-w-none truncate text-[11px] font-mono font-medium bg-[#f4f1e8] hover:bg-[#ede9de] text-[#2c2822] outline-none cursor-pointer"
                 disabled={
-                  !!currentSession?.nativeSessionId || isExecutingPrompt
+                  !!currentSession?.nativeSessionId || !!currentSession?.cwdLocked || isExecutingPrompt || cliTerminals.hasStarted(currentSession?.id) || terminalOpening || isChangingWorkspace
                 }
-                title={t("header.workspaceLocked")}
+                title={t(terminalMode && !terminalStarted ? "terminal.chooseWorkspace" : "header.workspaceLocked")}
               >
                 {workspaces.map((ws) => (
                   <option key={ws.id} value={ws.path}>
@@ -365,8 +369,16 @@ export function ChatHeader() {
         </button>
         )}
         {!terminalMode && <ContinueInCliButton />}
-        {terminalMode && <TerminalDictationButton />}
+        {terminalMode && !terminalStarted && !terminalOpening && currentSession && (
+          <button type="button" data-testid="start-cli" disabled={isChangingWorkspace}
+            onClick={() => cliTerminals.startTerminal(currentSession.id)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#1c1b18] text-white disabled:opacity-40">
+            <Terminal size={14} />{t("terminal.start")}
+          </button>
+        )}
+        {terminalMode && terminalStarted && <TerminalDictationButton />}
         <button
+          disabled={terminalMode && !terminalStarted}
           onClick={() => {
             if (!currentSession) return;
             // In the terminal the request is pasted and sent in the CLI itself (any queue is the CLI's own).

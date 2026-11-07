@@ -1075,6 +1075,12 @@
   "composer.dictationModelOnComputer": "Baixe o modelo de voz no computador: Configurações → Ditado por voz",
   "context.cacheInUse": "cache em uso",
   "session.replying": "Respondendo…",
+  "terminal.chooseWorkspace": "Escolha o workspace",
+  "terminal.startBeforePrompt": "Escolha o workspace e inicie a CLI antes de selecionar uma skill ou reutilizar um prompt.",
+  "terminal.startHint": "O último workspace fica pré-selecionado. Você pode trocá-lo acima antes de clicar em Iniciar CLI. Depois de iniciada, esta conversa permanece nessa pasta.",
+  "terminal.starting": "Iniciando CLI…",
+  "terminal.start": "Iniciar CLI",
+  "terminal.notStarted": "Não iniciada",
   "terminal.waitingInput": "Aguardando interação",
   "tray.inputWaiting_one": "1 CLI aguardando interação",
   "tray.inputWaiting_other": "{count} CLIs aguardando interação"

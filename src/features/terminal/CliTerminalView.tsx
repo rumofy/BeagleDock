@@ -17,8 +17,8 @@ export const quotePath = (p: string) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.
  * conversation file, see electron/terminal-history.js).
  */
 export function CliTerminalView({ session, compact = false }: { session: ChatSession; compact?: boolean }) {
-  const { cliTerminals, setAppError } = useApp();
-  const { terminals, markStarted, registerPaster } = cliTerminals;
+  const { cliTerminals, setAppError, setProviders } = useApp();
+  const { terminals, markStarted, markStartFailed, registerPaster } = cliTerminals;
   const host = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [error, setError] = useState("");
@@ -104,11 +104,18 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
       })
       .then((result) => {
         if (disposed) return;
+        if (result.ok || result.cwdLocked) {
+          setProviders((prev) => prev.map((provider) => ({ ...provider,
+            sessions: provider.sessions.map((saved) => saved.id === id ? { ...saved, cwdLocked: true } : saved),
+          })));
+        }
         if (!result.ok) {
           setError(result.error);
+          if (typeof result.cwdLocked === "boolean") markStartFailed(id, result.cwdLocked, result.error);
           return;
         }
         setError("");
+        setAppError("");
         markStarted(id);
         if (result.replay) term.write(result.replay);
         end = result.end;
@@ -138,7 +145,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
       // already destroyed renderer ("reading 'dimensions'"). Switching conversations quickly caused it.
       window.setTimeout(() => term.dispose(), 100);
     };
-  }, [session.id, session.providerId, session.cwd, compact, attempt, markStarted, registerPaster]);
+  }, [session.id, session.providerId, session.cwd, compact, attempt, markStarted, markStartFailed, registerPaster, setProviders, setAppError]);
 
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();

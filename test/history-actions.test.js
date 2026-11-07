@@ -6,7 +6,7 @@ const ts = require("typescript");
 
 const ctx = {
   exports: {},
-  require: () => ({}),
+  require: () => ({ t: (key) => key }),
 };
 vm.runInNewContext(ts.transpileModule(fs.readFileSync("src/hooks/useHistoryActions.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.CommonJS },
@@ -21,6 +21,7 @@ function actions(provider, terminal) {
     handlers: useHistoryActions({
       sessions: { currentSession: session },
       cliTerminals: {
+        hasStarted: () => terminal,
         isTerminal: (id) => terminal && id === session.id,
         pasteToTerminal: async (...args) => pastes.push(args),
       },

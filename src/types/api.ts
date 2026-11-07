@@ -281,7 +281,7 @@ export interface CliTerminalInfo {
 }
 export type CliTerminalOpenResult =
   | ({ ok: true; replay: string } & CliTerminalInfo)
-  | { ok: false; error: string };
+  | { ok: false; error: string; cwdLocked?: boolean };
 
 /** A reply in progress on the computer, with what it has shown so far (for a screen catching up). */
 export type LiveTurn = StreamEvents["cli-turn-started"] & {

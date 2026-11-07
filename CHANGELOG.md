@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.16.4] - 2026-11-07
+
+### Fixed
+
+- New CLI conversations let you choose the workspace before clicking Start CLI, keeping terminals in their original folders; conversations with inconsistent folder records recover their native session folder without losing history.
+
 ## [0.16.3] - 2026-11-07
 
 ### Changed
@@ -397,7 +403,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...HEAD
+[0.16.4]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...v0.16.3
 [0.16.2]: https://github.com/rumofy/BeagleDock/compare/v0.16.0...v0.16.2
 [0.16.0]: https://github.com/rumofy/BeagleDock/compare/v0.15.1...v0.16.0

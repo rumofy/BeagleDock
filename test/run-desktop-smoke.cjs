@@ -40,11 +40,11 @@ if (process.env.BEAGLEDOCK_SMOKE_SPEECH_MODELS) {
 fs.mkdirSync(path.join(root, "data"), { recursive: true });
 fs.writeFileSync(path.join(root, "data", "remote-access.json"), JSON.stringify({ port: 0 }));
 try {
-  for (const stage of ["first", "restart"]) {
+  for (const stage of ["first", "restart", "projects"]) {
     const result = spawnSync(
       require("electron"),
-      [path.join(__dirname, "electron-smoke.cjs"), stage],
-      { env, stdio: "inherit", timeout: 80000 },
+      [path.join(__dirname, stage === "projects" ? "cli-project-smoke.cjs" : "electron-smoke.cjs"), stage],
+      { env: stage === "projects" ? { ...env, BEAGLEDOCK_DATA_DIR: path.join(root, "project-data") } : env, stdio: "inherit", timeout: 80000 },
     );
     if (result.status !== 0)
       throw new Error(

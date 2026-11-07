@@ -21,6 +21,7 @@ import { FloatingTerminal } from "./features/terminal/FloatingTerminal";
 import { TerminalHeader } from "./features/terminal/TerminalHeader";
 import { TerminalTab } from "./features/terminal/TerminalTab";
 import { CliTerminalView } from "./features/terminal/CliTerminalView";
+import { CliTerminalStart } from "./features/terminal/CliTerminalStart";
 
 import { t } from "./i18n";
 function AppShell() {
@@ -67,7 +68,9 @@ function AppShell() {
         >
           {activeTab === "chat" &&
             (terminalMode && currentSession ? (
-              <CliTerminalView key={currentSession.id} session={currentSession} />
+              currentSession.nativeSessionId || currentSession.cwdLocked || cliTerminals.hasStarted(currentSession.id) || cliTerminals.isOpening(currentSession.id)
+                ? <CliTerminalView key={currentSession.id} session={currentSession} />
+                : <CliTerminalStart />
             ) : (
               <ChatView />
             ))}

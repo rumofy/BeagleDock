@@ -17,6 +17,10 @@ const bracketed = (text: string) => `\x1b[200~${text.replace(/\x1b\[20[01]~/g, "
  */
 export function useCliTerminals(setAppError: (message: string) => void, enabled: boolean) {
   const [terminals, setTerminals] = useState<Record<string, TerminalState>>({});
+  const [requested, setRequested] = useState<string[]>([]);
+  const hasStarted = useCallback((sessionId?: string) => !!sessionId && !!terminals[sessionId], [terminals]);
+  const isOpening = useCallback((sessionId?: string) => !!sessionId && requested.includes(sessionId), [requested]);
+  const startTerminal = (sessionId: string) => setRequested((prev) => prev.includes(sessionId) ? prev : [...prev, sessionId]);
   // The mounted view registers xterm's paste, which honors the paste mode the CLI asked for.
   const pasters = useRef(new Map<string, (text: string) => void>());
 
@@ -59,6 +63,7 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
         setAppError((error as Error).message);
       }
       pasters.current.delete(sessionId);
+      setRequested((prev) => prev.filter((id) => id !== sessionId));
       setTerminals((prev) => {
         if (!prev[sessionId]) return prev;
         const next = { ...prev };
@@ -79,7 +84,22 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
 
   const markStarted = useCallback((sessionId: string) => {
     setTerminals((prev) => ({ ...prev, [sessionId]: { exited: false, exitCode: null, status: prev[sessionId]?.status || "idle" } }));
+    setRequested((prev) => prev.filter((id) => id !== sessionId));
   }, []);
+
+  const markStartFailed = useCallback((sessionId: string, cwdLocked: boolean, message: string) => {
+    setRequested((prev) => prev.filter((id) => id !== sessionId));
+    if (cwdLocked) {
+      setTerminals((prev) => ({ ...prev, [sessionId]: { exited: true, exitCode: null, status: "idle" } }));
+    } else {
+      setTerminals((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+    }
+    setAppError(message);
+  }, [setAppError]);
 
   const registerPaster = useCallback((sessionId: string, paste: ((text: string) => void) | null) => {
     if (paste) pasters.current.set(sessionId, paste);
@@ -108,8 +128,12 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
   return {
     terminals,
     isTerminal,
+    hasStarted,
+    isOpening,
+    startTerminal,
     closeTerminal,
     markStarted,
+    markStartFailed,
     registerPaster,
     pasteToTerminal,
   };
