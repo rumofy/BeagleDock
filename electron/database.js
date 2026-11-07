@@ -79,7 +79,7 @@ function initDatabase() {
       "CREATE TRIGGER IF NOT EXISTS link_requires_session BEFORE INSERT ON session_links WHEN NOT EXISTS (SELECT 1 FROM sessions WHERE id=NEW.session_id) BEGIN SELECT RAISE(ABORT,'Conversation does not exist or was removed.'); END",
     );
     for (const [table, columns] of Object.entries({
-      sessions: ["permission_before_plan", "permission", "archived", "context_json", "title_locked"],
+      sessions: ["permission_before_plan", "permission", "archived", "context_json", "title_locked", "cwd_locked"],
       chat_history: [
         "model_badge",
         "reasoning_badge",
@@ -98,6 +98,9 @@ function initDatabase() {
     await run(
       "CREATE INDEX IF NOT EXISTS chat_history_session ON chat_history(session_id, created_at)",
     );
+    // Native links retain the folder where the conversation actually started. Older terminal
+    // sessions could change the displayed folder before the CLI's ID reached the renderer.
+    await run("UPDATE sessions SET cwd=(SELECT l.cwd FROM session_links l WHERE l.session_id=sessions.id),cwd_locked='1' WHERE EXISTS (SELECT 1 FROM session_links l WHERE l.session_id=sessions.id AND l.provider_id=sessions.provider_id AND l.cwd<>'')");
     await moveInlineAttachments();
   })();
   return ready;
@@ -146,11 +149,13 @@ async function saveSession(s) {
     !["claude", "codex", "antigravity"].includes(s.providerId)
   )
     throw new Error(t("errors.invalidSession"));
-  const previous = await get("SELECT provider_id,permission,permission_before_plan FROM sessions WHERE id=?", [
+  const previous = await get("SELECT provider_id,permission,permission_before_plan,cwd,cwd_locked FROM sessions WHERE id=?", [
     s.id,
   ]);
   if (previous && previous.provider_id !== s.providerId)
     throw new Error(t("errors.providerImmutable"));
+  if (previous?.cwd_locked === "1" && previous.cwd !== s.cwd)
+    throw new Error(t("errors.newSessionForCwd"));
   const link = await getNativeSession(s.id, s.providerId);
   if (s.nativeSessionId && !/^[a-zA-Z0-9_-]{8,160}$/.test(s.nativeSessionId))
     throw new Error(t("errors.invalidNativeId"));
@@ -163,8 +168,8 @@ async function saveSession(s) {
     ? previous?.permission === "plan" ? previous.permission_before_plan : previous?.permission || s.permissionBeforePlan
     : null;
   const validBeforePlan = ["inherit", "ask", "edits", "full"].includes(beforePlan) ? beforePlan : null;
-  await run(
-    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,permission_before_plan,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,permission_before_plan=excluded.permission_before_plan,updated_ts=CURRENT_TIMESTAMP",
+  const saved = await run(
+    "INSERT INTO sessions (id,provider_id,title,current_model,reasoning_effort,status,pid,cwd,created_at,last_active,permission,permission_before_plan,title_locked) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title_locked=COALESCE(excluded.title_locked,sessions.title_locked),title=excluded.title,current_model=excluded.current_model,reasoning_effort=excluded.reasoning_effort,status=excluded.status,pid=excluded.pid,cwd=excluded.cwd,last_active=excluded.last_active,permission=excluded.permission,permission_before_plan=excluded.permission_before_plan,updated_ts=CURRENT_TIMESTAMP WHERE sessions.cwd_locked IS NOT '1' OR sessions.cwd=excluded.cwd",
     [
       s.id,
       s.providerId,
@@ -181,6 +186,7 @@ async function saveSession(s) {
       s.titleLocked ? "1" : null,
     ],
   );
+  if (!saved.changes) throw new Error(t("errors.newSessionForCwd"));
   if (s.nativeSessionId)
     await setNativeSession(s.id, s.providerId, s.nativeSessionId, s.cwd);
   return { success: true, id: s.id };
@@ -199,6 +205,15 @@ async function getNativeSession(sessionId, providerId) {
     throw new Error(t("errors.providerMismatch"));
   return row ? { nativeId: row.native_id, cwd: row.cwd } : null;
 }
+/** Claim the saved project before starting a native CLI, including the time before its ID is known. */
+async function lockSessionCwd(sessionId, providerId, cwd) {
+  await initDatabase();
+  const result = await run("UPDATE sessions SET cwd_locked='1' WHERE id=? AND provider_id=? AND cwd=?", [sessionId, providerId, cwd]);
+  if (!result.changes) {
+    if (!(await sessionExists(sessionId))) throw new Error(t("session.missing"));
+    throw new Error(t("errors.otherDirectory"));
+  }
+}
 async function setNativeSession(sessionId, providerId, nativeId, cwd) {
   await initDatabase();
   if (!/^[a-zA-Z0-9_-]{8,160}$/.test(nativeId))
@@ -208,6 +223,7 @@ async function setNativeSession(sessionId, providerId, nativeId, cwd) {
     throw new Error(
       t("errors.conversationLinkedElsewhere"),
     );
+  await lockSessionCwd(sessionId, providerId, cwd);
   await run(
     "INSERT INTO session_links(session_id,provider_id,native_id,cwd) VALUES (?,?,?,?) ON CONFLICT(session_id) DO NOTHING",
     [sessionId, providerId, nativeId, cwd],
@@ -341,6 +357,7 @@ async function getSavedSessions() {
     reasoningEffort: r.reasoning_effort || "",
     status: "idle",
     cwd: r.cwd,
+    cwdLocked: r.cwd_locked === "1",
     createdAt: r.created_at,
     lastActive: r.last_active,
     permission: r.permission || "edits",
@@ -715,6 +732,7 @@ module.exports = {
   getSavedSessions,
   getSessionPermission,
   getNativeSession,
+  lockSessionCwd,
   setNativeSession,
   deleteSessionFromDb,
   listConversationHistory,

@@ -48,6 +48,7 @@ interface Params {
   setAppError: (message: string) => void;
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
+  isTerminalStarted?: (sessionId: string) => boolean;
   /** Context (tokens) above which the conversation compacts itself; 0 turns it off. */
   autoCompactTokens?: number | null;
   /** New chats from the + button repeat the CLI's last choice. */
@@ -72,12 +73,14 @@ export function useSessions({
   setAppError,
   setActiveTab,
   setShowWorkspaceModal,
+  isTerminalStarted,
   autoCompactTokens,
   rememberSessionChoices,
   lastSessionChoices,
   onSessionChoice,
 }: Params) {
   const [activeSessionId, setActiveSessionId] = useState<string>("");
+  const [isChangingWorkspace, setIsChangingWorkspace] = useState(false);
   // References for the event listeners, which aren't recreated on every render.
   const providersRef = useRef(providers);
   providersRef.current = providers;
@@ -582,13 +585,19 @@ export function useSessions({
     }
   };
 
-  const handleWorkspaceChange = (newPath: string) => {
+  const handleWorkspaceChange = async (newPath: string) => {
     if (!currentSession) return;
-    if (currentSession.nativeSessionId || isExecutingPrompt) {
+    if (newPath === currentSession.cwd) return;
+    if (currentSession.nativeSessionId || currentSession.cwdLocked || isExecutingPrompt || isTerminalStarted?.(currentSession.id)) {
       setAppError(t("session.newForProject"));
       return;
     }
-    void persistSession({ ...currentSession, cwd: newPath });
+    setIsChangingWorkspace(true);
+    try {
+      await persistSession({ ...currentSession, cwd: newPath });
+    } finally {
+      setIsChangingWorkspace(false);
+    }
   };
 
   const handleModelChange = (model: string) => {
@@ -1355,6 +1364,7 @@ export function useSessions({
     hydrateSessions,
     persistSession,
     handleWorkspaceChange,
+    isChangingWorkspace,
     handleModelChange,
     handlePermissionChange,
     handleApprovePlan,

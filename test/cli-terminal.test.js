@@ -77,7 +77,7 @@ function setup({ link = null, beforeOpen, hooks } = {}) {
       if (cwd !== "/proj") throw new Error("Select an existing working directory.");
       return cwd;
     },
-    store: { getNativeSession: async () => link },
+    store: { getNativeSession: async () => link, lockSessionCwd: async () => {} },
     beforeOpen: beforeOpen || (async (id) => opened.push(id)),
     emit: (channel, payload) => events.push([channel, payload]),
     hooks,
@@ -107,6 +107,37 @@ test("a conversation without a native id opens a new CLI conversation", async ()
   assert.equal(result.resumed, false);
   assert.deepEqual(pty.spawned[0].args, []);
   assert.equal(pty.spawned[0].bin, "/bin/codex");
+});
+
+for (const providerId of ["claude", "codex", "antigravity"]) {
+  test(`${providerId}: opening and running terminals refuse a different folder or provider`, async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const { terminals, pty } = setup({ beforeOpen: () => gate });
+    const first = terminals.open({ sessionId: "s1", providerId, cwd: "/proj" });
+    const moved = terminals.open({ sessionId: "s1", providerId, cwd: "/other" });
+    release();
+    assert.equal((await first).ok, true);
+    assert.equal((await moved).ok, false);
+    assert.equal((await terminals.open({ sessionId: "s1", providerId, cwd: "/other" })).ok, false);
+    assert.equal((await terminals.open({ sessionId: "s1", providerId: providerId === "claude" ? "codex" : "claude", cwd: "/proj" })).ok, false);
+    assert.equal(pty.spawned.length, 1);
+    assert.equal(pty.spawned[0].options.cwd, "/proj");
+  });
+}
+
+test("a terminal cannot spawn if its saved project changed before the directory claim", async () => {
+  const pty = fakePty();
+  const terminals = createCliTerminals({
+    pty, find: () => "/bin/claude", checkCwd: (cwd) => cwd,
+    store: {
+      getNativeSession: async () => null,
+      lockSessionCwd: async () => { throw new Error("This conversation belongs to another directory."); },
+    },
+  });
+  const result = await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/stale" });
+  assert.equal(result.ok, false);
+  assert.equal(pty.spawned.length, 0);
 });
 
 test("reopening a view reuses the process and returns the screen already emitted", async () => {
@@ -152,7 +183,7 @@ test("refuses to open with a turn running in the chat, a different directory or 
     },
   });
   const r1 = await busy.terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
-  assert.deepEqual(r1, { ok: false, error: "Wait for the current reply to finish before opening the terminal." });
+  assert.deepEqual(r1, { ok: false, error: "Wait for the current reply to finish before opening the terminal.", cwdLocked: true });
   assert.equal(busy.pty.spawned.length, 0);
 
   const moved = setup({ link: { nativeId: "abc12345", cwd: "/outro" } });
@@ -164,13 +195,36 @@ test("refuses to open with a turn running in the chat, a different directory or 
     pty: fakePty(),
     find: () => null,
     checkCwd: (c) => c,
-    store: { getNativeSession: async () => null },
+    store: { getNativeSession: async () => null, lockSessionCwd: async () => {} },
   });
   const r3 = await missing.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" });
   assert.match(r3.error, /not found/);
 
   const noPty = createCliTerminals({ pty: null, find: () => "/bin/x", checkCwd: (c) => c, store: {} });
   assert.match((await noPty.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" })).error, /node-pty/);
+});
+
+for (const providerId of ["claude", "codex", "antigravity"]) {
+  test(`${providerId}: a pre-claim failure leaves the project editable and permits retry`, async () => {
+    const { pty, terminals } = setup();
+    const failed = await terminals.open({ sessionId: "s1", providerId, cwd: "/missing" });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.cwdLocked, false);
+    assert.equal(pty.spawned.length, 0);
+    assert.equal((await terminals.open({ sessionId: "s1", providerId, cwd: "/proj" })).ok, true);
+  });
+}
+
+test("a spawn failure after claiming the project retains its folder lock", async () => {
+  const pty = fakePty();
+  pty.spawn = () => { throw new Error("Spawn failed"); };
+  const terminals = createCliTerminals({
+    pty, find: () => "/bin/claude", checkCwd: (cwd) => cwd,
+    store: { getNativeSession: async () => null, lockSessionCwd: async () => {} },
+  });
+  const failed = await terminals.open({ sessionId: "s1", providerId: "claude", cwd: "/proj" });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.cwdLocked, true);
 });
 
 test("closeAll stops every terminal", async () => {

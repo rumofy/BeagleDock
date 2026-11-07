@@ -39,6 +39,7 @@ function useAppStateValue() {
   const library = useInstalledSkills();
   const memory = useMemoryStatus();
   const sessions = useSessions({
+    isTerminalStarted: (id) => cliTerminals.hasStarted(id) || cliTerminals.isOpening(id),
     providers,
     setProviders,
     workspaces,

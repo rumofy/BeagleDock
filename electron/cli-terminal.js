@@ -96,7 +96,11 @@ function createCliTerminals({
   const opening = new Map();
   function open(request = {}) {
     const id = request.sessionId;
-    if (opening.has(id)) return opening.get(id).then((r) => (r.ok ? reopen(id, r) : r));
+    if (opening.has(id)) return opening.get(id).then((r) => {
+      if (r.ok && (r.providerId !== request.providerId || r.cwd !== request.cwd))
+        return { ok: false, error: t("errors.otherDirectory") };
+      return r.ok ? reopen(id, r) : r;
+    });
     const pending = start(request).finally(() => opening.delete(id));
     if (typeof id === "string") opening.set(id, pending);
     return pending;
@@ -107,19 +111,25 @@ function createCliTerminals({
   }
 
   async function start({ sessionId, providerId, cwd, cols, rows } = {}) {
+    let cwdLocked = false;
     if (typeof sessionId !== "string" || !sessionId) return { ok: false, error: t("errors.invalidConversation") };
     if (!PROVIDERS.has(providerId)) return { ok: false, error: t("errors.unknownCli") };
     const existing = terminals.get(sessionId);
-    if (existing && !existing.exited)
+    if (existing && !existing.exited) {
+      if (existing.providerId !== providerId || existing.cwd !== cwd)
+        return { ok: false, error: t("errors.otherDirectory") };
       return { ok: true, ...info(sessionId, existing), replay: existing.replay };
-    if (!pty) return { ok: false, error: t("errors.ptyUnavailable") };
+    }
+    if (!pty) return { ok: false, error: t("errors.ptyUnavailable"), cwdLocked };
     try {
       const target = checkCwd(cwd);
       const bin = binary(providerId);
-      if (!bin) return { ok: false, error: t("errors.cliNotFound", { id: providerId }) };
+      if (!bin) return { ok: false, error: t("errors.cliNotFound", { id: providerId }), cwdLocked };
       const link = await store.getNativeSession(sessionId, providerId);
       if (link && link.cwd !== target)
         return { ok: false, error: t("errors.otherDirectory") };
+      await store.lockSessionCwd(sessionId, providerId, target);
+      cwdLocked = true;
       await beforeOpen(sessionId);
       const newNativeId = providerId === "claude" && !link?.nativeId ? newId() : undefined;
       const args = terminalArgs(providerId, link?.nativeId, newNativeId);
@@ -160,7 +170,7 @@ function createCliTerminals({
       hook("opened", { sessionId, providerId, cwd: target, nativeId: link?.nativeId, newNativeId });
       return { ok: true, ...info(sessionId, entry), replay: "" };
     } catch (error) {
-      return { ok: false, error: error.message };
+      return { ok: false, error: error.message, cwdLocked };
     }
   }
 

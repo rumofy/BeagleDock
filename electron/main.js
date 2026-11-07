@@ -96,6 +96,7 @@ const {
   getSecret,
   dropUnreadableCredentials,
   getNativeSession,
+  lockSessionCwd,
   setNativeSession,
   dbPath,
 } = require("./database");
@@ -708,7 +709,7 @@ const cliTerminals = createCliTerminals({
   find: findBinary,
   env: cliEnv,
   checkCwd: validCwd,
-  store: { getNativeSession },
+  store: { getNativeSession, lockSessionCwd },
   beforeOpen: async (sessionId) => {
     if (updatingCli) throw new Error(i18n.t("errors.waitCliUpdate"));
     if (sessionService.activeIds().includes(sessionId))

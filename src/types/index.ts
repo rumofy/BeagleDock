@@ -66,6 +66,8 @@ export interface ContextInfo {
 }
 
 export interface ChatSession {
+  /** A native CLI has started in this folder, even if its conversation ID is not known yet. */
+  cwdLocked?: boolean;
   id: string;
   providerId: AIProviderId;
   title: string;
