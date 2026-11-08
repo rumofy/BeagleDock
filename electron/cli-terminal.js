@@ -194,7 +194,6 @@ function createCliTerminals({
       entry.proc.resize(Math.min(cols, 1000), Math.min(rows, 500));
       entry.cols = Math.min(cols, 1000);
       entry.rows = Math.min(rows, 500);
-      emit("cli-terminal-size", { sessionId, cols: entry.cols, rows: entry.rows });
     } catch {}
     return { ok: true };
   }

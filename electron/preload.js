@@ -129,7 +129,6 @@ contextBridge.exposeInMainWorld("beagleAPI", {
         "cli-terminal-exit",
         "cli-terminal-history",
         "cli-terminal-state",
-        "cli-terminal-size",
         "cli-stream-chunk",
         "cli-activity-event",
         "cli-context",

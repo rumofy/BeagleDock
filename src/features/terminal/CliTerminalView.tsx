@@ -16,7 +16,7 @@ export const quotePath = (p: string) => (/^[\w@%+=:,./-]+$/.test(p) ? p : `'${p.
  * attaching images, plan mode and approvals are up to the CLI (the history is read from the native
  * conversation file, see electron/terminal-history.js).
  */
-export function CliTerminalView({ session, compact = false, mobile = false }: { session: ChatSession; compact?: boolean; mobile?: boolean }) {
+export function CliTerminalView({ session, compact = false }: { session: ChatSession; compact?: boolean }) {
   const { cliTerminals, setAppError, setProviders } = useApp();
   const { terminals, markStarted, markStartFailed, registerPaster } = cliTerminals;
   const host = useRef<HTMLDivElement>(null);
@@ -59,16 +59,10 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
     const write = (data: string) => void beagleApi.cliTerminalWrite({ sessionId: id, data }).catch((e: Error) => setAppError(e.message));
     term.onData(write);
     term.onBinary(write);
-    term.onResize(({ cols, rows }) => {
-      if (!mobile) void beagleApi.cliTerminalResize({ sessionId: id, cols, rows });
-    });
+    term.onResize(({ cols, rows }) => void beagleApi.cliTerminalResize({ sessionId: id, cols, rows }));
     const unsubscribeOpened = beagleApi.on("cli-terminal-opened", ({ sessionId, pid }) => {
       if (sessionId === id && attachedPid !== null && attachedPid !== pid) setAttempt((n) => n + 1);
     });
-    const unsubscribeSize = beagleApi.on("cli-terminal-size", (size) => {
-      if (mobile && size.sessionId === id) term.resize(size.cols, size.rows);
-    });
-    const unsubscribeReconnect = mobile ? beagleApi.on("remote-reconnected", () => setAttempt((n) => n + 1)) : () => {};
     // Ctrl+V: with an image, the CLI reads the clipboard itself (that's how it attaches); with text,
     // it pastes. Ctrl+Shift+C/V and Ctrl+C with a selection copy/paste like a regular terminal.
     term.attachCustomKeyEventHandler((event) => {
@@ -83,10 +77,8 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
       }
       if (event.ctrlKey && !event.altKey && key === "v") {
         event.preventDefault();
-        const clipboard = mobile
-          ? navigator.clipboard.readText().then((text) => ({ text, image: false }))
-          : beagleApi.cliTerminalClipboard();
-        void clipboard
+        void beagleApi
+          .cliTerminalClipboard()
           .then(({ image, text }) => {
             if (image && !event.shiftKey) write("\x16");
             else if (text) term.paste(text);
@@ -130,7 +122,6 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
         setAppError("");
         attachedPid = result.pid;
         markStarted(id);
-        if (mobile) term.resize(result.cols, result.rows);
         if (result.replay) term.write(result.replay);
         end = result.end;
         for (const item of early.splice(0)) if (item.end > end) {
@@ -138,12 +129,12 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
           end = item.end;
         }
         // The CLI redraws the screen at this view's size (another view may have changed it).
-        if (!mobile) void beagleApi.cliTerminalResize({ sessionId: id, cols: term.cols, rows: term.rows });
-        if (!mobile) term.focus();
+        void beagleApi.cliTerminalResize({ sessionId: id, cols: term.cols, rows: term.rows });
+        term.focus();
       })
       .catch((e: Error) => !disposed && setError(e.message));
     const resize = new ResizeObserver(() => {
-      if (!mobile && host.current?.clientWidth && host.current.clientHeight)
+      if (host.current?.clientWidth && host.current.clientHeight)
         try {
           fit.fit();
         } catch {}
@@ -153,16 +144,14 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
       disposed = true;
       resize.disconnect();
       unsubscribe();
-      unsubscribeSize();
       unsubscribeOpened();
-      unsubscribeReconnect();
       registerPaster(id, null);
       termRef.current = null;
       // xterm schedules a scroll adjustment right after opening; disposed before that, it reads the
       // already destroyed renderer ("reading 'dimensions'"). Switching conversations quickly caused it.
       window.setTimeout(() => term.dispose(), 100);
     };
-  }, [session.id, session.providerId, session.cwd, compact, mobile, attempt, markStarted, markStartFailed, registerPaster, setProviders, setAppError]);
+  }, [session.id, session.providerId, session.cwd, compact, attempt, markStarted, markStartFailed, registerPaster, setProviders, setAppError]);
 
   const onDrop = (event: React.DragEvent) => {
     event.preventDefault();
@@ -180,22 +169,8 @@ export function CliTerminalView({ session, compact = false, mobile = false }: { 
         ref={host}
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
-        className={`flex-1 min-h-0 p-2 ${mobile ? "overflow-x-auto" : "overflow-hidden"}`}
+        className="flex-1 min-h-0 overflow-hidden p-2"
       />
-      {mobile && (
-        <div className="flex flex-wrap gap-2 p-2 border-t border-zinc-700 text-zinc-100">
-          {[
-            ["Esc", "\x1b"], ["Tab", "\t"], ["↑", "\x1b[A"], ["↓", "\x1b[B"],
-            ["←", "\x1b[D"], ["→", "\x1b[C"], ["Ctrl+C", "\x03"], ["Enter", "\r"],
-          ].map(([label, data]) => (
-            <button key={label} type="button" aria-label={t("mobile.terminalKey", { key: label })}
-              className="rounded bg-zinc-700 px-3 py-2 text-xs"
-              onClick={() => void beagleApi.cliTerminalWrite({ sessionId: session.id, data }).catch((e: Error) => setAppError(e.message))}>
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
       {(error || state?.exited) && (
         <div className="absolute inset-0 flex items-center justify-center bg-[#18181b]/85">
           <div className="max-w-md rounded-xl border border-[#3f3f46] bg-[#232326] p-4 text-sm text-[#e4e4e7] space-y-3">

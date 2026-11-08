@@ -1,11 +1,12 @@
 // Terminal mode: finds out, from the CLI's own screen, when a reply ends (or the CLI stops
 // waiting for you, on an approval). BeagleDock doesn't talk to the CLI in this mode; it only sees the
-// terminal's bytes. Signals verified with the real CLIs (Claude Code 2.1.317, Codex CLI 0.166.0,
+// terminal's bytes. Signals verified with the real CLIs (Claude Code 2.1.317, Codex CLI 0.166.0 and 0.167.0,
 // AGY 1.4.12):
 // - Claude Code: the window title (OSC 0) shows a spinner (◐ ◓ ◑ ◒) while it works and goes back to
 //   "✳" when it finishes or stops on a permission request. It also replies on its own (background
 //   agent), so the spinner is enough to start counting.
-// - Codex CLI: reports its state in OSC 7501 (`state=working` / `state=idle`). On startup it also
+// - Codex CLI: reports its state in OSC 7501 (`state=working`, then `state=idle`; since 0.167.0 a
+//   finished reply ends in `state=done` instead, and startup still ends in `idle`). On startup it also
 //   goes through `working`, so it only counts after you send something (Enter), and only an Enter given
 //   with it already ready (after the first `idle`): an Enter on a startup screen (folder
 //   trust, hooks review) is followed by initialization, not by a reply.
@@ -112,10 +113,11 @@ function createTurnWatcher({
         const state = lastMatch(text, /\x1b\]7501;([^\x07\x1b]*)(?:\x07|\x1b\\)/g);
         if (!state) return;
         tail = text.slice(state.index + state[0].length).slice(-CARRY);
-        if (/(^|:)state=idle\b/.test(state[1])) ready = true;
+        const finished = /(^|:)state=(idle|done)\b/.test(state[1]);
+        if (finished) ready = true;
         if (!armed) return;
         if (/(^|:)state=working\b/.test(state[1])) busy();
-        else if (/(^|:)state=idle\b/.test(state[1])) idle();
+        else if (finished) idle();
         return;
       }
       // AGY: only the screen's activity.

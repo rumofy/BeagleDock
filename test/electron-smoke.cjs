@@ -249,12 +249,14 @@ async function send(win, text, expected) {
     await waitFor(win, `!!document.querySelector('[data-testid="cli-terminal"]') && !document.querySelector('[data-testid="terminal-grid"]')`);
     // No switch button at the top of the conversation: only in the settings.
     assert.equal(await js(`[...document.querySelectorAll('header button')].some(b=>/^(Terminal|Chat)$/.test(b.innerText.trim()))`), false);
-    // Sending through the chat with the terminal open is refused in the main process.
-    const refused = await js(
-      `window.beagleAPI.getSavedState().then(s=>window.beagleAPI.executeCliPrompt({sessionId:s.sessions.find(x=>x.providerId==='antigravity').id,providerId:'antigravity',prompt:'x'}))`,
-    );
+    // Sending through the chat while the terminal's CLI is replying is refused in the main process.
+    const agyId = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.find(x=>x.providerId==='antigravity').id)`);
+    await js(`window.beagleAPI.cliTerminalWrite({sessionId:${JSON.stringify(agyId)},data:'busy probe\\r'})`);
+    await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId===${JSON.stringify(agyId)})?.status==='running')`);
+    const refused = await js(`window.beagleAPI.executeCliPrompt({sessionId:${JSON.stringify(agyId)},providerId:'antigravity',prompt:'x'})`);
     assert.equal(refused.ok, false);
-    assert.match(refused.error, /open in the terminal/);
+    assert.match(refused.error, /busy in the CLI terminal/);
+    await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId===${JSON.stringify(agyId)})?.status!=='running')`);
     for (const provider of ["claude", "codex"]) {
       const id = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.find(x=>x.providerId==='${provider}').id)`);
       await js(`document.querySelector('[data-session-id="${id}"]').click()`);
@@ -1383,46 +1385,36 @@ async function send(win, text, expected) {
       await waitFor(phone, `!document.querySelector('button[aria-label="Stop the run and clear the queue"]')`);
       await waitFor(win, `!document.querySelector('header').innerText.includes('RUNNING CLI')`);
 
-      // The same conversation switches to its native terminal on both screens.
+      // The desktop switches to the native CLI terminal; the phone stays in the chat.
       await js(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
       await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="terminal"]')`);
       await js(`document.querySelector('[data-testid="conversation-mode"] input[value="terminal"]').click()`);
       await js(`[...document.querySelectorAll('header button')].find(b=>b.innerText.includes('Back to chat')).click()`);
       phone.showInactive();
       await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${name}')`);
-      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${name}')`);
       const desktopTerminal = await js(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}'))`);
-      const mobileTerminal = await pjs(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}'))`);
-      assert.equal(mobileTerminal.pid, desktopTerminal.pid, "both screens share one native process");
-      assert.equal(mobileTerminal.cols, desktopTerminal.cols, "opening the phone preserves desktop dimensions");
-      await pjs(`document.querySelector('[data-testid="cli-terminal"] textarea').focus()`);
-      await phone.webContents.insertText(`mobile-live-${index}`);
-      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('mobile-live-${index}')`);
-      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('mobile-live-${index}')`);
-      // Intermediate output is visible before Enter submits the turn.
-      await pjs(`document.querySelector('[aria-label="Send Enter to CLI"]').click()`);
-      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
-      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('ENVIADO')`);
-      // Wait for the fixture's animated reply before checking a stable replay line.
-      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}')?.status==='idle')`);
-      // Output emitted while disconnected must come back through replay, in the same process.
-      await pjs(`window.__terminalBeforeReconnect=document.querySelector('[data-testid="cli-terminal"] textarea')`);
-      await js(`window.beagleAPI.setRemoteAccessEnabled(false)`);
-      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'missed-output-${index}'})`);
-      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('missed-output-${index}')`);
-      await js(`window.beagleAPI.setRemoteAccessEnabled(true)`);
-      await pjs(`document.dispatchEvent(new Event('visibilitychange'))`);
-      await waitFor(phone, `!window.__terminalBeforeReconnect.isConnected && document.querySelector('[data-testid="cli-terminal"]').innerText.includes('missed-output-${index}')`);
-      assert.equal(await pjs(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}').pid)`), desktopTerminal.pid);
-      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'desktop-live-${index}'})`);
-      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('desktop-live-${index}')`);
-      await shot(`terminal-${name}`);
-      await js(`window.beagleAPI.cliTerminalClose('${created}')`);
-      const restarted = await js(`window.beagleAPI.cliTerminalOpen(${JSON.stringify(desktopTerminal)})`);
-      assert.equal(restarted.ok, true);
-      assert.notEqual(restarted.pid, desktopTerminal.pid);
-      await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'after-restart-${index}'})`);
-      await waitFor(phone, `document.querySelector('[data-testid="cli-terminal"]').innerText.includes('after-restart-${index}')`);
+      assert.ok(desktopTerminal?.pid, `${name} terminal open on the desktop`);
+      await waitFor(phone, `!!document.querySelector('input[placeholder^="Message to"]')`);
+      assert.equal(await pjs(`!!document.querySelector('[data-testid="cli-terminal"]') || typeof window.beagleAPI.cliTerminalOpen`), "undefined", "the phone has no terminal, only the chat");
+      // While the CLI replies on the desktop, a message from the phone waits instead of interrupting it.
+      if (name === "agy") {
+        await js(`window.beagleAPI.cliTerminalWrite({sessionId:'${created}',data:'busy turn\\r'})`);
+        await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}')?.status==='running')`);
+        await phoneMessage("while the desktop works");
+        await waitFor(phone, `document.body.innerText.includes('busy in the CLI terminal')`);
+        assert.equal(await js(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}')?.pid)`), desktopTerminal.pid, "the busy terminal keeps running");
+        await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId==='${created}')?.status!=='running')`);
+      }
+      // Idle: the phone's message takes the conversation to the chat; the desktop can reopen the CLI, which resumes it.
+      const repliesBefore = (await pjs(`document.body.innerText`)).split("fixture resposta").length;
+      await phoneMessage("from the phone " + index);
+      await waitFor(phone, `document.body.innerText.split('fixture resposta').length > ${repliesBefore} && !document.querySelector('button[aria-label="Stop the run and clear the queue"]')`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>!l.some(t=>t.sessionId==='${created}'))`);
+      await waitFor(win, `[...document.querySelectorAll('[data-testid="cli-terminal"] button')].some(b=>b.innerText==='Reopen')`);
+      if (index === 0) await shot("chat-after-terminal");
+      await js(`[...document.querySelectorAll('[data-testid="cli-terminal"] button')].find(b=>b.innerText==='Reopen').click()`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>{const t=l.find(t=>t.sessionId==='${created}');return !!t && t.pid!==${desktopTerminal.pid} && !t.exited;})`);
+      await waitFor(win, `document.querySelector('[data-testid="cli-terminal"]')?.innerText.includes('FIXTURE TUI ${name}')`);
       await js(`document.querySelector('button[title="Settings, SQLite database & MCPs"]').click()`);
       await waitFor(win, `!!document.querySelector('[data-testid="conversation-mode"] input[value="chat"]')`);
       await js(`document.querySelector('[data-testid="conversation-mode"] input[value="chat"]').click()`);
@@ -1493,4 +1485,4 @@ async function send(win, text, expected) {
 setTimeout(() => {
   console.error("Desktop smoke timeout");
   app.exit(1);
-}, 75000).unref();
+}, 110000).unref();

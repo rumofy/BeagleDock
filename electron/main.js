@@ -60,6 +60,7 @@ const { resolveModelSelection } = require("./model-options");
 const { createSessionService } = require("./session-service");
 const { createHistory } = require("./history");
 const { createTerminalHistory, syncTerminalTurn } = require("./terminal-history");
+const { createTerminalHandover } = require("./terminal-handover");
 const { createTurnWatcher } = require("./terminal-turns");
 const { chatReplyNotice, terminalTurnNotice } = require("./reply-notices");
 const { Worker } = require("worker_threads");
@@ -659,19 +660,37 @@ const terminalHistory = createTerminalHistory({
   emit: sendToRenderer,
 });
 const terminalWatchers = new Map();
+// End-of-turn history syncs still retrying (the CLI may save its reply after going idle), per conversation.
+const terminalTurnSyncs = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function terminalTurnEnded(sessionId, providerId) {
   const watcher = terminalWatchers.get(sessionId);
   const revision = watcher?.getState().revision;
   const isCurrent = () => terminalWatchers.get(sessionId) === watcher && watcher?.getState().revision === revision;
   // Native history may be saved after the idle signal; retry without letting an old turn consume a new reply.
-  void syncTerminalTurn({ sessionId, history: terminalHistory, isCurrent, wait }).then((result) => {
+  const turnSync = syncTerminalTurn({ sessionId, history: terminalHistory, isCurrent, wait });
+  terminalTurnSyncs.set(sessionId, turnSync);
+  void turnSync.finally(() => {
+    if (terminalTurnSyncs.get(sessionId) === turnSync) terminalTurnSyncs.delete(sessionId);
+  }).catch(() => {});
+  void turnSync.then((result) => {
     // A new turn or a reopened terminal must not inherit the previous turn's waiting state.
     if (!result || !isCurrent()) return;
     if (!result?.lastReply) watcher?.waitingForInput();
     background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, result?.lastReply) });
   }).catch(() => {});
 }
+// Before a chat turn (always the case on the phone), a conversation open in the CLI's terminal is
+// handed over: see electron/terminal-handover.js.
+const terminalHandover = createTerminalHandover({
+  isOpen: (sessionId) => cliTerminals.isOpen(sessionId),
+  status: (sessionId) => terminalWatchers.get(sessionId)?.getState().status,
+  pendingSync: (sessionId) => terminalTurnSyncs.get(sessionId),
+  close: (sessionId) => cliTerminals.close(sessionId),
+  endHistory: (sessionId) => terminalHistory.end(sessionId),
+  notifyClosed: (sessionId) => sendToRenderer("cli-terminal-exit", { sessionId, exitCode: null }),
+  busyError: () => i18n.t("errors.terminalBusy"),
+});
 function notifyChatReply(payload, result) {
   const notice = chatReplyNotice(payload?.providerId, result);
   if (notice) background.notifyTurnFinished({ sessionId: payload.sessionId, ...notice });
@@ -1551,16 +1570,14 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("cancel-queued-prompt", (_event, request) => sessionService.cancelQueued(request));
   handle("force-queued-prompt", (_event, request) => sessionService.forceQueued(request));
   handle("answer-now-prompt", (_event, request) => sessionService.answerNow(request));
-  handle("execute-cli-prompt", async (_event, payload) =>
-    updatingCli
-      ? { ok: false, error: i18n.t("errors.waitCliUpdate") }
-      : cliTerminals.isOpen(payload?.sessionId)
-        ? { ok: false, error: i18n.t("errors.openInTerminal") }
-        : sessionService.execute(payload).then((result) => {
-            notifyChatReply(payload, result);
-            return result;
-          }),
-  );
+  handle("execute-cli-prompt", async (_event, payload) => {
+    if (updatingCli) return { ok: false, error: i18n.t("errors.waitCliUpdate") };
+    const handover = await terminalHandover.handOver(payload?.sessionId);
+    if (!handover.ok) return handover;
+    const result = await sessionService.execute(payload);
+    notifyChatReply(payload, result);
+    return result;
+  });
   // Terminal mode: each CLI's own interface, resuming the native conversation.
   handle("cli-terminal-open", (_event, request) => cliTerminals.open(request));
   handle("cli-terminal-write", (_event, request) => cliTerminals.write(request));

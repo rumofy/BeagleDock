@@ -44,7 +44,7 @@ try {
     const result = spawnSync(
       require("electron"),
       [path.join(__dirname, stage === "projects" ? "cli-project-smoke.cjs" : "electron-smoke.cjs"), stage],
-      { env: stage === "projects" ? { ...env, BEAGLEDOCK_DATA_DIR: path.join(root, "project-data") } : env, stdio: "inherit", timeout: 80000 },
+      { env: stage === "projects" ? { ...env, BEAGLEDOCK_DATA_DIR: path.join(root, "project-data") } : env, stdio: "inherit", timeout: 115000 },
     );
     if (result.status !== 0)
       throw new Error(
