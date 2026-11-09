@@ -6,8 +6,6 @@ import { AppStateProvider, useApp } from "../../hooks/AppStateProvider";
 import { useTheme } from "../../hooks/useTheme";
 import { ApprovalPrompt } from "../approvals/ApprovalPrompt";
 import { ChatHeader } from "../chat/ChatHeader";
-import { CliTerminalView } from "../terminal/CliTerminalView";
-import { CliTerminalStart } from "../terminal/CliTerminalStart";
 import { ChatView } from "../chat/ChatView";
 import { HistoryModal } from "../modals/HistoryModal";
 import { ProviderList } from "../sidebar/ProviderList";
@@ -61,7 +59,6 @@ export function MobileApp() {
 function MobileShell({ offline }: { offline: boolean }) {
   const {
     settings,
-    cliTerminals,
     appError,
     setAppError,
     activeSessionId,
@@ -72,9 +69,6 @@ function MobileShell({ offline }: { offline: boolean }) {
     currentModelSelection,
     isExecutingPrompt,
   } = useApp();
-  const terminalMode = cliTerminals.isTerminal(currentSession?.id);
-  const terminalState = currentSession ? cliTerminals.terminals[currentSession.id] : undefined;
-  const running = terminalMode ? terminalState?.status === "running" : isExecutingPrompt;
   useTheme(settings.theme);
   const [view, setView] = useState<"list" | "chat">("list");
   // The chat's controls (model, level, permission, folder, quotas…) open on demand.
@@ -165,10 +159,8 @@ function MobileShell({ offline }: { offline: boolean }) {
           <div className="flex-1 min-w-0">
             <div className="font-bold text-sm truncate">{currentSession?.title}</div>
             <div className="text-[11px] text-[#7d7565] truncate flex items-center gap-1.5">
-              {running && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />}
-              {terminalMode
-                ? t(terminalState?.exited ? "terminal.exited" : terminalState?.status === "running" ? "session.running" : terminalState?.status === "waiting_input" ? "terminal.waitingInput" : "session.idle")
-                : isExecutingPrompt
+              {isExecutingPrompt && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />}
+              {isExecutingPrompt
                 ? t("mobile.running")
                 : [currentModelSelection.model || t("stale.cliDefault"), currentModelSelection.effort]
                     .filter(Boolean)
@@ -193,11 +185,8 @@ function MobileShell({ offline }: { offline: boolean }) {
       </header>
       {banners}
       <div className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
-        {terminalMode && currentSession ? (
-          currentSession.nativeSessionId || currentSession.cwdLocked || cliTerminals.hasStarted(currentSession.id) || cliTerminals.isOpening(currentSession.id)
-            ? <CliTerminalView key={currentSession.id} session={currentSession} mobile />
-            : <CliTerminalStart />
-        ) : <ChatView />}
+        {/* The phone always uses the chat; the native CLI terminal is a desktop option. */}
+        <ChatView />
       </div>
       <ApprovalPrompt />
       <SkillsModal />

@@ -82,6 +82,31 @@ test("Codex CLI: the OSC 7501 state only counts after you send something", () =>
   assert.equal(ends.length, 1);
 });
 
+test("Codex CLI 0.167.0: a finished reply ends in state=done instead of idle", () => {
+  const c = clock();
+  const ends = [];
+  const states = [];
+  const w = createTurnWatcher({ providerId: "codex", onTurnEnd: (e) => ends.push(e), onStateChange: ({ status }) => states.push(status), ...c });
+  // Sequence recorded from the real codex-cli 0.167.0: startup ends in idle, the reply ends in done
+  // (terminated with ST), next to the thread's title in OSC 0.
+  w.output("\x1b]7501;state=idle:app=codex\x07");
+  w.output("\x1b]7501;state=working:app=codex\x07");
+  c.advance(2000);
+  w.output("\x1b]7501;state=idle:app=codex\x07");
+  w.input("Reply with just the word OK\r");
+  w.output("\x1b]7501;state=working:app=codex\x07");
+  c.advance(4900);
+  w.output("\x1b]0;Reply with OK | project\x07\x1b]7501;state=done:app=codex\x1b\\");
+  assert.equal(ends.length, 1, "the reply's end is noticed");
+  assert.equal(states.at(-1), "idle", "the conversation stops showing as running");
+  // The next turn works the same way.
+  w.input("again\r");
+  w.output("\x1b]7501;state=working:app=codex\x07");
+  c.advance(3000);
+  w.output("\x1b]7501;state=done:app=codex\x1b\\");
+  assert.equal(ends.length, 2);
+});
+
 test("Codex: Enter on a startup screen (trust, hooks review) doesn't become the end of a reply", () => {
   const c = clock();
   const ends = [];

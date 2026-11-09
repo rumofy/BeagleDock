@@ -305,22 +305,21 @@ test("a new Claude Code conversation opens with a known ID, so the history finds
 });
 
 for (const providerId of ["claude", "codex", "antigravity"]) {
-  test(`${providerId}: a phone attaches with replay and dimensions without resizing or replacing the desktop CLI`, async () => {
-    const { pty, events, terminals } = setup();
+  test(`${providerId}: a second view attaches with replay and dimensions without resizing or replacing the CLI`, async () => {
+    const { pty, terminals } = setup();
     const request = { sessionId: "s1", providerId, cwd: "/proj", cols: 120, rows: 40 };
-    const desktop = await terminals.open(request);
+    const first = await terminals.open(request);
     pty.spawned[0].emitData("partial output before completion");
-    const phone = await terminals.open({ ...request, cols: 35, rows: 20 });
-    assert.equal(phone.pid, desktop.pid);
-    assert.deepEqual([phone.cols, phone.rows], [120, 40]);
-    assert.equal(phone.replay, "partial output before completion");
+    const second = await terminals.open({ ...request, cols: 35, rows: 20 });
+    assert.equal(second.pid, first.pid);
+    assert.deepEqual([second.cols, second.rows], [120, 40]);
+    assert.equal(second.replay, "partial output before completion");
     assert.equal(pty.spawned.length, 1);
     assert.deepEqual(pty.spawned[0].sizes, []);
     terminals.resize({ sessionId: "s1", cols: 100, rows: 32 });
-    assert.deepEqual(events.at(-1), ["cli-terminal-size", { sessionId: "s1", cols: 100, rows: 32 }]);
     const reconnected = await terminals.open(request);
     assert.deepEqual([reconnected.cols, reconnected.rows], [100, 32]);
-    assert.equal(reconnected.end, phone.end);
-    assert.equal(reconnected.pid, desktop.pid);
+    assert.equal(reconnected.end, second.end);
+    assert.equal(reconnected.pid, first.pid);
   });
 }

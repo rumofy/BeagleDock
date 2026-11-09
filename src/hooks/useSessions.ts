@@ -400,7 +400,13 @@ export function useSessions({
         .getChatMessages(sessionId)
         .then((saved) => {
           const list: ChatMessage[] = saved || [];
-          setMessages((prev) => ({ ...prev, [sessionId]: list }));
+          // A chat turn may be starting right now (the phone's message took over an idle terminal, whose
+          // last turn was just saved): its reply, still being written, isn't saved yet and must stay.
+          setMessages((prev) => {
+            const savedIds = new Set(list.map((m) => m.id));
+            const pending = (prev[sessionId] || []).filter((m) => !savedIds.has(m.id) && (m.isStreaming || m.queuedFor));
+            return { ...prev, [sessionId]: [...list, ...pending] };
+          });
           if (activeRef.current !== sessionId && hasReply)
             setUnreadSessionIds((prev) => prev.includes(sessionId) ? prev : [...prev, sessionId]);
           touchSession(sessionId);
@@ -1072,6 +1078,8 @@ export function useSessions({
     for (const session of providersRef.current.flatMap((p) => p.sessions)) {
       if (session.providerId !== "claude" || session.archived) continue;
       if ((pendingTurns.current.get(session.id) || 0) > 0) continue;
+      // In the CLI's terminal, compacting is up to the CLI: a chat turn would take the conversation from it.
+      if (isTerminalStarted?.(session.id)) continue;
       const due = precompactDue(contextRef.current[session.id], now);
       if (due === null || precompacted.current[session.id] === due) continue;
       precompacted.current[session.id] = due;

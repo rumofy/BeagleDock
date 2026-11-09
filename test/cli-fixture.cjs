@@ -36,7 +36,7 @@ if (process.stdin.isTTY && !args.some((a) => structured.includes(a) || a.startsW
     const conversation = args[0] === "--conversation" ? args[1] : null;
     if (name !== "agy") {
       const state = (busy) => name === "codex"
-        ? `\x1b]7501;state=${busy ? "working" : "idle"}:app=codex\x07`
+        ? `\x1b]7501;state=${busy ? "working" : "done"}:app=codex\x07` // like codex-cli 0.167.0
         : `\x1b]0;${busy ? "◐" : "✳"} Claude Code\x07`;
       process.stdout.write(state(true));
       setTimeout(() => process.stdout.write(state(false)), 1200);

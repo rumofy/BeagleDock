@@ -4,6 +4,17 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-11-08
+
+### Changed
+
+- Paired phones use the BeagleDock chat again instead of the live CLI terminal, which was hard to read and scroll on a small screen; the native CLI terminal stays available on the desktop.
+- Sending from the phone to a conversation open in the desktop's CLI terminal now works: when the CLI is idle, the conversation moves to the chat with its history saved, and reopening the terminal on the desktop resumes it with the phone's messages. While the CLI is replying or waiting for an answer there (an approval, a menu), the phone asks you to finish on the desktop first.
+
+### Fixed
+
+- Codex CLI 0.167.0 conversations in the terminal no longer stay "running" forever: the end of each reply is noticed again, so the status, the history and the conversation's title update.
+
 ## [0.17.0] - 2026-11-07
 
 ### Added
@@ -409,7 +420,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...v0.17.0
 [0.16.4]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...v0.16.4
 [0.16.3]: https://github.com/rumofy/BeagleDock/compare/v0.16.2...v0.16.3

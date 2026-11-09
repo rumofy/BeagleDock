@@ -1,15 +1,10 @@
 // What a paired phone can call: the desktop chat's own backend methods (same handlers as the IPC),
-// restricted to conversations, their native CLI terminals, quotas and notifications. No shell, settings, folders or memory
-// maintenance. Folders come only from registered projects or from the conversation itself.
+// restricted to the chat, quotas and notifications. No terminal, shell, settings, folders or memory
+// maintenance: the phone always uses the chat (the native CLI terminal is a desktop option). Folders come only from registered projects or from the conversation itself.
 const path = require("path");
 
 // Phone method -> IPC channel of the same handler the desktop uses.
 const METHODS = {
-  cliTerminalOpen: "cli-terminal-open",
-  cliTerminalWrite: "cli-terminal-write",
-  cliTerminalResize: "cli-terminal-resize",
-  cliTerminalClose: "cli-terminal-close",
-  cliTerminalList: "cli-terminal-list",
   detectTools: "detect-tools",
   getAppVersion: "get-app-version",
   getUserProfile: "get-user-profile",
@@ -80,21 +75,8 @@ function createRemoteApi({ invoke, getWorkspaces, getSessions, messages = (key) 
     if (!wanted || !(await knownFolders(deviceId)).has(wanted)) throw denied();
   }
 
-  async function requireSession(id) {
-    const session = (await getSessions()).find((s) => s.id === id);
-    if (!session) throw denied();
-    return session;
-  }
-
   // Extra checks on top of the handler's own validation.
   const guards = {
-    async cliTerminalOpen(_deviceId, [request]) {
-      const session = await requireSession(request?.sessionId);
-      if (session.providerId !== request?.providerId || normalize(session.cwd) !== normalize(request?.cwd)) throw denied();
-    },
-    cliTerminalWrite: (_deviceId, [request]) => requireSession(request?.sessionId),
-    cliTerminalResize: (_deviceId, [request]) => requireSession(request?.sessionId),
-    cliTerminalClose: (_deviceId, [id]) => requireSession(id),
     async saveSession(deviceId, [session]) {
       const existing = (await getSessions()).find((s) => s.id === session?.id);
       // A conversation stays in its folder; a new one starts in a known folder.

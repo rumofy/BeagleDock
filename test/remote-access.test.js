@@ -243,12 +243,14 @@ test("the HTTPS server verifies against the local authority, pairs, authenticate
   });
   assert.equal(stream.res.statusCode, 200);
   remote.broadcast("pty-data", { sessionId: "s", data: "rm -rf" });
-  remote.broadcast("cli-terminal-data", { sessionId: "s", data: "x" });
+  remote.broadcast("cli-terminal-data", { sessionId: "s", data: "terminal-screen" });
+  remote.broadcast("cli-terminal-history", { sessionId: "s", added: 1, hasReply: true });
   remote.broadcast("cli-stream-chunk", { sessionId: "s", responseMessageId: "r", fullText: "partial" });
   await new Promise((resolve) => setTimeout(resolve, 100));
   const text = received.join("");
   assert.match(text, /"partial"/, "intermediate text arrives before the turn ends");
-  assert.match(text, /cli-terminal-data/);
+  assert.match(text, /cli-terminal-history/, "a terminal's saved history reloads the phone's chat");
+  assert.doesNotMatch(text, /terminal-screen/, "the desktop terminal's screen never reaches the phone");
   assert.doesNotMatch(text, /rm -rf/);
 
   // A long reply (each chunk carries the full text so far) keeps the stream open while the phone reads.
@@ -558,27 +560,20 @@ test("pairing links and device names", () => {
   assert.equal(state.suggestedDeviceName("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"), "iPhone");
 });
 
-test("mobile terminal calls keep the saved provider and folder for all three CLIs", async () => {
+test("the phone uses the chat: it can't list, open, type in or close the desktop's CLI terminals", async () => {
   for (const providerId of ["claude", "codex", "antigravity"]) {
     const calls = [];
     const api = createRemoteApi({
       getWorkspaces: async () => [],
       getSessions: async () => [{ id: "cli", providerId, cwd: "/project" }],
-      invoke: async (channel, args) => { calls.push([channel, args]); return { ok: true }; },
+      invoke: async (channel, args) => { calls.push([channel, args]); return []; },
     });
+    await assert.rejects(api.call("cliTerminalList", [], device));
     const request = { sessionId: "cli", providerId, cwd: "/project", cols: 80, rows: 24 };
-    await api.call("cliTerminalOpen", [request], device);
-    await api.call("cliTerminalWrite", [{ sessionId: "cli", data: "hello\r" }], device);
-    await api.call("cliTerminalResize", [{ sessionId: "cli", cols: 90, rows: 30 }], device);
-    await api.call("cliTerminalList", [], device);
-    await api.call("cliTerminalClose", ["cli"], device);
-    assert.equal(calls.length, 5);
-    assert.deepEqual(calls[0], ["cli-terminal-open", [request]]);
-    for (const invalid of [{ cwd: "/other" }, { providerId: "other" }, { sessionId: "missing" }])
-      await assert.rejects(api.call("cliTerminalOpen", [{ ...request, ...invalid }], device));
-    for (const method of ["cliTerminalWrite", "cliTerminalResize"])
-      await assert.rejects(api.call(method, [{ sessionId: "missing" }], device));
-    await assert.rejects(api.call("cliTerminalClose", ["missing"], device));
-    assert.equal(calls.length, 5, "invalid requests never reach the terminal manager");
+    await assert.rejects(api.call("cliTerminalOpen", [request], device));
+    await assert.rejects(api.call("cliTerminalWrite", [{ sessionId: "cli", data: "hello\r" }], device));
+    await assert.rejects(api.call("cliTerminalResize", [{ sessionId: "cli", cols: 90, rows: 30 }], device));
+    await assert.rejects(api.call("cliTerminalClose", ["cli"], device));
+    assert.equal(calls.length, 0, "terminal calls never reach the terminal manager");
   }
 });
