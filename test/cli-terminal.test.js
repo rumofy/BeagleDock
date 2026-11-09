@@ -4,9 +4,11 @@ const { createCliTerminals, terminalArgs, terminalEnv } = require("../electron/c
 
 test("terminalArgs resumes the native conversation with each CLI's argument", () => {
   assert.deepEqual(terminalArgs("claude", "abc12345-uuid"), ["--resume", "abc12345-uuid"]);
-  assert.deepEqual(terminalArgs("codex", "019a-thread-id"), ["resume", "019a-thread-id"]);
+  assert.deepEqual(terminalArgs("codex", "019a-thread-id"), ["--no-alt-screen", "resume", "019a-thread-id"]);
   assert.deepEqual(terminalArgs("antigravity", "conv_12345678"), ["--conversation", "conv_12345678"]);
-  for (const id of ["claude", "codex", "antigravity"]) assert.deepEqual(terminalArgs(id, undefined), []);
+  for (const id of ["claude", "antigravity"]) assert.deepEqual(terminalArgs(id, undefined), []);
+  // Codex runs inline so its output stays in the terminal's scrollback.
+  assert.deepEqual(terminalArgs("codex", undefined), ["--no-alt-screen"]);
   assert.throws(() => terminalArgs("claude", "--dangerously-skip-permissions"), /Invalid native ID/);
   assert.throws(() => terminalArgs("outra", "abc12345"), /Unknown CLI/);
 });
@@ -105,7 +107,7 @@ test("a conversation without a native id opens a new CLI conversation", async ()
   const { pty, terminals } = setup();
   const result = await terminals.open({ sessionId: "s1", providerId: "codex", cwd: "/proj" });
   assert.equal(result.resumed, false);
-  assert.deepEqual(pty.spawned[0].args, []);
+  assert.deepEqual(pty.spawned[0].args, ["--no-alt-screen"]);
   assert.equal(pty.spawned[0].bin, "/bin/codex");
 });
 
@@ -298,7 +300,7 @@ test("Ctrl+V: reads Electron's async clipboard (image and text)", async () => {
 
 test("a new Claude Code conversation opens with a known ID, so the history finds it later", async () => {
   assert.deepEqual(terminalArgs("claude", undefined, "abc12345-uuid"), ["--session-id", "abc12345-uuid"]);
-  assert.deepEqual(terminalArgs("codex", undefined, "abc12345-uuid"), [], "only Claude Code accepts choosing the ID");
+  assert.deepEqual(terminalArgs("codex", undefined, "abc12345-uuid"), ["--no-alt-screen"], "only Claude Code accepts choosing the ID");
   assert.throws(() => terminalArgs("claude", undefined, "--x"), /Invalid native ID/);
   const calls = [];
   const hooks = Object.fromEntries(
