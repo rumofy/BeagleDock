@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-11-09
+
+### Fixed
+
+- Codex CLI conversations in the terminal can now be scrolled back with the scrollbar and the mouse wheel; before, only the current screen was visible.
+
 ## [0.17.2] - 2026-11-09
 
 ### Fixed
@@ -426,7 +432,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...HEAD
+[0.17.3]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...v0.17.0

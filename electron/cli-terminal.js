@@ -13,6 +13,10 @@ const REPLAY_LIMIT = 512 * 1024;
  */
 function terminalArgs(providerId, nativeId, newId) {
   if (!PROVIDERS.has(providerId)) throw new Error(t("errors.unknownCli"));
+  // Codex's TUI draws in the alternate screen by default, which has no scrollback: the terminal had no
+  // scrollbar and the wheel didn't scroll the conversation. Inline mode keeps the output in the regular
+  // scrollback (verified in Codex CLI 0.167.0). Claude Code and Antigravity handle the wheel themselves.
+  const prefix = providerId === "codex" ? ["--no-alt-screen"] : [];
   // Never starts with "-": it would become a CLI option instead of the conversation id.
   const valid = (id) => /^[a-zA-Z0-9_][a-zA-Z0-9_-]{7,159}$/.test(id);
   if (!nativeId) {
@@ -20,10 +24,10 @@ function terminalArgs(providerId, nativeId, newId) {
       if (!valid(newId)) throw new Error(t("errors.invalidNativeId"));
       return ["--session-id", newId];
     }
-    return [];
+    return prefix;
   }
   if (!valid(nativeId)) throw new Error(t("errors.invalidNativeId"));
-  if (providerId === "codex") return ["resume", nativeId];
+  if (providerId === "codex") return [...prefix, "resume", nativeId];
   if (providerId === "claude") return ["--resume", nativeId];
   return ["--conversation", nativeId];
 }
