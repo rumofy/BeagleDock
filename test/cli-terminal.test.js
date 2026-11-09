@@ -176,6 +176,26 @@ test("a CLI that exited: tells the screen and the next opening creates another p
   assert.equal(pty.spawned.length, 2);
 });
 
+for (const providerId of ["claude", "codex", "antigravity"]) {
+  test(`${providerId}: closing removes the terminal and notifies the renderer despite late process events`, async () => {
+    const { pty, events, terminals } = setup({ link: { nativeId: "native_12345678", cwd: "/proj" } });
+    await terminals.open({ sessionId: "closed", providerId, cwd: "/proj" });
+    await terminals.open({ sessionId: "kept", providerId, cwd: "/proj" });
+    terminals.close("closed");
+    assert.equal(pty.spawned[0].killed, true);
+    assert.deepEqual(events.at(-1), ["cli-terminal-closed", { sessionId: "closed" }]);
+    const eventCount = events.length;
+    pty.spawned[0].emitData("late output");
+    pty.spawned[0].emitExit({ exitCode: 0 });
+    assert.equal(events.length, eventCount);
+    assert.deepEqual(terminals.list().map((entry) => entry.sessionId), ["kept"]);
+    assert.equal(terminals.isOpen("kept"), true);
+    const resumed = await terminals.open({ sessionId: "closed", providerId, cwd: "/proj" });
+    assert.equal(resumed.resumed, true);
+    assert.deepEqual(pty.spawned[2].args, terminalArgs(providerId, "native_12345678"));
+  });
+}
+
 test("refuses to open with a turn running in the chat, a different directory or a missing CLI", async () => {
   const busy = setup({
     beforeOpen: async () => {

@@ -1551,8 +1551,12 @@ module.exports.ready = app.whenReady().then(async () => {
     try {
       if (typeof id !== "string") throw new Error(i18n.t("errors.invalidConversation"));
       // Closing stops the CLI process; the conversation stays in the history.
-      if (archived === true) killPty(id);
-      return await sessionService.setSessionArchived(id, archived === true);
+      const result = await sessionService.setSessionArchived(id, archived === true);
+      if (archived === true && result.success) {
+        killPty(id);
+        cliTerminals.close(id);
+      }
+      return result;
     } catch (e) {
       return { success: false, error: e.message };
     }

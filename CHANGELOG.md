@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.17.2] - 2026-11-09
+
+### Fixed
+
+- Closing conversations now stops their CLI terminals and removes them from the Shells count and grid; terminals left behind by previously closed conversations are cleaned up automatically.
+
 ## [0.17.1] - 2026-11-08
 
 ### Changed
@@ -420,7 +426,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...HEAD
+[0.17.2]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/rumofy/BeagleDock/compare/v0.16.4...v0.17.0
 [0.16.4]: https://github.com/rumofy/BeagleDock/compare/v0.16.3...v0.16.4

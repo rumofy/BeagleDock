@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { backendAvailable, beagleApi } from "../api/beagleApi";
 import { useMaintenanceChat } from "../features/memory/useMaintenanceChat";
@@ -83,6 +83,7 @@ function useAppStateValue() {
   // State saved in SQLite (workspaces, settings, sessions and messages)
   const { setSettings } = settings;
   const { hydrateSessions } = sessions;
+  const [sessionsHydrated, setSessionsHydrated] = useState(false);
   useEffect(() => {
     if (!backendAvailable()) {
       setAppError(
@@ -103,18 +104,19 @@ function useAppStateValue() {
         if (saved.settings?.securityWarning)
           setAppError(saved.settings.securityWarning);
         hydrateSessions(saved);
+        setSessionsHydrated(true);
       })
       .catch((error: Error) => setAppError(error.message));
   }, []);
 
-  // Conversation deleted with its terminal open: stop its CLI.
+  // Closed conversations stay in history, but must not keep a terminal registered or running.
   const { terminals, closeTerminal } = cliTerminals;
-  const sessionIds = sessions.allSessions.map((s) => s.id).join("|");
+  const sessionIds = sessions.allSessions.filter((s) => !s.archived).map((s) => s.id).join("|");
   useEffect(() => {
-    if (!sessions.allSessions.length) return;
-    const known = new Set(sessions.allSessions.map((s) => s.id));
+    if (!sessionsHydrated) return;
+    const known = new Set(sessions.allSessions.filter((s) => !s.archived).map((s) => s.id));
     for (const id of Object.keys(terminals)) if (!known.has(id)) void closeTerminal(id);
-  }, [sessionIds, terminals, closeTerminal]);
+  }, [sessionsHydrated, sessionIds, terminals, closeTerminal]);
 
   // Auto-scroll the terminals when new logs come in
   const ptyScrollRef = useRef<HTMLDivElement>(null);

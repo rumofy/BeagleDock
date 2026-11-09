@@ -301,6 +301,7 @@ export interface StreamEvents {
   "cli-terminal-opened": { sessionId: string; pid: number };
   "cli-terminal-data": { sessionId: string; data: string; end: number };
   "cli-terminal-exit": { sessionId: string; exitCode: number | null };
+  "cli-terminal-closed": { sessionId: string };
   "cli-terminal-history": { sessionId: string; added: number; hasReply?: boolean };
   "cli-terminal-state": { sessionId: string; status: "running" | "idle" | "waiting_input" };
   /** Backend request (tray, notification) to open a conversation. */
