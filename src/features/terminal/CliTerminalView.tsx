@@ -63,6 +63,9 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
     const unsubscribeOpened = beagleApi.on("cli-terminal-opened", ({ sessionId, pid }) => {
       if (sessionId === id && attachedPid !== null && attachedPid !== pid) setAttempt((n) => n + 1);
     });
+    const unsubscribeClosed = beagleApi.on("cli-terminal-closed", ({ sessionId }) => {
+      if (sessionId === id) setError(t("terminal.exited"));
+    });
     // Ctrl+V: with an image, the CLI reads the clipboard itself (that's how it attaches); with text,
     // it pastes. Ctrl+Shift+C/V and Ctrl+C with a selection copy/paste like a regular terminal.
     term.attachCustomKeyEventHandler((event) => {
@@ -145,6 +148,7 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
       resize.disconnect();
       unsubscribe();
       unsubscribeOpened();
+      unsubscribeClosed();
       registerPaster(id, null);
       termRef.current = null;
       // xterm schedules a scroll adjustment right after opening; disposed before that, it reads the

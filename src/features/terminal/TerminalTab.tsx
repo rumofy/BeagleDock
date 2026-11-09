@@ -10,7 +10,7 @@ import { t } from "../../i18n";
 function TerminalGrid() {
   const { cliTerminals, allSessions, setActiveSessionId, setActiveTab } = useApp();
   const [focused, setFocused] = useState<string | null>(null);
-  const open = allSessions.filter((s) => cliTerminals.terminals[s.id]);
+  const open = allSessions.filter((s) => !s.archived && cliTerminals.terminals[s.id]);
   const shown = focused && open.some((s) => s.id === focused) ? open.filter((s) => s.id === focused) : open;
   const columns = shown.length <= 1 ? 1 : shown.length <= 4 ? 2 : 3;
   return (

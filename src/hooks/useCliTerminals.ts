@@ -23,6 +23,16 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
   const startTerminal = (sessionId: string) => setRequested((prev) => prev.includes(sessionId) ? prev : [...prev, sessionId]);
   // The mounted view registers xterm's paste, which honors the paste mode the CLI asked for.
   const pasters = useRef(new Map<string, (text: string) => void>());
+  const forgetTerminal = useCallback((sessionId: string) => {
+    pasters.current.delete(sessionId);
+    setRequested((prev) => prev.filter((id) => id !== sessionId));
+    setTerminals((prev) => {
+      if (!prev[sessionId]) return prev;
+      const next = { ...prev };
+      delete next[sessionId];
+      return next;
+    });
+  }, []);
 
   // Reloading the window doesn't lose the terminals still running in the main process.
   useEffect(() => {
@@ -41,17 +51,18 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
       setTerminals((prev) => ({ ...prev, [sessionId]: { exited: false, exitCode: null, status: "idle" } }));
     });
     const unsubscribeState = beagleApi.on("cli-terminal-state", ({ sessionId, status }) => {
-      setTerminals((prev) => ({
+      setTerminals((prev) => prev[sessionId] ? ({
         ...prev,
-        [sessionId]: { ...(prev[sessionId] || { exited: false, exitCode: null }), status },
-      }));
+        [sessionId]: { ...prev[sessionId], status },
+      }) : prev);
     });
     const unsubscribeExit = beagleApi.on("cli-terminal-exit", ({ sessionId, exitCode }) =>
       setTerminals((prev) =>
         prev[sessionId] ? { ...prev, [sessionId]: { exited: true, exitCode, status: "idle" } } : prev,
       ),
     );
-    return () => { unsubscribeOpened(); unsubscribeState(); unsubscribeExit(); };
+    const unsubscribeClosed = beagleApi.on("cli-terminal-closed", ({ sessionId }) => forgetTerminal(sessionId));
+    return () => { unsubscribeOpened(); unsubscribeState(); unsubscribeExit(); unsubscribeClosed(); };
   }, []);
 
   const active = enabled && terminalAvailable();
@@ -65,16 +76,9 @@ export function useCliTerminals(setAppError: (message: string) => void, enabled:
       } catch (error) {
         setAppError((error as Error).message);
       }
-      pasters.current.delete(sessionId);
-      setRequested((prev) => prev.filter((id) => id !== sessionId));
-      setTerminals((prev) => {
-        if (!prev[sessionId]) return prev;
-        const next = { ...prev };
-        delete next[sessionId];
-        return next;
-      });
+      forgetTerminal(sessionId);
     },
-    [setAppError],
+    [setAppError, forgetTerminal],
   );
 
   // Switched back to the chat in settings: stop every terminal CLI so the chat can use the

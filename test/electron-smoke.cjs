@@ -269,6 +269,24 @@ async function send(win, text, expected) {
       await waitFor(win, `!!document.querySelector('[data-session-id="${id}"] [title="Waiting for interaction"]')`);
       assert.equal(await js(`window.beagleAPI.cliTerminalList().then(l=>l.find(t=>t.sessionId===${JSON.stringify(id)}).status)`), "waiting_input");
     }
+    // Closing each provider removes the native process and the renderer's Shells entry, while
+    // reopening from history resumes the same saved native conversation.
+    for (const providerId of ["claude", "codex", "antigravity"]) {
+      const saved = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.find(x=>x.providerId==='${providerId}'&&!x.archived))`);
+      await js(`document.querySelector('[data-session-id="${saved.id}"]').click()`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.some(t=>t.sessionId==='${saved.id}'))`);
+      await js(`document.querySelector('[data-session-id="${saved.id}"] button[aria-label="Close conversation"]').click()`);
+      await waitFor(win, `!document.querySelector('[data-session-id="${saved.id}"]')`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>!l.some(t=>t.sessionId==='${saved.id}'))`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>[...document.querySelectorAll('button')].find(b=>b.innerText.includes('Shells'))?.innerText.includes(l.length+' CLI'))`);
+      const closed = await js(`window.beagleAPI.getSavedState().then(s=>s.sessions.find(x=>x.id==='${saved.id}'))`);
+      assert.equal(closed.archived, true);
+      assert.equal(closed.nativeSessionId, saved.nativeSessionId, "closing preserves the native conversation");
+      await js(`[...document.querySelectorAll('button')].find(b=>b.textContent.includes('Conversation history')).click()`);
+      await waitFor(win, `!!document.querySelector('[data-history-id="beagledock:${saved.id}"]')`);
+      await js(`document.querySelector('[data-history-id="beagledock:${saved.id}"]').click()`);
+      await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.some(t=>t.sessionId==='${saved.id}'&&t.resumed))`);
+    }
     await js(`document.querySelector('[data-session-id="${terminalSession}"]').click()`);
     // Back to the chat: the terminal's CLI is closed and the chat continues the conversation.
     await setMode("chat");

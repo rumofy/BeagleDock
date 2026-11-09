@@ -207,6 +207,7 @@ function createCliTerminals({
         entry.proc.kill();
       } catch {}
     hook("closed", sessionId);
+    emit("cli-terminal-closed", { sessionId });
     return { ok: true };
   }
 
