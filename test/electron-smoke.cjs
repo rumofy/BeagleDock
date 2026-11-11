@@ -193,6 +193,13 @@ async function send(win, text, expected) {
     // Keys go straight to the CLI.
     await js(`(()=>{const t=document.querySelector('[data-testid="cli-terminal"] textarea');t.focus();t.dispatchEvent(new KeyboardEvent('keydown',{key:'k',code:'KeyK',keyCode:75,bubbles:true,cancelable:true}));})()`);
     await waitFor(win, `window.beagleAPI.cliTerminalList().then(l=>l.length===1)`);
+    // Ctrl+H opens the history even with the focus in the CLI, and doesn't reach it as a backspace.
+    await js(`(()=>{const t=document.querySelector('[data-testid="cli-terminal"] textarea');t.focus();t.dispatchEvent(new KeyboardEvent('keydown',{key:'h',code:'KeyH',keyCode:72,ctrlKey:true,bubbles:true,cancelable:true}));})()`);
+    await waitFor(win, `!!document.querySelector('[data-testid="history-modal"]')`);
+    await js(`window.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
+    await waitFor(win, `!document.querySelector('[data-testid="history-modal"]')`);
+    // The header's close button is there for the open conversation.
+    assert.equal(await js(`!!document.querySelector('[data-testid="close-conversation"]')`), true);
     // Handoff from the header: pastes the request into the CLI and sends it.
     await js(`[...document.querySelectorAll('button')].find(b=>b.innerText.trim()==='Handoff').click()`);
     const start = Date.now();
@@ -203,6 +210,7 @@ async function send(win, text, expected) {
       await pause();
     }
     assert.match(typed, /k\x1b\[200~Use the ai-memory handoff skill/);
+    assert.ok(!typed.includes("\x08"), "Ctrl+H didn't reach the CLI");
     assert.ok(typed.endsWith("\x1b[201~\r"), JSON.stringify(typed.slice(-40)));
     await waitFor(win, `document.querySelector('[data-testid="terminal-status"]')?.innerText==='Process running'`);
     await waitFor(win, `!!document.querySelector('[aria-current="true"] [title="Process running"]')`);

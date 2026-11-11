@@ -4,6 +4,18 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.17.4] - 2026-11-11
+
+### Added
+
+- A red close button in the top-right corner of the conversation closes it (stopping its CLI) without going to the sidebar; the conversation stays in the history.
+
+### Fixed
+
+- The CLI terminals and shells now show a wider scrollbar that is visible on the dark background and can be dragged to scroll back.
+- Ctrl+H opens the conversation history from anywhere in the app, including when the focus is in a CLI terminal.
+- Esc now discards a voice recording in terminal mode when the focus is in the CLI, instead of reaching the CLI and interrupting it.
+
 ## [0.17.3] - 2026-11-09
 
 ### Fixed
@@ -432,7 +444,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...HEAD
+[0.17.4]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/rumofy/BeagleDock/compare/v0.17.0...v0.17.1

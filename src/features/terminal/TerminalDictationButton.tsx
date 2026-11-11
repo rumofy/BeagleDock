@@ -7,6 +7,11 @@ import { dictationAvailable, useVoiceDictation } from "../chat/useVoiceDictation
 import { t } from "../../i18n";
 /** Terminal event for Ctrl+Shift+M (the terminal doesn't let the key reach the window). */
 export const DICTATION_TOGGLE_EVENT = "beagledock:dictation-toggle";
+/** Terminal event for Esc while recording: discards the recording instead of reaching the CLI. */
+export const DICTATION_CANCEL_EVENT = "beagledock:dictation-cancel";
+let recordingNow = false;
+/** Whether the terminal dictation is recording (the terminal then gives Esc to it). */
+export const dictationRecording = () => recordingNow;
 
 const clock = (total: number) => `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 
@@ -45,10 +50,15 @@ export function TerminalDictationButton() {
         onToggle();
       } else if (e.key === "Escape" && dictation.state === "recording") dictation.cancel();
     };
+    const onCancel = () => dictation.state === "recording" && dictation.cancel();
+    recordingNow = dictation.state === "recording";
     window.addEventListener(DICTATION_TOGGLE_EVENT, onToggle);
+    window.addEventListener(DICTATION_CANCEL_EVENT, onCancel);
     window.addEventListener("keydown", onKey);
     return () => {
+      recordingNow = false;
       window.removeEventListener(DICTATION_TOGGLE_EVENT, onToggle);
+      window.removeEventListener(DICTATION_CANCEL_EVENT, onCancel);
       window.removeEventListener("keydown", onKey);
     };
   }, [dictation]);

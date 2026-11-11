@@ -5,7 +5,7 @@ import "@xterm/xterm/css/xterm.css";
 import { beagleApi } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
 import type { ChatSession } from "../../types";
-import { DICTATION_TOGGLE_EVENT } from "./TerminalDictationButton";
+import { DICTATION_CANCEL_EVENT, DICTATION_TOGGLE_EVENT, dictationRecording } from "./TerminalDictationButton";
 
 import { t } from "../../i18n";
 // Path dragged into the terminal: single-quoted when it has a space or a shell symbol.
@@ -69,10 +69,19 @@ export function CliTerminalView({ session, compact = false }: { session: ChatSes
     // Ctrl+V: with an image, the CLI reads the clipboard itself (that's how it attaches); with text,
     // it pastes. Ctrl+Shift+C/V and Ctrl+C with a selection copy/paste like a regular terminal.
     term.attachCustomKeyEventHandler((event) => {
-      // BeagleDock's global shortcuts (Ctrl+K, Ctrl+H, Alt+P…) don't steal keys from the CLI.
+      const key = event.key.toLowerCase();
+      // Ctrl+H (history) works with the focus in the CLI too: it reaches the app's global shortcut
+      // instead of being sent to the CLI as a backspace.
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && key === "h") return false;
+      // BeagleDock's other global shortcuts (Ctrl+K, Alt+P…) don't steal keys from the CLI.
       event.stopPropagation();
       if (event.type !== "keydown") return true;
-      const key = event.key.toLowerCase();
+      // Esc while dictating discards the recording; it doesn't reach the CLI (where it would interrupt).
+      if (key === "escape" && dictationRecording()) {
+        event.preventDefault();
+        window.dispatchEvent(new Event(DICTATION_CANCEL_EVENT));
+        return false;
+      }
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && key === "m") {
         event.preventDefault();
         window.dispatchEvent(new Event(DICTATION_TOGGLE_EVENT));
