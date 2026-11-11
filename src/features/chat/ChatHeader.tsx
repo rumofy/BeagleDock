@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Code2,
   Settings2,
+  X,
 } from "lucide-react";
 import { beagleApi, editorAvailable, shellAvailable, workspaceEditingAvailable } from "../../api/beagleApi";
 import { useApp } from "../../hooks/AppStateProvider";
@@ -104,6 +105,7 @@ export function ChatHeader() {
     cliTerminals,
     isChangingWorkspace,
     currentMessages,
+    setSessionArchived,
   } = useApp();
   const background = backgroundWork(currentMessages);
   // Terminal mode: the CLI handles model, plan, permissions and approvals; the header only keeps
@@ -439,6 +441,19 @@ export function ChatHeader() {
           <Maximize2 size={14} />
         </button>
         </>
+        )}
+
+        {currentSession && (
+          <button
+            type="button"
+            data-testid="close-conversation"
+            onClick={() => void setSessionArchived(currentSession.id, true)}
+            className="p-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white transition shadow-2xs"
+            title={t("session.closeHint")}
+            aria-label={t("session.closeLabel")}
+          >
+            <X size={14} />
+          </button>
         )}
       </div>
     </>

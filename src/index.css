@@ -33,6 +33,26 @@
   background: rgba(0, 0, 0, 0.2);
 }
 
+/* Terminals (xterm): a wider scrollbar that shows on the dark background and can be dragged. */
+:root .xterm .xterm-viewport::-webkit-scrollbar {
+  width: 12px;
+}
+:root .xterm .xterm-viewport::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+}
+:root .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+  background: rgba(228, 228, 231, 0.3);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 9999px;
+  min-height: 32px;
+}
+:root .xterm .xterm-viewport::-webkit-scrollbar-thumb:hover,
+:root .xterm .xterm-viewport::-webkit-scrollbar-thumb:active {
+  background: rgba(228, 228, 231, 0.55);
+  background-clip: padding-box;
+}
+
 /* Busca na conversa (Ctrl+F): todas as ocorrências e a atual. */
 ::highlight(chat-find) {
   background-color: rgba(250, 204, 21, 0.45);

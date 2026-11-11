@@ -40,7 +40,7 @@ export function HistoryModal() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+    <div data-testid="history-modal" className="fixed inset-0 bg-black/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
       <div className="bg-[#ffffff] border border-[#d8d2c3] rounded-2xl shadow-2xl max-w-3xl w-full flex flex-col overflow-hidden max-h-[85vh]">
         <div className="p-4 border-b border-[#eeeae0] bg-[#faf8f4] flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-1">
