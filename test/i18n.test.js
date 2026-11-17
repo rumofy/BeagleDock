@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 
 const root = path.join(__dirname, "..");
 const LOCALE_FILES = { en: "en.json", es: "es.json", "pt-BR": "pt-BR.json" };
@@ -71,7 +72,7 @@ test("every literal key passed to t()/tn() exists in the dictionaries", () => {
 });
 
 test("the main process translator behaves like the shared one", async () => {
-  const shared = await import(path.join(root, "shared/i18n/translate.mjs"));
+  const shared = await import(pathToFileURL(path.join(root, "shared/i18n/translate.mjs")).href);
   const main = require("../electron/i18n");
   assert.deepEqual(main.LOCALES, shared.LOCALES);
   assert.equal(main.DEFAULT_LOCALE, shared.DEFAULT_LOCALE);
@@ -99,7 +100,7 @@ test("the main process translator behaves like the shared one", async () => {
 });
 
 test("locale resolution: English by default, Portuguese variants become pt-BR", async () => {
-  const { resolveLocale } = await import(path.join(root, "shared/i18n/translate.mjs"));
+  const { resolveLocale } = await import(pathToFileURL(path.join(root, "shared/i18n/translate.mjs")).href);
   assert.equal(resolveLocale(undefined), "en");
   assert.equal(resolveLocale("fr-FR"), "en");
   assert.equal(resolveLocale("pt"), "pt-BR");
@@ -108,7 +109,7 @@ test("locale resolution: English by default, Portuguese variants become pt-BR", 
 });
 
 test("a missing key falls back to English, then to the key itself", async () => {
-  const { createTranslator } = await import(path.join(root, "shared/i18n/translate.mjs"));
+  const { createTranslator } = await import(pathToFileURL(path.join(root, "shared/i18n/translate.mjs")).href);
   const { t, tn } = createTranslator({ en: { a: "A {x}", n_one: "one", n_other: "{count} many" }, es: {} }, () => "es");
   assert.equal(t("a", { x: 1 }), "A 1");
   assert.equal(t("nope"), "nope");

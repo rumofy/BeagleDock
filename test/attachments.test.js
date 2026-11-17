@@ -26,7 +26,9 @@ test("attachments: saved in the conversation's folder, with a sanitized name, im
   }
   assert.ok(files[1].path.endsWith(".png"), "an image without an extension gets its type's");
   assert.equal(fs.readFileSync(files[0].path, "utf8"), "log de erro");
-  assert.equal(fs.statSync(files[0].path).mode & 0o077, 0, "only the owner reads it");
+  // Windows has no POSIX permission bits: there the folder's ACL protects the file.
+  if (process.platform !== "win32")
+    assert.equal(fs.statSync(files[0].path).mode & 0o077, 0, "only the owner reads it");
 });
 
 test("attachments: refuses invalid, empty, too large content and too many files", () => {

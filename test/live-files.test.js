@@ -4,6 +4,21 @@ const fs = require("fs"),
   os = require("os"),
   path = require("path");
 const { createLiveFiles, liveDirectories } = require("../electron/live-files");
+// Folder links: a junction on Windows (no privilege needed), a plain symlink elsewhere.
+const dirLink = (target, link) => fs.symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+// File symlinks need Developer Mode or admin rights on Windows; without them that check is skipped.
+const fileLink = (t, target, link) => {
+  try {
+    fs.symlinkSync(target, link);
+    return true;
+  } catch (err) {
+    if (process.platform === "win32" && err.code === "EPERM") {
+      t.diagnostic("file symlinks unavailable on this Windows account; symlink check skipped");
+      return false;
+    }
+    throw err;
+  }
+};
 test("AGY: the child's directory is followed during the turn without rereading the parent's logs", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-live-child-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -53,9 +68,10 @@ test("native task files stream growing UTF-8 logs before command completion and 
   assert.equal(data.map((d) => d.text).join(""), "first while running\nação");
   const secret = path.join(root, "secret.txt");
   fs.writeFileSync(secret, "must never appear");
-  fs.symlinkSync(secret, path.join(root, "task-2.log"));
-  await watcher.poll();
-  assert.doesNotMatch(data.map((d) => d.text).join(""), /must never/);
+  if (fileLink(t, secret, path.join(root, "task-2.log"))) {
+    await watcher.poll();
+    assert.doesNotMatch(data.map((d) => d.text).join(""), /must never/);
+  }
   fs.writeFileSync(file, "reset\n");
   await watcher.poll();
   assert.equal(data.at(-1).text, "reset\n");
@@ -110,7 +126,7 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   const real = path.join(root, "real"),
     alias = path.join(root, "alias");
   fs.mkdirSync(real);
-  fs.symlinkSync(real, alias, "dir");
+  dirLink(real, alias);
   const dir = path.join(alias, "native-123/tasks");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "task-1.log"), "live");
@@ -127,7 +143,7 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   const outside = path.join(root, "outside");
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, "task-2.log"), "private");
-  fs.symlinkSync(outside, path.join(alias, "other-native"), "dir");
+  dirLink(outside, path.join(alias, "other-native"));
   const blocked = [];
   const second = createLiveFiles({
     directories: [

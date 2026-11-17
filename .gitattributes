@@ -1,0 +1,11 @@
+# The repository uses LF everywhere; a Windows checkout with core.autocrlf would otherwise
+# turn generated files (such as the dark theme CSS) into CRLF and break the up-to-date checks.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
+*.jpg binary
+*.webp binary
+*.woff2 binary

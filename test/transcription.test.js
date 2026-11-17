@@ -242,8 +242,11 @@ test("the local engine is looked up in the installed package and then in the rep
     fs.mkdirSync(path.join(root, "res", "speech"), { recursive: true });
     fs.writeFileSync(path.join(root, "res", "speech", "parakeet-cli"), "", { mode: 0o755 });
     assert.equal(t.findLocalEngine(opts), path.join(root, "res", "speech", "parakeet-cli"));
-    fs.chmodSync(path.join(vendor, "parakeet-cli"), 0o644);
-    assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo") }), null, "without execute permission it doesn't count");
+    // Windows has no execute bit: X_OK only checks that the file exists there.
+    if (process.platform !== "win32") {
+      fs.chmodSync(path.join(vendor, "parakeet-cli"), 0o644);
+      assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo") }), null, "without execute permission it doesn't count");
+    }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

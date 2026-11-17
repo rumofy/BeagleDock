@@ -57,7 +57,8 @@ test("the dark conversion follows the VS Code pattern, inverts lightness and kee
 test("the dark theme CSS is up to date with the colors used in the app and follows the VS Code pattern", async () => {
   const { generateDarkCss } = await import("../scripts/gen-dark-theme.mjs");
   const { css, unsupported } = generateDarkCss();
-  const current = fs.readFileSync(path.resolve("src/dark-theme.generated.css"), "utf8");
+  // A Windows checkout with core.autocrlf turns the file's line endings into CRLF.
+  const current = fs.readFileSync(path.resolve("src/dark-theme.generated.css"), "utf8").replace(/\r\n/g, "\n");
   assert.equal(current, css, "rode `npm run theme:gen`");
   assert.deepEqual(unsupported, [], "there are color variants without a dark theme");
   assert.match(css, /:root\[data-theme="dark"\] body \{ background: #1e1e1e; color: #d4d4d4; \}/);
