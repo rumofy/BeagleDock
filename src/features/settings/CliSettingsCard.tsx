@@ -20,7 +20,6 @@ export function CliSettingsCard() {
     setCliFeedback,
     cliUpdating,
     setCliUpdating,
-    hasRunningPrompts,
   } = useApp();
   return (
                 <div className="bg-[#ffffff] border border-[#ded8cb] rounded-2xl p-6 shadow-xs">
@@ -65,13 +64,13 @@ export function CliSettingsCard() {
                               </span>
                               <button
                                 aria-label={t("cliSettings.updateLabel", { name: p.name })}
-                                disabled={!!cliUpdating || hasRunningPrompts}
+                                disabled={!!cliUpdating}
                                 className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-[#ded8cb] disabled:opacity-50"
                                 onClick={async () => {
                                   setCliUpdating(p.id);
                                   setCliFeedback((prev) => ({
                                     ...prev,
-                                    [p.id]: t("cliSettings.updating"),
+                                    [p.id]: t("cliSettings.updateRequested"),
                                   }));
                                   try {
                                     const result = await beagleApi.updateCli(p.id);

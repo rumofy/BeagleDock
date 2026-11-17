@@ -109,6 +109,8 @@ function updateCommand(id, bin, find = findBinary) {
         ],
       };
   }
+  if (/[\\/]OpenAI[\\/]Codex[\\/]bin[\\/]codex\.exe$/i.test(real))
+    return { bin, args: ["update"] };
   const brew = find("brew");
   if (brew && /(?:Cellar|Caskroom|homebrew).*codex/i.test(real))
     return { bin: brew, args: ["upgrade", "codex"] };

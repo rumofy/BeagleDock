@@ -161,6 +161,7 @@
   "cliSettings.updateLabel": "Actualizar {name}",
   "cliSettings.updated": "CLI actualizada.",
   "cliSettings.updatedTo": "CLI actualizada a {version}.",
+  "cliSettings.updateRequested": "Actualización solicitada. Si es necesario, se esperará a que terminen las ejecuciones o se cierre la terminal de esta CLI.",
   "cliSettings.updating": "Actualizando…",
   "code.copyLabel": "Copiar código",
   "code.label": "código",
