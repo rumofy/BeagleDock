@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createTerminalHistory, syncTerminalTurn } = require("../electron/terminal-history");
+const { createTerminalHistory, syncTerminalTurn, TURN_SYNC_DELAYS } = require("../electron/terminal-history");
 
 const msg = (id, sender, text, timestamp = "2026-11-03T20:00:00.000Z") => ({ id, sender, text, timestamp });
 
@@ -102,17 +102,20 @@ for (const providerId of ["claude", "codex", "antigravity"]) {
     const waits = [];
     const wait = (ms) => new Promise((resolve) => waits.push({ ms, resolve }));
     const old = syncTerminalTurn({ sessionId: "s1", history: t.h, isCurrent: () => revision === 1, wait });
+    // The first read runs right away and finds nothing yet: the 800 ms retry gets scheduled.
+    await new Promise(setImmediate);
+    assert.equal(waits[0].ms, 800);
     waits.shift().resolve();
     await new Promise(setImmediate);
     assert.equal(waits[0].ms, 1500, "the previous turn has a retry pending");
-    revision = 2;
-    const current = syncTerminalTurn({ sessionId: "s1", history: t.h, isCurrent: () => revision === 2, wait });
-    messages = [msg("u2", "user", "next request"), msg("r2", providerId, "next reply")];
-    waits.shift().resolve();
-    assert.equal(await old, null, "the stale retry exits before importing the new reply");
     assert.equal(t.saved.length, 0);
+    revision = 2;
+    messages = [msg("u2", "user", "next request"), msg("r2", providerId, "next reply")];
+    const current = syncTerminalTurn({ sessionId: "s1", history: t.h, isCurrent: () => revision === 2, wait });
+    assert.equal((await current).lastReply, "next reply", "the current turn reads right away, without waiting");
+    assert.equal(waits.length, 1, "the reply was found on the first read: no retry scheduled");
     waits.shift().resolve();
-    assert.equal((await current).lastReply, "next reply");
+    assert.equal(await old, null, "the stale retry exits without importing anything");
     assert.deepEqual(t.saved.map((m) => m.id), ["term-u2", "term-r2"]);
   });
 }
@@ -164,4 +167,19 @@ test("an invalidated history sync queued during opening imports no new messages"
   assert.equal((await queued).added, 0);
   assert.equal(saved.length, 0);
   assert.equal((await history.sync("s1")).lastReply, "next reply");
+});
+
+test("the end-of-turn sync reads right away and only then retries", async () => {
+  assert.deepEqual(TURN_SYNC_DELAYS, [0, 800, 1500, 3000]);
+  let reads = 0;
+  const waits = [];
+  const history = { sync: async () => (++reads === 3 ? { added: 1, lastReply: "late reply" } : { added: 0 }) };
+  const result = await syncTerminalTurn({
+    sessionId: "s1",
+    history,
+    isCurrent: () => true,
+    wait: async (ms) => waits.push(ms),
+  });
+  assert.equal(result.lastReply, "late reply");
+  assert.deepEqual(waits, [800, 1500], "no wait before the first read; stops once the reply shows up");
 });

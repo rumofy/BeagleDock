@@ -4,6 +4,21 @@ const fs = require("fs"),
   os = require("os"),
   path = require("path");
 const { createLiveFiles, liveDirectories } = require("../electron/live-files");
+// Folder links: a junction on Windows (no privilege needed), a plain symlink elsewhere.
+const dirLink = (target, link) => fs.symlinkSync(target, link, process.platform === "win32" ? "junction" : "dir");
+// File symlinks need Developer Mode or admin rights on Windows; without them that check is skipped.
+const fileLink = (t, target, link) => {
+  try {
+    fs.symlinkSync(target, link);
+    return true;
+  } catch (err) {
+    if (process.platform === "win32" && err.code === "EPERM") {
+      t.diagnostic("file symlinks unavailable on this Windows account; symlink check skipped");
+      return false;
+    }
+    throw err;
+  }
+};
 test("AGY: the child's directory is followed during the turn without rereading the parent's logs", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "beagledock-live-child-"));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -53,9 +68,10 @@ test("native task files stream growing UTF-8 logs before command completion and 
   assert.equal(data.map((d) => d.text).join(""), "first while running\nação");
   const secret = path.join(root, "secret.txt");
   fs.writeFileSync(secret, "must never appear");
-  fs.symlinkSync(secret, path.join(root, "task-2.log"));
-  await watcher.poll();
-  assert.doesNotMatch(data.map((d) => d.text).join(""), /must never/);
+  if (fileLink(t, secret, path.join(root, "task-2.log"))) {
+    await watcher.poll();
+    assert.doesNotMatch(data.map((d) => d.text).join(""), /must never/);
+  }
   fs.writeFileSync(file, "reset\n");
   await watcher.poll();
   assert.equal(data.at(-1).text, "reset\n");
@@ -96,7 +112,7 @@ test("first-run logs can be discovered after the native id arrives, with bounded
     "claude",
     "native-session-123",
     "/project/dev",
-    { home, env: {}, temp: home, uid: 42 },
+    { home, env: {}, temp: home, uid: 42, platform: "linux" },
   );
   assert.ok(
     claude[0].dir.endsWith(
@@ -110,7 +126,7 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   const real = path.join(root, "real"),
     alias = path.join(root, "alias");
   fs.mkdirSync(real);
-  fs.symlinkSync(real, alias, "dir");
+  dirLink(real, alias);
   const dir = path.join(alias, "native-123/tasks");
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, "task-1.log"), "live");
@@ -127,7 +143,7 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   const outside = path.join(root, "outside");
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, "task-2.log"), "private");
-  fs.symlinkSync(outside, path.join(alias, "other-native"), "dir");
+  dirLink(outside, path.join(alias, "other-native"));
   const blocked = [];
   const second = createLiveFiles({
     directories: [
@@ -140,4 +156,21 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   t.after(() => second.stop());
   await second.ready;
   assert.deepEqual(blocked, []);
+});
+
+test("Claude on Windows: task output lives under %TEMP%/claude/<hash of the cwd>/<session>/tasks", () => {
+  const id = "11111111-2222-3333-4444-555555555555";
+  const temp = path.join("C:", "Temp");
+  const dirs = liveDirectories("claude", id, String.raw`C:\dev`, { env: {}, temp, platform: "win32" });
+  // c237366b8a8ea80b is the real folder Claude Code created for a session started in C:\dev.
+  assert.equal(dirs[0].dir, path.join(temp, "claude", "c237366b8a8ea80b", id, "tasks"));
+  assert.equal(dirs[0].base, path.join(temp, "claude"));
+  assert.ok(dirs.some((d) => d.dir === path.join(temp, "claude", "C--dev", id, "tasks")), "older versions' sanitized folder is followed too");
+  assert.ok(dirs.every((d) => d.pattern.test("bdp9nfbps.output") && !d.pattern.test("x.log")));
+  const custom = liveDirectories("claude", id, String.raw`C:\dev`, {
+    env: { CLAUDE_CODE_TMPDIR: path.join("D:", "ct") },
+    temp,
+    platform: "win32",
+  });
+  assert.ok(custom.every((d) => d.base === path.join("D:", "ct")));
 });

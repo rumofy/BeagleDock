@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld("beagleAPI", {
     ipcRenderer.invoke("ai-memory-read-page", pagePath, workspace, project),
   getAIMemoryScope: (cwd) => ipcRenderer.invoke("ai-memory-scope", cwd),
   listAIMemoryProjects: () => ipcRenderer.invoke("ai-memory-projects"),
+  linkAIMemoryProject: (cwd, target) => ipcRenderer.invoke("link-ai-memory-project", cwd, target),
   listAIMemoryProjectPages: (ws, p) =>
     ipcRenderer.invoke("ai-memory-project-pages", ws, p),
   getAIMemoryProjectOverview: (ws, p) =>

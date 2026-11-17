@@ -33,6 +33,7 @@ if (!w.beagleAPI && import.meta.env.DEV && token) {
     "runAIMemoryCommand",
     "getAIMemoryScope",
     "listAIMemoryProjects",
+    "linkAIMemoryProject",
     "listAIMemoryProjectPages",
     "getAIMemoryProjectOverview",
     "listAIMemoryProjectSessions",

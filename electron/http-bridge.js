@@ -15,6 +15,7 @@ const ALLOWED_METHODS = new Set([
   "runAIMemoryCommand",
   "getAIMemoryScope",
   "listAIMemoryProjects",
+  "linkAIMemoryProject",
   "listAIMemoryProjectPages",
   "getAIMemoryProjectOverview",
   "listAIMemoryProjectSessions",

@@ -44,7 +44,11 @@ test("paths outside the project, missing or through a symbolic link are refused"
   assert.throws(() => resolveInsideProject(dir, "../../etc/passwd"), /outside this conversation|not found/);
   assert.throws(() => resolveInsideProject(dir, "/etc/passwd"), /outside this conversation/);
   assert.throws(() => resolveInsideProject(dir, "src/nao-existe.ts"), /not found/);
-  fs.symlinkSync("/etc", path.join(dir, "escape"));
+  // A folder outside the project, reached through a link inside it (a junction on Windows,
+  // which needs no privilege; the type is ignored elsewhere).
+  const outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "bd-editor-outside-"));
+  fs.writeFileSync(path.join(outsideDir, "passwd"), "x");
+  fs.symlinkSync(outsideDir, path.join(dir, "escape"), "junction");
   assert.throws(() => resolveInsideProject(dir, "escape/passwd"), /outside this conversation/);
 });
 

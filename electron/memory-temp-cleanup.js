@@ -47,7 +47,10 @@ function isTempCwd(cwd, roots) {
   const value = typeof cwd === "string" ? cwd.trim() : "";
   if (!value || !path.isAbsolute(value)) return false;
   const dir = path.resolve(value);
-  return roots.some((root) => dir === root || dir.startsWith(root + path.sep));
+  return roots.some((root) => {
+    const base = path.resolve(root);
+    return dir === base || dir.startsWith(base.endsWith(path.sep) ? base : base + path.sep);
+  });
 }
 
 function lastSeen(project, sessions) {

@@ -55,6 +55,7 @@ export const beagleApi: BeagleAPI = {
     backend().readAIMemoryPage(pagePath, workspace, project),
   getAIMemoryScope: (cwd) => backend().getAIMemoryScope(cwd),
   listAIMemoryProjects: () => backend().listAIMemoryProjects(),
+  linkAIMemoryProject: (cwd, target) => backend().linkAIMemoryProject(cwd, target),
   listAIMemoryProjectPages: (workspace, project) =>
     backend().listAIMemoryProjectPages(workspace, project),
   getAIMemoryProjectOverview: (workspace, project) =>

@@ -9,15 +9,18 @@ const EDITORS = ["code", "code-insiders", "codium"];
 function resolveInsideProject(cwd, target) {
   const root = fs.realpathSync(cwd);
   const wanted = path.resolve(root, String(target || "."));
+  const outside = (p) => {
+    const relative = path.relative(root, p);
+    return relative.startsWith("..") || path.isAbsolute(relative);
+  };
+  if (outside(wanted)) throw new Error(t("errors.fileOutsideProject"));
   let real;
   try {
     real = fs.realpathSync(wanted);
   } catch {
     throw new Error(t("errors.fileNotFound"));
   }
-  const relative = path.relative(root, real);
-  if (relative.startsWith("..") || path.isAbsolute(relative))
-    throw new Error(t("errors.fileOutsideProject"));
+  if (outside(real)) throw new Error(t("errors.fileOutsideProject"));
   return { root, real, isDirectory: fs.statSync(real).isDirectory() };
 }
 

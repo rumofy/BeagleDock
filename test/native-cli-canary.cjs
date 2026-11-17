@@ -141,7 +141,8 @@ const parallelCommand = (tag) =>
       );
     } finally {
       runner.shutdown();
-      fs.rmSync(cwd, { recursive: true, force: true });
+      // Windows keeps the folder locked for a moment while the CLI process exits.
+      fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 300 });
     }
   }
   process.exitCode = failed ? 1 : 0;

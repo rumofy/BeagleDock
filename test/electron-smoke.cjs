@@ -1,3 +1,5 @@
+// On Windows the login item is the real user registry: the smoke leaves it untouched.
+const SKIP_LOGIN_ITEM = process.platform === "win32";
 const { app, BrowserWindow, session } = require("electron");
 const assert = require("node:assert/strict");
 const path = require("node:path");
@@ -1112,11 +1114,15 @@ async function send(win, text, expected) {
     const bg = (text) => `[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes(${JSON.stringify(text)}))`;
     assert.equal(await win.webContents.executeJavaScript(`${bg("Keep BeagleDock in the tray")}.checked`), true);
     assert.equal(await win.webContents.executeJavaScript(`${bg("Start with the system")}.checked`), false);
-    await win.webContents.executeJavaScript(`${bg("Start with the system")}.click()`);
-    await waitFor(win, `${bg("Start with the system")}.checked===true`);
-    const autostartFile = path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop");
-    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===true)`);
-    assert.match(require("fs").readFileSync(autostartFile, "utf8"), /--hidden/);
+    // On Windows the login item lives in the real user's registry (shared with an installed
+    // BeagleDock), so the smoke leaves it alone; test/autostart.test.js covers that path.
+    if (!SKIP_LOGIN_ITEM) {
+      await win.webContents.executeJavaScript(`${bg("Start with the system")}.click()`);
+      await waitFor(win, `${bg("Start with the system")}.checked===true`);
+      const autostartFile = path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop");
+      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===true)`);
+      assert.match(require("fs").readFileSync(autostartFile, "utf8"), /--hidden/);
+    }
     await win.webContents.executeJavaScript(`${bg("Keep BeagleDock in the tray")}.click()`);
     await waitFor(win, `${bg("Keep BeagleDock in the tray")}.checked===false`);
     await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.runInBackground===false)`);
@@ -1129,11 +1135,13 @@ async function send(win, text, expected) {
       tray: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Keep BeagleDock in the tray')).checked,
       login: [...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Start with the system')).checked,
     })`);
-    assert.deepEqual(persisted, { tray: true, login: true }, "the background preferences survive the restart");
-    // Undo: turning off start with the system removes the file.
-    await win.webContents.executeJavaScript(`[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Start with the system')).click()`);
-    await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===false)`);
-    assert.equal(require("fs").existsSync(path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop")), false);
+    assert.deepEqual(persisted, { tray: true, login: !SKIP_LOGIN_ITEM }, "the background preferences survive the restart");
+    if (!SKIP_LOGIN_ITEM) {
+      // Undo: turning off start with the system removes the file.
+      await win.webContents.executeJavaScript(`[...document.querySelectorAll('input[type="checkbox"]')].find(i=>i.closest('label')?.innerText.includes('Start with the system')).click()`);
+      await waitFor(win, `window.beagleAPI.getSavedState().then(s=>s.settings?.launchAtLogin===false)`);
+      assert.equal(require("fs").existsSync(path.join(process.env.HOME, ".config", "autostart", "beagledock.desktop")), false);
+    }
     const value = await win.webContents.executeJavaScript(
       `document.querySelector('select[aria-label="Antigravity: Tool policy (global)"]').value`,
     );

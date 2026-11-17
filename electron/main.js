@@ -26,7 +26,13 @@ const {
   cliEnv,
 } = require("./platform");
 const aiMemoryApi = require("./ai-memory-api");
-const { resolveAiMemoryScope } = require("./ai-memory-scope");
+const {
+  resolveAiMemoryScope,
+  writeMarkerScope,
+  clearMarkerScope,
+  markerIsLocal,
+  validScopeName,
+} = require("./ai-memory-scope");
 const memoryMaintenance = require("./memory-maintenance");
 const memoryTempCleanup = require("./memory-temp-cleanup");
 const { createCatalogs } = require("./catalogs");
@@ -106,6 +112,9 @@ const globalPermissions =
   require("./global-permissions").createGlobalPermissions();
 const ecosystem = require("./ecosystem").createEcosystem();
 app.setName?.("beagledock");
+// Windows groups notifications and the taskbar by this id; it matches the installer's shortcut
+// (build.appId), otherwise notifications show up as "electron.app.BeagleDock".
+if (process.platform === "win32") app.setAppUserModelId?.("dev.beagledock.desktop");
 app.commandLine?.appendSwitch("class", "BeagleDock");
 app.setPath?.("userData", path.join(app.getPath("appData"), "beagledock"));
 let updatingCli = false;
@@ -663,6 +672,8 @@ const terminalWatchers = new Map();
 // End-of-turn history syncs still retrying (the CLI may save its reply after going idle), per conversation.
 const terminalTurnSyncs = new Map();
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Longest the end-of-turn notification waits for the reply's text to show up in the native history.
+const TURN_NOTICE_DEADLINE_MS = 1500;
 function terminalTurnEnded(sessionId, providerId) {
   const watcher = terminalWatchers.get(sessionId);
   const revision = watcher?.getState().revision;
@@ -673,12 +684,22 @@ function terminalTurnEnded(sessionId, providerId) {
   void turnSync.finally(() => {
     if (terminalTurnSyncs.get(sessionId) === turnSync) terminalTurnSyncs.delete(sessionId);
   }).catch(() => {});
+  // The notification doesn't wait for the retries: it goes out with the reply's text as soon as a
+  // read finds it, or after TURN_NOTICE_DEADLINE_MS with the generic text. Only once per turn.
+  let notified = false;
+  const notify = (lastReply) => {
+    if (notified || !isCurrent()) return;
+    notified = true;
+    background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, lastReply) });
+  };
+  const deadline = setTimeout(() => notify(""), TURN_NOTICE_DEADLINE_MS);
   void turnSync.then((result) => {
+    clearTimeout(deadline);
     // A new turn or a reopened terminal must not inherit the previous turn's waiting state.
     if (!result || !isCurrent()) return;
     if (!result?.lastReply) watcher?.waitingForInput();
-    background.notifyTurnFinished({ sessionId, ...terminalTurnNotice(providerId, result?.lastReply) });
-  }).catch(() => {});
+    notify(result?.lastReply);
+  }).catch(() => clearTimeout(deadline));
 }
 // Before a chat turn (always the case on the phone), a conversation open in the CLI's terminal is
 // handed over: see electron/terminal-handover.js.
@@ -1080,18 +1101,46 @@ module.exports.ready = app.whenReady().then(async () => {
     projectsCache = { at: Date.now(), list };
     return list;
   };
-  handle("ai-memory-scope", async (_e, cwd) => {
-    const scope = await resolveAiMemoryScope(validCwd(cwd));
+  const scopeWithServer = async (dir) => {
+    const scope = await resolveAiMemoryScope(dir);
     const list = await reachableProjects();
     const found = list?.find(
       (x) => x.workspace === scope.workspace && x.project === scope.project,
     );
     return {
       ...scope,
+      localMarker: markerIsLocal(scope.markerPath, dir),
       serverOnline: !!list,
       projectExists: !!found,
       pages: found ? found.pageCount : null,
     };
+  };
+  handle("ai-memory-scope", async (_e, cwd) => scopeWithServer(validCwd(cwd)));
+  // Links a folder to a project that already exists on the server (or removes the link).
+  handle("link-ai-memory-project", async (_e, cwd, target) => {
+    try {
+      const dir = validCwd(cwd);
+      if (target) {
+        const workspace = validScopeName(target.workspace);
+        const project = validScopeName(target.project);
+        if (!workspace || !project) throw new Error(i18n.t("errors.aiMemoryScopeInvalid"));
+        projectsCache = { at: 0, list: null };
+        const list = await reachableProjects();
+        if (!list) throw new Error(i18n.t("errors.aiMemoryOffline"));
+        if (!list.some((x) => x.workspace === workspace && x.project === project))
+          throw new Error(i18n.t("errors.aiMemoryProjectMissing", { workspace, project }));
+        writeMarkerScope(dir, { workspace, project });
+      } else {
+        clearMarkerScope(dir);
+      }
+      return {
+        success: true,
+        scope: await scopeWithServer(dir),
+        hasAIMemory: fs.existsSync(path.join(dir, ".ai-memory.toml")),
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   });
   handle("ai-memory-projects", () => httpCall(() => aiMemoryApi.listProjects()));
   handle("ai-memory-project-pages", (_e, ws, p) =>
@@ -1422,7 +1471,11 @@ module.exports.ready = app.whenReady().then(async () => {
     try {
       // Starting with the system touches a user file: if it fails, nothing is saved.
       if (Object.hasOwn(settingsObj || {}, "launchAtLogin")) {
-        const auto = setAutostart(!!settingsObj.launchAtLogin);
+        const auto = setAutostart(!!settingsObj.launchAtLogin, {
+          loginItems: app,
+          appPath: app.getAppPath(),
+          packaged: app.isPackaged,
+        });
         if (!auto.ok) return { success: false, error: auto.error };
       }
       const result = await saveAppSettings(settingsObj);
