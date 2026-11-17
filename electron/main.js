@@ -110,7 +110,8 @@ const {
 
 const globalPermissions =
   require("./global-permissions").createGlobalPermissions();
-const ecosystem = require("./ecosystem").createEcosystem();
+const { createEcosystem, newer } = require("./ecosystem");
+const ecosystem = createEcosystem();
 app.setName?.("beagledock");
 // Windows groups notifications and the taskbar by this id; it matches the installer's shortcut
 // (build.appId), otherwise notifications show up as "electron.app.BeagleDock".
@@ -118,6 +119,54 @@ if (process.platform === "win32") app.setAppUserModelId?.("dev.beagledock.deskto
 app.commandLine?.appendSwitch("class", "BeagleDock");
 app.setPath?.("userData", path.join(app.getPath("appData"), "beagledock"));
 let updatingCli = false;
+const pendingUpdates = new Map();
+const automaticAttempts = new Map();
+
+function requestCliUpdate(id) {
+  if (!pendingUpdates.has(id)) pendingUpdates.set(id, Promise.withResolvers());
+  const request = pendingUpdates.get(id);
+  void runPendingUpdate();
+  return request.promise;
+}
+
+async function runPendingUpdate() {
+  if (updatingCli || sessionService.isBusy()) return;
+  const terminals = cliTerminals.list();
+  const id = [...pendingUpdates.keys()].find((provider) =>
+    !terminals.some((terminal) => terminal.providerId === provider && !terminal.exited)
+  );
+  if (!id) return;
+  updatingCli = true;
+  const request = pendingUpdates.get(id);
+  try {
+    await cliRunner.prepareUpdate();
+    const result = await ecosystem.update(id);
+    if (result.ok) {
+      catalogs.invalidateVersions();
+      if (id === "antigravity") await catalogs.refreshAgy(true);
+      await pushToolsUpdate();
+    }
+    request.resolve(result);
+  } catch (error) {
+    request.resolve({ ok: false, error: error.message });
+  } finally {
+    pendingUpdates.delete(id);
+    updatingCli = false;
+    void runPendingUpdate();
+  }
+}
+
+function scheduleCliUpdates(tools, releases) {
+  for (const id of ["claude", "codex", "antigravity"]) {
+    const version = releases[id]?.version;
+    if (!tools[id]?.installed || !newer(version, tools[id].version)) continue;
+    const previous = automaticAttempts.get(id);
+    if (previous?.version === version && Date.now() - previous.at < 3600000) continue;
+    automaticAttempts.set(id, { version, at: Date.now() });
+    void requestCliUpdate(id);
+  }
+  void runPendingUpdate();
+}
 let mainWindow;
 // Phone access over the local network (off until turned on in Settings).
 let remoteAccess = null;
@@ -976,24 +1025,7 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("update-cli", async (_event, id) => {
     if (!["claude", "codex", "antigravity"].includes(id))
       throw new Error(i18n.t("ecosystem.invalidCli"));
-    if (activePtySessions.size || sessionService.isBusy() || cliTerminals.list().some((t) => !t.exited))
-      throw new Error(
-        i18n.t("errors.waitRunsBeforeUpdate"),
-      );
-    if (updatingCli) throw new Error(i18n.t("ecosystem.updateRunning"));
-    updatingCli = true;
-    try {
-      await cliRunner.prepareUpdate();
-      const result = await ecosystem.update(id);
-      if (result.ok) {
-        catalogs.invalidateVersions();
-        await catalogs.refreshAgy(true);
-        await pushToolsUpdate();
-      }
-      return result;
-    } finally {
-      updatingCli = false;
-    }
+    return requestCliUpdate(id);
   });
   // IPC: real ai-memory status and commands
   handle("ai-memory-status", async () => {
@@ -1686,7 +1718,7 @@ module.exports.ready = app.whenReady().then(async () => {
   void remoteAccess.start();
 
   refreshTimer = setInterval(() => {
-    pushToolsUpdate().catch(() => {});
+    pushToolsUpdate().then(({ tools, updates }) => scheduleCliUpdates(tools, updates.releases)).catch(() => {});
   }, 15000);
   // Refreshing a remote CLI catalog never delays usage updates.
   catalogs

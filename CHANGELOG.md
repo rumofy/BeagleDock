@@ -4,8 +4,13 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
-## [0.18.0] - 2026-11-17
+## [0.19.0] - 2026-11-17
 
+### Added
+
+- Claude Code, Codex CLI and Antigravity now update automatically while BeagleDock is open. Manual updates wait for active runs and the selected CLI terminal to finish.
+
+## [0.18.0] - 2026-11-17
 
 ### Added
 
@@ -27,7 +32,6 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 - Windows: Codex CLI and Antigravity installed with their own installers are found even when BeagleDock started before they were on the PATH.
 - Opening a file outside the conversation's folder in the editor now says it is outside the project, instead of "file not found", when that path doesn't exist.
 - Settings inside a `[table]` of `.ai-memory.toml` no longer override the top-level `workspace` and `project` when the app works out a folder's ai-memory project.
-
 
 ## [0.17.4] - 2026-11-11
 
@@ -469,7 +473,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...v0.19.0
 [0.17.4]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/rumofy/BeagleDock/compare/v0.17.1...v0.17.2
