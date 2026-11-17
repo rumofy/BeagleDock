@@ -12,6 +12,22 @@ ms since the start of the run, measured on the `pty-data` emitted by the runner 
 
 The native session was preserved on resume in the three CLIs.
 
+### Windows 11 x64 (2026-11-17)
+
+Same canary (`npm run test:cli-live -- --providers=claude,codex,antigravity --use-cli-default`), with the
+CLIs' own Windows installers:
+
+| CLI | Version | first | tick | last | chat (1st text) | finished | Live output |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Claude Code | 2.1.326 | 8494 | 9425 | 12540 | 16371 | 16624 | yes |
+| Codex CLI | 0.169.0 | 5549 | 6550 | 9569 | 2833 | 10944 | yes |
+| Antigravity (agy) | 1.5.10 | 13848 | 14940 | 17123 | 36262 | 51487 | yes |
+
+The native session was preserved on resume in the three CLIs. Before 0.18.0 Claude's output arrived all at
+once at the end on Windows (`first = tick = last`): Claude Code writes the task log under
+`%TEMP%\claude\<first 16 hex of the SHA-256 of the sanitized, lowercased cwd>\<session>\tasks\<task>.output`,
+not in the Linux layout, and deletes it when the command ends.
+
 ## Simulated evidence (offline)
 
 - `test/stream-performance.test.js`: applying each frame in a 400-message conversation with a reply

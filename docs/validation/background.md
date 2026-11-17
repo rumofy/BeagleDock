@@ -15,16 +15,25 @@ this version:
   opened, cleared or the window gets focus. A new permission or reply also flags the window in the taskbar.
 - Settings: “Show system pop-ups” (on by default; off leaves only the tray menu and the taskbar flag).
 - Settings: “Keep BeagleDock in the tray when closing the window” (off, closing the window asks to quit, with the
-  same confirmation) and “Start with the system” (Linux: `~/.config/autostart/beagledock.desktop`, opening
-  straight to the tray with `--hidden`; if the tray doesn't work, the window shows normally).
+  same confirmation) and “Start with the system” (Linux: `~/.config/autostart/beagledock.desktop`; Windows and
+  macOS: the user's login items through Electron, with no administrator rights; either way it opens straight to
+  the tray with `--hidden`, and if the tray doesn't work the window shows normally).
+- Terminal mode: the end-of-turn notification ("Your turn") reads the CLI's native history right away and goes out
+  as soon as the reply's text is there, or after at most 1.5 s with the generic text; the history retries
+  (0.8 s, 1.5 s, 3 s) go on only to save the reply. Before 0.18.0 the notification waited for the retries, up to
+  about 5 s after the CLI finished. Antigravity's end of turn is still detected by 3 s of silence on its screen.
+- Windows: the app sets its AppUserModelId (`dev.beagledock.desktop`, the installer shortcut's), so the
+  notifications show as BeagleDock and group with it.
 
 ## Evidence
 
 - Simulated: `test/background.test.js` (BGRA badge, icon switch by state, menu with the conversations, click on
   the menu and on the tray notices, closing with the background mode off) and `test/autostart.test.js` (start
-  file, AppImage, `XDG_CONFIG_HOME`, failures).
+  file, AppImage, `XDG_CONFIG_HOME`, Windows/macOS login items, failures) and `test/terminal-history.test.js`
+  (first read without waiting, then the retries).
 - Integrated: `test:desktop` turns the preferences on and off, checks the start file in the test's HOME and that
-  the preferences survive the restart, and sends `open-session` with the settings screen open to check that the
+  the preferences survive the restart (on Windows it leaves “Start with the system” alone, since the login item
+  is the real user's registry, shared with an installed BeagleDock), and sends `open-session` with the settings screen open to check that the
   interface goes back to the chat on the requested conversation. Closing the window with a session running and
   keeping it active was already covered.
 - Real environment (Linux Mint, Cinnamon): Electron's `Notification` is supported and shows a pop-up from the project's

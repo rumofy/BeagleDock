@@ -14,6 +14,10 @@ Two commands requested at the same time; each prints `PAR_A_*` / `PAR_B_*` marke
 | Claude Code | 2.1.316 | yes (each tool's `toolu_…`) | yes | 1 chunk |
 | Antigravity | 1.4.12 | yes (each `run_command`'s `step-N`) | yes | 0 |
 
+On Windows 11 x64 (2026-11-17), Codex CLI 0.169.0 and Antigravity 1.5.10 gave each command its own origin
+(`exec-…` / `step-2` and `step-3`), without mixing and with no output lacking an origin. Claude Code 2.1.326's
+output reached the app with no origin for both commands, as the rule below expects for parallel tools.
+
 - Claude Code: a tool's live log is only attributed when exactly one is in progress; with two, that chunk has no
   origin, and each tool's final result arrives with the right origin.
 - Antigravity: the async command is a `run_command` step (`step-2`) and the output comes later through

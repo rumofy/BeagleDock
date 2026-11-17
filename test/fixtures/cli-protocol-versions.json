@@ -24,6 +24,7 @@
       }
     },
     "liveArtifact": "<tmp>/claude-<uid>/<encoded-cwd>/<native-id>/tasks/<task>.output",
+    "liveArtifactWindows": "%TEMP%/claude/<first 16 hex of sha256(lowercased encoded-cwd)>/<native-id>/tasks/<task>.output (verified with 2.1.326 on Windows 11, 2026-11-17)",
     "regression": "Foreground Bash output can be unlinked immediately before tool_result; keep the descriptor open through final drain. A model-generated tail pipeline buffers test output until exit; append live-output guidance and exercise natural npm-test requests in the native canary."
   },
   "antigravity": {
@@ -71,5 +72,11 @@
       }
     },
     "regression": "exec --json is not a complete command-output stream. Use app-server; reconcile an initial buffer when the native version supplies it only in item/completed."
+  },
+  "windowsVerified": {
+    "on": "2026-11-17",
+    "claude": "2.1.326",
+    "codex": "0.169.0",
+    "antigravity": "1.5.10"
   }
 }
