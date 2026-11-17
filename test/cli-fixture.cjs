@@ -3,7 +3,8 @@ const fs = require("fs"),
   path = require("path"),
   { randomUUID } = require("crypto");
 const args = process.argv.slice(2),
-  name = path.basename(process.argv[1]);
+  // On Windows the fixture runs as <name>.js behind a .cmd launcher.
+  name = path.basename(process.argv[1]).replace(/.c?js$/, "");
 if (args[0] === "update") {
   fs.writeFileSync(
     path.join(process.env.BEAGLEDOCK_SMOKE_ROOT, "update-" + name + ".json"),

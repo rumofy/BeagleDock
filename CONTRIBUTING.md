@@ -23,18 +23,21 @@ Point `BEAGLEDOCK_DATA_DIR` at a temporary folder when testing; never use your p
 
 ## Windows
 
-BeagleDock is officially supported only on Linux. The code already handles Windows paths, `.cmd` launchers and shell, but the app has **never been validated** on this platform. If you use Windows, your help is very valuable.
+Windows 11 x64 is in **beta**: the unit tests and `npm run test:desktop` pass, the per-user installer is built and installed locally, local dictation runs, and the live checks pass with Claude Code 2.1, Codex CLI 0.169 and Antigravity 1.5.10 (streaming, resume, parallel commands and Antigravity's approval through the named pipe). Reports from daily use are very welcome.
 
 ### Set up the environment
 
-Node.js 22.12 or later, Python and Visual Studio Build Tools with the C++ workload (to build `node-pty` and `sqlite3`). Then:
+`scripts\setup-windows.ps1` installs everything with winget: Git, Node.js LTS, Python and Visual Studio Build Tools with the C++ workload, the Spectre-mitigated libraries (`node-pty` requires them) and CMake (local dictation). Then:
 
 ```powershell
 npm ci
 npm test
+npm run test:desktop
 $env:BEAGLEDOCK_DATA_DIR = "$env:TEMP\beagledock-test"
 npm run dev
 ```
+
+If `npm ci` fails with `'GetCommitHash.bat' is not recognized`, the shell has `NoDefaultCurrentDirectoryInExePath` set (some terminals and agents do): run `Remove-Item Env:NoDefaultCurrentDirectoryInExePath` first. Live checks with the real CLIs: `npm run test:cli-live -- --providers=claude,codex,antigravity` (add `--parallel` for two commands at once) and `node test/agy-approval-live.cjs` for Antigravity's approval.
 
 ### What needs to be validated
 
@@ -46,7 +49,7 @@ For each installed CLI (Claude Code, Codex CLI, Antigravity):
 4. **Stop:** interrupt a reply with a long command running and check in Task Manager that no child process is left.
 5. **Terminal:** open the built-in shell and check colors, resizing and text input.
 6. **Quotas and usage:** the usage indicators show up for each CLI.
-7. **Packaging (optional):** `npm run build:electron -- --win --dir` and open the built executable.
+7. **Packaging:** `npm run build` and `npm run install:local`, then open BeagleDock from the Start menu.
 
 Record the result with the **Platform report** issue template, even if everything works: a positive report helps too. Windows-specific fixes must keep the Linux behavior and, when possible, come with a test in `test/` that simulates the platform (see `test/data.test.js`).
 

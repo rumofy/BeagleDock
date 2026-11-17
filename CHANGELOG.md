@@ -4,14 +4,30 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-17
+
+
 ### Added
 
 - Manage workspaces can link a workspace to an ai-memory project that already exists on the server: it shows which project the folder's conversations are saved to and why, lets you pick another one from the server's list, and can remove the link again.
+- Windows support (beta): `npm run build` produces a Windows installer and `npm run install:local` installs it for the current user, without administrator rights, with a Start menu shortcut.
+- One-step setup for Debian/Ubuntu and Windows: a single script installs the build tools and Node.js when missing, gets the repository, builds BeagleDock and installs it.
+- `npm run update` updates an installed BeagleDock in one step (pull, rebuild and install over the previous version), keeping conversations and settings.
+- Local dictation on Windows, with an engine that runs without installing extra runtimes.
+- Start with the system on Windows (and macOS), through the user's login items.
+
+### Changed
+
+- The end-of-turn notification in terminal mode arrives as soon as the CLI finishes: it no longer waits for the history retries (up to about 5 seconds), and shows the generic text when the reply isn't saved yet.
 
 ### Fixed
 
+- Windows: the live output of Claude Code commands now streams while they run, instead of arriving all at once at the end.
+- Windows: notifications are shown as BeagleDock and grouped with its shortcut.
+- Windows: Codex CLI and Antigravity installed with their own installers are found even when BeagleDock started before they were on the PATH.
 - Opening a file outside the conversation's folder in the editor now says it is outside the project, instead of "file not found", when that path doesn't exist.
 - Settings inside a `[table]` of `.ai-memory.toml` no longer override the top-level `workspace` and `project` when the app works out a folder's ai-memory project.
+
 
 ## [0.17.4] - 2026-11-11
 

@@ -20,6 +20,10 @@ function binaryDirs(
             "WinGet",
             "Links",
           ),
+          // Official per-user installers (verified with codex-cli 0.169.0 and agy 1.5.10): found
+          // even when the app started with a PATH from before the CLI was installed.
+          p.join(env.LOCALAPPDATA || p.join(home, "AppData", "Local"), "Programs", "OpenAI", "Codex", "bin"),
+          p.join(env.LOCALAPPDATA || p.join(home, "AppData", "Local"), "agy", "bin"),
           p.join(home, ".local", "bin"),
           p.join(home, ".cargo", "bin"),
         ]

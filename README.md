@@ -12,7 +12,7 @@ a local model catalog, history and the usage recorded by the tools themselves.
 [![Release](https://img.shields.io/github/v/release/rumofy/BeagleDock?color=3FB950&label=release)](https://github.com/rumofy/BeagleDock/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-1B1B1F)](LICENSE)
 [![Linux](https://img.shields.io/badge/Linux-x64%20%C2%B7%20verified-1B1B1F?logo=linux&logoColor=white)](#platforms)
-[![Windows](https://img.shields.io/badge/Windows-experimental-8A6D3B?logo=windows&logoColor=white)](#platforms)
+[![Windows](https://img.shields.io/badge/Windows-x64%20%C2%B7%20beta-3B6E8A?logo=windows&logoColor=white)](#platforms)
 [![macOS](https://img.shields.io/badge/macOS-untested-6E7681?logo=apple&logoColor=white)](#platforms)
 [![Runs with](https://img.shields.io/badge/runs%20with-Claude%20Code%20%C2%B7%20Codex%20%C2%B7%20Antigravity-C8834B)](#conversations-and-permissions)
 
@@ -28,11 +28,11 @@ a local model catalog, history and the usage recorded by the tools themselves.
 | --- | --- |
 | Linux x64 (Debian 13) | **Verified.** This is where BeagleDock is developed, tested (unit tests and `npm run test:desktop` with Electron) and packaged (`.deb`/AppImage). |
 | Other Linux x64 distributions | **Should work, not verified.** The `.deb` is for Debian derivatives (such as Ubuntu) and the AppImage for the rest; reports are welcome. |
-| Windows | **Experimental, open to the community.** The code handles Windows paths, `.cmd` launchers and shell, but the app has never been validated on this platform. |
+| Windows 11 x64 | **Beta.** Unit tests and `npm run test:desktop` pass, the installer (`.exe`, per user) is built and installed on the machine, local dictation runs, and the live checks pass with Claude Code, Codex CLI and Antigravity (streaming, resume, parallel commands and Antigravity's approval). Feedback from daily use is welcome. |
 | macOS | **Untested.** Homebrew and `zsh` are handled, without validation or code signing. |
 | Linux ARM64 | **Untested.** No package is built for this architecture. |
 
-Tried it on another platform or distribution? [Open an issue](https://github.com/rumofy/BeagleDock/issues/new) with the system, the version and the result, working or not. To bring BeagleDock to Windows, see [what needs to be validated](CONTRIBUTING.md#windows).
+Tried it on another platform or distribution? [Open an issue](https://github.com/rumofy/BeagleDock/issues/new) with the system, the version and the result, working or not. For what is still open on Windows, see [what needs to be validated](CONTRIBUTING.md#windows).
 
 ## Interface language
 
@@ -40,14 +40,14 @@ The interface is available in English (default), Spanish and Brazilian Portugues
 
 ## Development
 
-Use Node.js 22.12 or later, npm and the CLIs installed and authenticated on the system. The app discovers executables on the PATH and in each platform's usual directories; the terminal uses the system shell. The Windows and macOS instructions below are for people who want to test or contribute; those platforms aren't supported yet.
+Use Node.js 22.12 or later, npm and the CLIs installed and authenticated on the system. The app discovers executables on the PATH and in each platform's usual directories; the terminal uses the system shell. The macOS instructions below are for people who want to test or contribute; that platform isn't supported yet.
 
 ```sh
 npm ci
 npm run dev
 ```
 
-`npm ci` builds the native dependencies for Electron and the current platform. Install Python and C++ tools: make/GCC on Linux, Xcode Command Line Tools on macOS or Visual Studio Build Tools with C++ on Windows. Building locally avoids loading SQLite binaries that require a newer glibc than the target Linux system. The data folder is `~/.beagledock` (database `beagledock.db`); it isn't part of the distribution. Use `BEAGLEDOCK_DATA_DIR` for an isolated development/test database. Don't point tests at your personal data.
+`npm ci` builds the native dependencies for Electron and the current platform. Install Python and C++ tools: make/GCC on Linux, Xcode Command Line Tools on macOS or Visual Studio Build Tools with C++, the Spectre-mitigated libraries and CMake on Windows. The [setup scripts](#installation) install all of them. Building locally avoids loading SQLite binaries that require a newer glibc than the target Linux system. The data folder is `~/.beagledock` (database `beagledock.db`); it isn't part of the distribution. Use `BEAGLEDOCK_DATA_DIR` for an isolated development/test database. Don't point tests at your personal data.
 
 The app starts without a profile, conversations or sample projects. Add projects through the interface. In development, the current directory may be offered as the initial workspace.
 
@@ -119,27 +119,51 @@ npm test
 npm run typecheck
 npm run build:vite
 npm run build:electron -- --dir
-# Linux with a graphical session: Electron test with offline CLIs
+# Linux with a graphical session or Windows: Electron test with offline CLIs
 npm run test:desktop
 ```
 
 The tests use temporary databases, sample logs, simulated CLI processes and a local HTTP server without access to real accounts. They cover resuming, permissions, concurrency, errors, metrics, catalogs, encryption, bridge protection and the parity of the interface languages.
 
-## Local installation (Linux)
+## Installation
 
-The package is built and installed on the machine itself; CI only runs types, tests and the frontend build, without publishing installers.
+The package is built and installed on the machine itself; CI only runs types, tests and the frontend build, without publishing installers. One script installs everything it needs (build tools, Node.js, the repository), builds BeagleDock and installs it:
+
+```sh
+# Debian/Ubuntu
+curl -fsSL https://raw.githubusercontent.com/rumofy/BeagleDock/main/scripts/setup-linux.sh | sh
+```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/rumofy/BeagleDock/main/scripts/setup-windows.ps1 | iex
+```
+
+- **Linux:** apt installs git, g++/make, Python, curl and tar when missing; Node.js 24 is installed for your user under `~/.local` when there is none (or it is older than 22.12). apt asks for sudo.
+- **Windows:** winget installs Git, Node.js LTS, Python and Visual Studio Build Tools with the C++ workload, the Spectre-mitigated libraries (`node-pty` requires them) and CMake (local dictation). Installing those asks for administrator approval once; BeagleDock itself is installed for your user only, without administrator rights.
+
+The repository is cloned into `~/BeagleDock` (`%USERPROFILE%\BeagleDock` on Windows), or the script uses the checkout it runs from; `BEAGLEDOCK_DIR` picks another folder. Running it again only installs what is still missing.
+
+### Updating
+
+From the checkout, one command pulls, rebuilds and installs over the previous version, without uninstalling:
+
+```sh
+npm run update               # git pull --ff-only + npm ci + npm run build + install
+npm run update -- --no-pull  # build and install what is already checked out
+```
+
+Conversations, settings and credentials live in `~/.beagledock` and are kept across updates and removals.
+
+### Manual steps
 
 ```sh
 npm ci
-npm run build          # typecheck + frontend + packages in release/
-npm run install:local  # installs the built .deb (asks for sudo)
+npm run build          # typecheck + frontend + dictation engine + packages in release/
+npm run install:local  # installs the built package for this platform
 ```
 
-`release/` gets `BeagleDock-<version>-linux-amd64.deb` and `BeagleDock-<version>-linux-x86_64.AppImage`.
-
-**Debian/Ubuntu (recommended):**
-
-Installs into `/opt/BeagleDock`, creates the `beagledock` command and the application menu shortcut. To update, build the new package (`npm run build`) and run `npm run install:local` again; to remove, `sudo apt remove beagledock`. Conversations and credentials live in `~/.beagledock` and aren't deleted on removal.
+**Debian/Ubuntu:** `release/` gets `BeagleDock-<version>-linux-amd64.deb` and `BeagleDock-<version>-linux-x86_64.AppImage`. The `.deb` installs into `/opt/BeagleDock`, creates the `beagledock` command and the application menu shortcut (`npm run install:local` asks for sudo); to remove, `sudo apt remove beagledock`.
 
 **AppImage (no installation):**
 
@@ -150,11 +174,13 @@ chmod +x release/BeagleDock-*-linux-x86_64.AppImage
 
 If the AppImage complains about FUSE, install `libfuse2` (on Debian 13: `sudo apt install libfuse2t64`).
 
+**Windows:** `release/` gets `BeagleDock-<version>-win-x64.exe`. `npm run install:local` runs it silently for the current user (`/S /currentuser`) into `%LOCALAPPDATA%\Programs\BeagleDock`, with a Start menu shortcut; to remove, use Settings → Apps. Building on Windows needs the tools the setup script installs. If `npm ci` fails with `'GetCommitHash.bat' is not recognized`, the shell has `NoDefaultCurrentDirectoryInExePath` set (some terminals and agents do): remove it (`Remove-Item Env:NoDefaultCurrentDirectoryInExePath`) or use `npm run update`, which does it for the build.
+
 ### Versions and changelog
 
 The app version lives only in `package.json`. User-visible changes are recorded in `CHANGELOG.md` (the `Unreleased` section) and, to release, use `npm version patch|minor|major`: the script moves `Unreleased` to the new version and syncs the links and `docs/openapi.json`, without a commit or tag. The full rules are in `AGENTS.md`.
 
-To only test packaging without building installers, use `npm run build:electron -- --dir` and run `release/linux-unpacked/beagledock`. There's no automatic app update or code signing; the update buttons in the interface update only the CLIs.
+To only test packaging without building installers, use `npm run build:electron -- --dir` and run `release/linux-unpacked/beagledock` (`release\win-unpacked\beagledock.exe` on Windows). There's no automatic app update or code signing: `npm run update` updates the app, and the update buttons in the interface update only the CLIs.
 
 Codex protocol reference: [official non-interactive mode documentation](https://learn.chatgpt.com/docs/non-interactive-mode).
 

@@ -2,6 +2,7 @@ const fs = require("fs"),
   path = require("path"),
   os = require("os");
 const { StringDecoder } = require("string_decoder");
+const crypto = require("crypto");
 function liveDirectories(
   provider,
   nativeId,
@@ -11,6 +12,7 @@ function liveDirectories(
     env = process.env,
     temp = os.tmpdir(),
     uid = process.getuid?.(),
+    platform = process.platform,
   } = {},
 ) {
   if (!/^[a-zA-Z0-9_-]{8,160}$/.test(nativeId || "")) return [];
@@ -33,6 +35,19 @@ function liveDirectories(
         pattern: /^task-\d+\.log$/,
       },
     ];
+  if (provider === "claude" && platform === "win32") {
+    // Windows (verified with Claude Code 2.1.x): %TEMP%/claude/<first 16 hex of the SHA-256 of the
+    // sanitized, lowercased cwd>/<session>/tasks/*.output, growing while the command runs. Older
+    // versions used the sanitized cwd itself as the folder name.
+    const base = env.CLAUDE_CODE_TMPDIR || path.join(temp, "claude");
+    const sanitized = cwd.replace(/[^a-zA-Z0-9]/g, "-");
+    const hashed = crypto.createHash("sha256").update(sanitized.toLowerCase()).digest("hex").slice(0, 16);
+    return [...new Set([hashed, sanitized, sanitized.toLowerCase()])].map((segment) => ({
+      base,
+      dir: path.join(base, segment, nativeId, "tasks"),
+      pattern: /^[a-zA-Z0-9_-]+\.output$/,
+    }));
+  }
   if (provider === "claude")
     return [
       {

@@ -237,7 +237,7 @@ test("the local engine is looked up in the installed package and then in the rep
     const vendor = path.join(root, "repo", "vendor", "speech");
     fs.mkdirSync(vendor, { recursive: true });
     fs.writeFileSync(path.join(vendor, "parakeet-cli"), "", { mode: 0o755 });
-    const opts = { resourcesPath: path.join(root, "res"), appRoot: path.join(root, "repo") };
+    const opts = { resourcesPath: path.join(root, "res"), appRoot: path.join(root, "repo"), platform: "linux" };
     assert.equal(t.findLocalEngine(opts), path.join(vendor, "parakeet-cli"));
     fs.mkdirSync(path.join(root, "res", "speech"), { recursive: true });
     fs.writeFileSync(path.join(root, "res", "speech", "parakeet-cli"), "", { mode: 0o755 });
@@ -245,8 +245,13 @@ test("the local engine is looked up in the installed package and then in the rep
     // Windows has no execute bit: X_OK only checks that the file exists there.
     if (process.platform !== "win32") {
       fs.chmodSync(path.join(vendor, "parakeet-cli"), 0o644);
-      assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo") }), null, "without execute permission it doesn't count");
+      assert.equal(t.findLocalEngine({ resourcesPath: undefined, appRoot: path.join(root, "repo"), platform: "linux" }), null, "without execute permission it doesn't count");
     }
+    // On Windows the engine is parakeet-cli.exe; the extensionless Linux binary doesn't count there.
+    const win = { resourcesPath: undefined, appRoot: path.join(root, "repo"), platform: "win32" };
+    assert.equal(t.findLocalEngine(win), null);
+    fs.writeFileSync(path.join(vendor, "parakeet-cli.exe"), "");
+    assert.equal(t.findLocalEngine(win), path.join(vendor, "parakeet-cli.exe"));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

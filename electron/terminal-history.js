@@ -141,11 +141,16 @@ function createTerminalHistory({
   return { begin, sync, end, has: (sessionId) => entries.has(sessionId) };
 }
 
-/** Retry only for the turn that requested the sync, including reads queued behind another sync. */
+/**
+ * Retry only for the turn that requested the sync, including reads queued behind another sync.
+ * The first read happens right away (the CLI usually saved its reply before signalling the end of
+ * the turn); the retries cover a reply saved a little after that signal.
+ */
+const TURN_SYNC_DELAYS = [0, 800, 1500, 3000];
 async function syncTerminalTurn({ sessionId, history, isCurrent, wait }) {
   let result = { added: 0 };
-  for (const delay of [800, 1500, 3000]) {
-    await wait(delay);
+  for (const delay of TURN_SYNC_DELAYS) {
+    if (delay) await wait(delay);
     if (!isCurrent()) return null;
     const next = await history.sync(sessionId, isCurrent);
     if (!isCurrent()) return null;
@@ -155,4 +160,4 @@ async function syncTerminalTurn({ sessionId, history, isCurrent, wait }) {
   return result;
 }
 
-module.exports = { createTerminalHistory, syncTerminalTurn };
+module.exports = { createTerminalHistory, syncTerminalTurn, TURN_SYNC_DELAYS };

@@ -377,6 +377,9 @@ test("platform discovery includes macOS Homebrew and Windows npm; shells use pla
       "C:\\Users\\dev",
     ).includes("C:\\Users\\dev\\AppData\\Roaming\\npm"),
   );
+  const winDirs = binaryDirs("win32", { LOCALAPPDATA: "C:\\Users\\dev\\AppData\\Local" }, "C:\\Users\\dev");
+  assert.ok(winDirs.includes("C:\\Users\\dev\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin"), "Codex's own installer");
+  assert.ok(winDirs.includes("C:\\Users\\dev\\AppData\\Local\\agy\\bin"), "Antigravity's own installer");
   assert.deepEqual(
     shellSpec("win32", { COMSPEC: "C:\\Windows\\System32\\cmd.exe" }).args,
     [],

@@ -112,7 +112,7 @@ test("first-run logs can be discovered after the native id arrives, with bounded
     "claude",
     "native-session-123",
     "/project/dev",
-    { home, env: {}, temp: home, uid: 42 },
+    { home, env: {}, temp: home, uid: 42, platform: "linux" },
   );
   assert.ok(
     claude[0].dir.endsWith(
@@ -156,4 +156,21 @@ test("canonical temp roots work through macOS-style system symlinks but session 
   t.after(() => second.stop());
   await second.ready;
   assert.deepEqual(blocked, []);
+});
+
+test("Claude on Windows: task output lives under %TEMP%/claude/<hash of the cwd>/<session>/tasks", () => {
+  const id = "11111111-2222-3333-4444-555555555555";
+  const temp = path.join("C:", "Temp");
+  const dirs = liveDirectories("claude", id, String.raw`C:\dev`, { env: {}, temp, platform: "win32" });
+  // c237366b8a8ea80b is the real folder Claude Code created for a session started in C:\dev.
+  assert.equal(dirs[0].dir, path.join(temp, "claude", "c237366b8a8ea80b", id, "tasks"));
+  assert.equal(dirs[0].base, path.join(temp, "claude"));
+  assert.ok(dirs.some((d) => d.dir === path.join(temp, "claude", "C--dev", id, "tasks")), "older versions' sanitized folder is followed too");
+  assert.ok(dirs.every((d) => d.pattern.test("bdp9nfbps.output") && !d.pattern.test("x.log")));
+  const custom = liveDirectories("claude", id, String.raw`C:\dev`, {
+    env: { CLAUDE_CODE_TMPDIR: path.join("D:", "ct") },
+    temp,
+    platform: "win32",
+  });
+  assert.ok(custom.every((d) => d.base === path.join("D:", "ct")));
 });

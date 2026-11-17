@@ -284,14 +284,23 @@ async function transcribeLocally({ audio, binary, modelPath, spawnImpl = spawn, 
 }
 
 /** Path of parakeet-cli: a resource of the installed package or the repository's vendor/. */
-function findLocalEngine({ resourcesPath = process.resourcesPath, appRoot = path.join(__dirname, ".."), fsApi = fs } = {}) {
+function findLocalEngine({
+  resourcesPath = process.resourcesPath,
+  appRoot = path.join(__dirname, ".."),
+  fsApi = fs,
+  platform = process.platform,
+} = {}) {
+  // Windows has no execute bit: there the engine is the .exe and existing is enough.
+  const name = platform === "win32" ? "parakeet-cli.exe" : "parakeet-cli";
+  const mode = platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK;
   const candidates = [
-    resourcesPath && path.join(resourcesPath, "speech", "parakeet-cli"),
-    path.join(appRoot, "vendor", "speech", "parakeet-cli"),
+    resourcesPath && path.join(resourcesPath, "speech", name),
+    path.join(appRoot, "vendor", "speech", name),
   ].filter(Boolean);
   return candidates.find((file) => {
     try {
-      fsApi.accessSync(file, fs.constants.X_OK);
+      if (!fsApi.statSync(file).isFile()) return false;
+      fsApi.accessSync(file, mode);
       return true;
     } catch {
       return false;

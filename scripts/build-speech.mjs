@@ -11,7 +11,16 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = path.join(ROOT, "vendor", "speech");
-const CACHE = path.join(process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"), "beagledock-build");
+const WINDOWS = process.platform === "win32";
+const CACHE = path.join(
+  process.env.XDG_CACHE_HOME ||
+    (WINDOWS && process.env.LOCALAPPDATA) ||
+    path.join(os.homedir(), ".cache"),
+  "beagledock-build",
+);
+const ENGINE = WINDOWS ? "parakeet-cli.exe" : "parakeet-cli";
+// Git for Windows puts its own tar first on the PATH, and it can't read drive-letter paths.
+const TAR = WINDOWS ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe") : "tar";
 const WHISPER = {
   version: "1.9.5",
   url: "https://github.com/ggml-org/whisper.cpp/archive/refs/tags/v1.9.5.tar.gz",
@@ -22,7 +31,7 @@ const CMAKE = {
   url: "https://github.com/Kitware/CMake/releases/download/v4.4.5/cmake-4.4.5-linux-x86_64.tar.gz",
   sha256: "ed85135c5a5135b45e50423cb406dea04ca3338da0b8ef3c9ede963559680be0",
 };
-const STAMP = `whisper.cpp ${WHISPER.version} parakeet-cli native ${os.cpus()[0]?.model || ""}`;
+const STAMP = `whisper.cpp ${WHISPER.version} parakeet-cli native ${process.platform}-${process.arch} ${(os.cpus()[0]?.model || "").trim()}`; // trimmed: the stamp is compared trimmed
 
 function run(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, { stdio: "inherit", ...options });
@@ -47,37 +56,65 @@ async function fetchVerified({ url, sha256 }, file) {
   return file;
 }
 
+// CMake bundled with Visual Studio / Build Tools ("C++ CMake tools for Windows"), found via vswhere.
+function visualStudioCmake() {
+  const vswhere = path.join(
+    process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)",
+    "Microsoft Visual Studio",
+    "Installer",
+    "vswhere.exe",
+  );
+  if (!fs.existsSync(vswhere)) return null;
+  const found = spawnSync(
+    vswhere,
+    ["-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64", "-property", "installationPath"],
+    { encoding: "utf8" },
+  );
+  const dir = String(found.stdout || "").trim().split(/\r?\n/)[0];
+  if (!dir) return null;
+  const bin = path.join(dir, "Common7", "IDE", "CommonExtensions", "Microsoft", "CMake", "CMake", "bin", "cmake.exe");
+  return fs.existsSync(bin) ? bin : null;
+}
+
 async function cmakeBinary() {
   if (process.env.CMAKE) return process.env.CMAKE;
   if (has("cmake")) return "cmake";
+  if (WINDOWS) {
+    const bundled = visualStudioCmake();
+    if (bundled) return bundled;
+    throw new Error(
+      "CMake not found: install Visual Studio Build Tools with the C++ workload (it includes CMake) or put cmake on the PATH.",
+    );
+  }
   const dir = path.join(CACHE, `cmake-${CMAKE.version}-linux-x86_64`);
   const bin = path.join(dir, "bin", "cmake");
   if (!fs.existsSync(bin)) {
     const tarball = await fetchVerified(CMAKE, path.join(CACHE, `cmake-${CMAKE.version}.tar.gz`));
-    run("tar", ["xzf", tarball, "-C", CACHE]);
+    run(TAR, ["xzf", tarball, "-C", CACHE]);
   }
   return bin;
 }
 
 async function main() {
-  if (process.platform !== "linux" || process.arch !== "x64") {
-    console.log("Local dictation: build available only for Linux x64; skipping.");
+  if (!["linux", "win32"].includes(process.platform) || process.arch !== "x64") {
+    console.log("Local dictation: build available only for Linux x64 and Windows x64; skipping.");
     return;
   }
-  const target = path.join(OUT_DIR, "parakeet-cli");
+  const target = path.join(OUT_DIR, ENGINE);
   const stampFile = path.join(OUT_DIR, "BUILD");
   if (!process.argv.includes("--force") && fs.existsSync(target) && fs.readFileSync(stampFile, "utf8").trim() === STAMP) {
     console.log(`Dictation engine already built (${STAMP}).`);
     return;
   }
-  for (const tool of ["g++", "make", "tar"])
+  // On Windows the compiler is MSVC, driven by CMake's Visual Studio generator.
+  for (const tool of WINDOWS ? [TAR] : ["g++", "make", "tar"])
     if (!has(tool)) throw new Error(`Missing tool to build local dictation: ${tool}`);
   fs.mkdirSync(CACHE, { recursive: true });
   const cmake = await cmakeBinary();
   const tarball = await fetchVerified(WHISPER, path.join(CACHE, `whisper.cpp-${WHISPER.version}.tar.gz`));
   const src = path.join(CACHE, `whisper.cpp-${WHISPER.version}`);
   fs.rmSync(src, { recursive: true, force: true });
-  run("tar", ["xzf", tarball, "-C", CACHE]);
+  run(TAR, ["xzf", tarball, "-C", CACHE]);
   const build = path.join(src, "build");
   run(cmake, [
     "-S", src, "-B", build,
@@ -87,11 +124,24 @@ async function main() {
     "-DWHISPER_BUILD_TESTS=OFF",
     "-DWHISPER_BUILD_SERVER=OFF",
     "-DWHISPER_SDL2=OFF",
+    // Static MSVC runtime and no OpenMP (its VCOMP140.DLL comes only with the Visual C++
+    // Redistributable; ggml then uses its own thread pool): the .exe runs on a clean Windows.
+    ...(WINDOWS
+      ? ["-DCMAKE_POLICY_DEFAULT_CMP0091=NEW", "-DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded", "-DGGML_OPENMP=OFF"]
+      : []),
   ]);
-  run(cmake, ["--build", build, "-j", String(Math.max(1, os.cpus().length)), "--target", "parakeet-cli"]);
+  run(cmake, [
+    "--build", build,
+    "--config", "Release",
+    "-j", String(Math.max(1, os.cpus().length)),
+    "--target", "parakeet-cli",
+  ]);
+  // Single-config generators (make) write bin/; Visual Studio's multi-config one writes bin/Release/.
+  const built = [path.join(build, "bin", ENGINE), path.join(build, "bin", "Release", ENGINE)].find((p) => fs.existsSync(p));
+  if (!built) throw new Error(`The build finished but ${ENGINE} wasn't found under ${path.join(build, "bin")}.`);
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  fs.copyFileSync(path.join(build, "bin", "parakeet-cli"), target);
-  fs.chmodSync(target, 0o755);
+  fs.copyFileSync(built, target);
+  if (!WINDOWS) fs.chmodSync(target, 0o755);
   fs.copyFileSync(path.join(src, "LICENSE"), path.join(OUT_DIR, "LICENSE.whisper.cpp"));
   fs.writeFileSync(stampFile, `${STAMP}\n`);
   console.log(`Dictation engine built at ${path.relative(ROOT, target)}.`);
