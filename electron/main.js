@@ -26,7 +26,13 @@ const {
   cliEnv,
 } = require("./platform");
 const aiMemoryApi = require("./ai-memory-api");
-const { resolveAiMemoryScope } = require("./ai-memory-scope");
+const {
+  resolveAiMemoryScope,
+  writeMarkerScope,
+  clearMarkerScope,
+  markerIsLocal,
+  validScopeName,
+} = require("./ai-memory-scope");
 const memoryMaintenance = require("./memory-maintenance");
 const memoryTempCleanup = require("./memory-temp-cleanup");
 const { createCatalogs } = require("./catalogs");
@@ -1080,18 +1086,46 @@ module.exports.ready = app.whenReady().then(async () => {
     projectsCache = { at: Date.now(), list };
     return list;
   };
-  handle("ai-memory-scope", async (_e, cwd) => {
-    const scope = await resolveAiMemoryScope(validCwd(cwd));
+  const scopeWithServer = async (dir) => {
+    const scope = await resolveAiMemoryScope(dir);
     const list = await reachableProjects();
     const found = list?.find(
       (x) => x.workspace === scope.workspace && x.project === scope.project,
     );
     return {
       ...scope,
+      localMarker: markerIsLocal(scope.markerPath, dir),
       serverOnline: !!list,
       projectExists: !!found,
       pages: found ? found.pageCount : null,
     };
+  };
+  handle("ai-memory-scope", async (_e, cwd) => scopeWithServer(validCwd(cwd)));
+  // Links a folder to a project that already exists on the server (or removes the link).
+  handle("link-ai-memory-project", async (_e, cwd, target) => {
+    try {
+      const dir = validCwd(cwd);
+      if (target) {
+        const workspace = validScopeName(target.workspace);
+        const project = validScopeName(target.project);
+        if (!workspace || !project) throw new Error(i18n.t("errors.aiMemoryScopeInvalid"));
+        projectsCache = { at: 0, list: null };
+        const list = await reachableProjects();
+        if (!list) throw new Error(i18n.t("errors.aiMemoryOffline"));
+        if (!list.some((x) => x.workspace === workspace && x.project === project))
+          throw new Error(i18n.t("errors.aiMemoryProjectMissing", { workspace, project }));
+        writeMarkerScope(dir, { workspace, project });
+      } else {
+        clearMarkerScope(dir);
+      }
+      return {
+        success: true,
+        scope: await scopeWithServer(dir),
+        hasAIMemory: fs.existsSync(path.join(dir, ".ai-memory.toml")),
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
   });
   handle("ai-memory-projects", () => httpCall(() => aiMemoryApi.listProjects()));
   handle("ai-memory-project-pages", (_e, ws, p) =>

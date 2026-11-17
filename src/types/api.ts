@@ -413,6 +413,11 @@ export interface BeagleAPI {
   readAIMemoryPage(pagePath: string, workspace: string, project: string): Promise<AIMemoryApiResult<AIMemoryPageContent>>;
   getAIMemoryScope(cwd: string): Promise<AIMemoryScope>;
   listAIMemoryProjects(): Promise<AIMemoryApiResult<AIMemoryProject[]>>;
+  /** Writes (or, with null, removes) the folder's link to an existing ai-memory project. */
+  linkAIMemoryProject(
+    cwd: string,
+    target: { workspace: string; project: string } | null,
+  ): Promise<{ success: boolean; error?: string; scope?: AIMemoryScope; hasAIMemory?: boolean }>;
   listAIMemoryProjectPages(workspace: string, project: string): Promise<AIMemoryApiResult<AIMemoryPageItem[]>>;
   getAIMemoryProjectOverview(workspace: string, project: string): Promise<AIMemoryApiResult<any>>;
   listAIMemoryProjectSessions(workspace: string, project: string): Promise<AIMemoryApiResult<any>>;

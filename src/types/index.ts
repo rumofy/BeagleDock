@@ -432,6 +432,8 @@ export interface AIMemoryScope {
   project: string;
   source: "marker" | "git" | "folder";
   markerPath: string | null;
+  /** The marker sits in the folder itself, so the link can be changed or removed from here. */
+  localMarker?: boolean;
   serverOnline: boolean;
   projectExists: boolean;
   pages: number | null;

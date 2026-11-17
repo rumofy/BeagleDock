@@ -4,6 +4,15 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- Manage workspaces can link a workspace to an ai-memory project that already exists on the server: it shows which project the folder's conversations are saved to and why, lets you pick another one from the server's list, and can remove the link again.
+
+### Fixed
+
+- Opening a file outside the conversation's folder in the editor now says it is outside the project, instead of "file not found", when that path doesn't exist.
+- Settings inside a `[table]` of `.ai-memory.toml` no longer override the top-level `workspace` and `project` when the app works out a folder's ai-memory project.
+
 ## [0.17.4] - 2026-11-11
 
 ### Added

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Code2, FolderSearch, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Brain, Code2, FolderSearch, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import { Modal } from "../../components/Modal";
 import { useApp } from "../../hooks/AppStateProvider";
 import { beagleApi } from "../../api/beagleApi";
 import type { WorkspaceItem, WorkspaceStatus } from "../../types";
+import { WorkspaceMemoryLink } from "./WorkspaceMemoryLink";
 
 import { t, tn } from "../../i18n";
 /** Maintenance of registered workspaces: folder state, rename, change the folder and remove. */
@@ -13,6 +14,7 @@ export function WorkspaceManager() {
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<{ id: string; name: string; path: string } | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [linking, setLinking] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -37,10 +39,17 @@ export function WorkspaceManager() {
     else {
       setEditing(null);
       setRemoving(null);
+      setLinking(null);
     }
   }, [showWorkspaceManager, refresh]);
 
   if (!showWorkspaceManager) return null;
+
+  // Linking only changes the ai-memory badge of that workspace: no need to re-read every folder.
+  const markAIMemory = (id: string, hasAIMemory: boolean) => {
+    setItems((prev) => prev.map((ws) => (ws.id === id ? { ...ws, hasAIMemory } : ws)));
+    setWorkspaces((prev) => prev.map((ws) => (ws.id === id ? { ...ws, hasAIMemory } : ws)));
+  };
 
   const pickFolder = async () => {
     if (!editing) return;
@@ -166,6 +175,17 @@ export function WorkspaceManager() {
                   </button>
                   <button
                     type="button"
+                    aria-label={t("workspaces.memoryLabel", { name: ws.name })}
+                    aria-expanded={linking === ws.id}
+                    title={t("workspaces.memoryHint")}
+                    disabled={!ws.exists}
+                    onClick={() => setLinking(linking === ws.id ? null : ws.id)}
+                    className={`p-1.5 rounded-lg hover:bg-[#ede9de] text-[#6d6657] disabled:opacity-30 ${linking === ws.id ? "bg-[#ede9de]" : ""}`}
+                  >
+                    <Brain size={14} />
+                  </button>
+                  <button
+                    type="button"
                     aria-label={t("workspaces.editLabel", { name: ws.name })}
                     title={t("workspaces.editHint")}
                     onClick={() => setEditing({ id: ws.id, name: ws.name, path: ws.path })}
@@ -193,6 +213,13 @@ export function WorkspaceManager() {
                     {tn("workspaces.conversations", ws.conversations)}
                   </span>
                 </div>
+                {linking === ws.id && ws.exists && (
+                  <WorkspaceMemoryLink
+                    path={ws.path}
+                    onChanged={(hasAIMemory) => markAIMemory(ws.id, hasAIMemory)}
+                    onError={setAppError}
+                  />
+                )}
                 {removing === ws.id && (
                   <div role="alertdialog" className="rounded-lg bg-rose-50 border border-rose-200 p-2 text-xs text-rose-900 space-y-2">
                     <p>
