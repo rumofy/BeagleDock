@@ -6,7 +6,7 @@ const { SEGMENT_SEPARATOR } = require("../electron/message-segments");
 test("chat: notifies the end and the failure of the requested reply, in the three CLIs", () => {
   assert.deepEqual(chatReplyNotice("claude", { ok: true, output: `Vou ver.${SEGMENT_SEPARATOR}Pronto,\n  testes   passando.` }), {
     title: "Claude Code replied",
-    body: "Vou ver. Pronto, testes passando.",
+    body: "Pronto, testes passando.",
   });
   assert.deepEqual(chatReplyNotice("codex", { ok: false, error: "Limite de uso atingido." }), {
     title: "Codex CLI · the reply failed",
@@ -19,6 +19,14 @@ test("chat: notifies the end and the failure of the requested reply, in the thre
     chatReplyNotice("claude", { ok: true, output: "antes", followUps: [{ text: "a" }, { text: "resposta final" }] }).body,
     "resposta final",
   );
+});
+
+test("completion previews use the final nonempty segment before truncation", () => {
+  const output = ["Progress ".repeat(60), "Done", " "].join(SEGMENT_SEPARATOR);
+  for (const provider of ["claude", "codex", "antigravity"]) {
+    assert.equal(chatReplyNotice(provider, { ok: true, output }).body, "Done");
+    assert.equal(terminalTurnNotice(provider, output).body, "Done");
+  }
 });
 
 test("chat: delivered midway, cancelled, stopped or discarded doesn't notify", () => {

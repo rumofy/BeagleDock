@@ -658,7 +658,6 @@ getAppSettings()
     i18n.setLocale(saved?.language);
   })
   .catch(() => {});
-const { plainText } = require("./message-segments");
 const cliRunner = createCliRunner({
   approvals,
   onMcpAuthError: (line) => codexMcpAuth.inspect(line),
@@ -667,14 +666,7 @@ const cliRunner = createCliRunner({
   onAutoTurn: (payload) => {
     void sessionService.saveAutoTurn(payload);
     if (payload.discard) return;
-    const names = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
-    background.notifyTurnFinished({
-      sessionId: payload.sessionId,
-      title: i18n.t("notices.replied", { name: names[payload.providerId] || payload.providerId }),
-      body: plainText(String(payload.ok ? payload.text : payload.error || i18n.t("session.runFailed")))
-        .replace(/\s+/g, " ")
-        .slice(0, 140),
-    });
+    notifyChatReply(payload, { ok: payload.ok, output: payload.text, error: payload.error });
   },
   globalFingerprint: globalPermissions.fingerprint,
   getClaudePermissionMode: () => globalPermissions.get("claude").fields.find((f) => f.key === "mode")?.value || "default",

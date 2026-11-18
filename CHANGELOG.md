@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.19.2] - 2026-11-18
+
+### Fixed
+
+- Desktop notifications for completed replies now preview the final answer when a CLI also sent progress updates.
+
 ## [0.19.1] - 2026-11-18
 
 ### Removed
@@ -479,7 +485,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/rumofy/BeagleDock/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/rumofy/BeagleDock/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...v0.19.0
 [0.17.4]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...v0.17.4

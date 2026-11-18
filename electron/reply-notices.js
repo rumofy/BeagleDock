@@ -1,10 +1,19 @@
 // Text of the end-of-reply notifications (chat and terminal mode), in the same format for the three CLIs.
-const { plainText } = require("./message-segments");
+const { plainText, SEGMENT_SEPARATOR } = require("./message-segments");
 const { t } = require("./i18n");
 
 const PROVIDER_LABELS = { claude: "Claude Code", codex: "Codex CLI", antigravity: "Antigravity" };
 const label = (providerId) => PROVIDER_LABELS[providerId] || providerId || "CLI";
 const short = (text) => plainText(String(text ?? "")).replace(/\s+/g, " ").trim().slice(0, 140);
+
+function replyPreview(text) {
+  const parts = String(text ?? "").split(SEGMENT_SEPARATOR);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const preview = short(parts[i]);
+    if (preview) return preview;
+  }
+  return "";
+}
 
 /**
  * Chat: the reply you asked for finished or failed. A message delivered in the middle of another reply,
@@ -15,7 +24,7 @@ function chatReplyNotice(providerId, result) {
   const name = label(providerId);
   const last = result.followUps?.length ? result.followUps.at(-1).text : "";
   return result.ok
-    ? { title: t("notices.replied", { name }), body: short(last || result.output) || t("session.done") }
+    ? { title: t("notices.replied", { name }), body: replyPreview(last) || replyPreview(result.output) || t("session.done") }
     : { title: t("notices.failed", { name }), body: short(result.error) || t("session.runFailed") };
 }
 
@@ -23,7 +32,7 @@ function chatReplyNotice(providerId, result) {
 function terminalTurnNotice(providerId, lastReply) {
   return {
     title: t("notices.yourTurn", { name: label(providerId) }),
-    body: short(lastReply) || t("notices.yourTurnBody"),
+    body: replyPreview(lastReply) || t("notices.yourTurnBody"),
   };
 }
 
