@@ -26,7 +26,6 @@ export function ChatView() {
     cliApprovals,
     resolveApproval,
     contextBySession,
-    compactContext,
     isExecutingPrompt,
     forceQueuedPrompt,
     cancelQueuedPrompt,
@@ -147,10 +146,8 @@ export function ChatView() {
           {currentSession && (
             <ContextBar
               info={contextBySession[currentSession.id]}
-              providerId={currentSession.providerId}
               selectedModel={currentModelSelection.model}
               busy={isExecutingPrompt}
-              onCompact={() => void compactContext(currentSession)}
             />
           )}
           {pendingApprovals.map((approval) => (

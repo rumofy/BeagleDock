@@ -292,8 +292,6 @@ export interface AppSettings {
   shellAutoClose?: boolean;
   /** Seconds since the tab was last on screen (default: 120). */
   shellAutoCloseSeconds?: number;
-  /** Context size (tokens) from which the conversation compacts on its own; 0 turns it off (default: 200k). */
-  autoCompactTokens?: number | null;
   /** Deletes temporary ai-memory projects idle for more than these days; 0 turns it off (default: 7). */
   aiMemoryTempCleanupDays?: number;
   /** New chats start with the model, level and permission last chosen in the same CLI. */

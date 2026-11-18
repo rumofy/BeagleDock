@@ -18,12 +18,11 @@ import { appendShellOutput } from "../lib/shellTabs";
 import { storableAttachments } from "../lib/attachments";
 import { buildContinuation } from "../lib/continuation";
 import { PROVIDER_NAMES } from "../lib/approvalLabels";
-import { resolveAutoCompact } from "../lib/autoCompact";
 import { recordStreamSample } from "../lib/streamMetrics";
 import { applyStreamItems, type StreamItem } from "../lib/streamApply";
 import { hasLiveReply } from "../lib/backgroundWork";
 import { mergeLive, mergeSessions } from "../lib/liveMessages";
-import { precompactDue, turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
+import { turnGrowth, turnMark, type TurnMark } from "../lib/staleContext";
 import type {
   AIProviderId,
   AIProviderStatus,
@@ -49,8 +48,6 @@ interface Params {
   setActiveTab: (tab: AppTab) => void;
   setShowWorkspaceModal: (show: boolean) => void;
   isTerminalStarted?: (sessionId: string) => boolean;
-  /** Context (tokens) above which the conversation compacts itself; 0 turns it off. */
-  autoCompactTokens?: number | null;
   /** New chats from the + button repeat the CLI's last choice. */
   rememberSessionChoices?: boolean;
   lastSessionChoices?: SessionChoices;
@@ -74,7 +71,6 @@ export function useSessions({
   setActiveTab,
   setShowWorkspaceModal,
   isTerminalStarted,
-  autoCompactTokens,
   rememberSessionChoices,
   lastSessionChoices,
   onSessionChoice,
@@ -104,8 +100,6 @@ export function useSessions({
   >({});
   const contextRef = useRef(contextBySession);
   contextRef.current = contextBySession;
-  const autoCompactRef = useRef(autoCompactTokens);
-  autoCompactRef.current = autoCompactTokens;
   const pendingTurns = useRef(new Map<string, number>());
   const runGenerations = useRef(new Map<string, number>());
   // A turn the CLI started on its own is also an execution: it shows as running and can be stopped.
@@ -955,26 +949,6 @@ export function useSessions({
       );
   };
 
-  // Claude Code: compaction is the /compact message (tested with the real CLI); Codex has its own
-  // command; AGY also uses /compact (verified with the real CLI 1.4.12).
-  const compactContext = async (session: ChatSession) => {
-    // AGY compacts with the /compact command (verified with the real CLI 1.4.12), like Claude Code.
-    if (session.providerId === "claude" || session.providerId === "antigravity") {
-      await sendPrompt(session, "/compact");
-      return;
-    }
-    try {
-      const result = await beagleApi.compactSession(
-        session.id,
-        session.providerId,
-      );
-      if (!result?.ok)
-        setAppError(result?.error || t("session.compactFailed"));
-    } catch (error) {
-      setAppError((error as Error).message);
-    }
-  };
-
   const handleStopSession = async (id: string) => {
     if (stoppingSessions[id]) return;
     runGenerations.current.set(id, (runGenerations.current.get(id) || 0) + 1);
@@ -1068,29 +1042,6 @@ export function useSessions({
     }
   };
 
-  // Preventive compaction: idle conversation, large context and cache about to expire. Once per
-  // last call; busy sessions or ones with compaction off are skipped.
-  const precompacted = useRef<Record<string, number>>({});
-  const precompactRef = useRef<() => void>(() => {});
-  precompactRef.current = () => {
-    if (resolveAutoCompact(autoCompactRef.current) === 0) return;
-    const now = Date.now();
-    for (const session of providersRef.current.flatMap((p) => p.sessions)) {
-      if (session.providerId !== "claude" || session.archived) continue;
-      if ((pendingTurns.current.get(session.id) || 0) > 0) continue;
-      // In the CLI's terminal, compacting is up to the CLI: a chat turn would take the conversation from it.
-      if (isTerminalStarted?.(session.id)) continue;
-      const due = precompactDue(contextRef.current[session.id], now);
-      if (due === null || precompacted.current[session.id] === due) continue;
-      precompacted.current[session.id] = due;
-      void compactContext({ ...session, status: "idle" });
-    }
-  };
-  useEffect(() => {
-    const timer = setInterval(() => precompactRef.current(), 60_000);
-    return () => clearInterval(timer);
-  }, []);
-
   // Sends a prompt to a session (main chat or Assisted Maintenance).
   const sendPrompt = async (
     session: ChatSession,
@@ -1181,7 +1132,6 @@ export function useSessions({
               ),
             },
       );
-    let autoCompact = false;
     try {
       if (!(await persistSession(sendingSession)))
         throw new Error(t("session.saveConversationFailed"));
@@ -1327,19 +1277,6 @@ export function useSessions({
           ),
         })),
       );
-      // AGY has no configurable limit of its own: at the end of the reply (cache still warm), if the
-      // context went over the limit and nothing else is queued, the app sends /compact.
-      const limit = resolveAutoCompact(
-        autoCompactRef.current,
-        contextRef.current[id]?.window,
-      );
-      autoCompact =
-        !!res?.ok &&
-        sendingSession.providerId === "antigravity" &&
-        promptText !== "/compact" &&
-        limit > 0 &&
-        (contextRef.current[id]?.used ?? 0) >= limit &&
-        (pendingTurns.current.get(id) || 0) <= 1;
     } catch (error) {
       setAppError((error as Error).message);
       finishReply(`${t("session.errorPrefix")} ${(error as Error).message}`);
@@ -1349,7 +1286,6 @@ export function useSessions({
       else pendingTurns.current.delete(id);
       setExecutingSessions(Object.fromEntries(pendingTurns.current));
     }
-    if (autoCompact) await sendPrompt({ ...sendingSession, status: "idle" }, "/compact");
   };
 
   return {
@@ -1387,7 +1323,6 @@ export function useSessions({
     reopenSession,
     forgetSession,
     contextBySession,
-    compactContext,
     unreadSessionIds,
     handleStopSession,
     cancelQueuedPrompt,

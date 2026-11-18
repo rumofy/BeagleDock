@@ -28,7 +28,6 @@ interface Params {
   handleStopSession: (id: string) => Promise<void>;
   handleTriggerHandoff: () => Promise<void>;
   contextBySession: Record<string, ContextInfo>;
-  compactContext: (session: ChatSession) => Promise<void>;
   sendPrompt: (
     session: ChatSession,
     promptText: string,
@@ -45,7 +44,6 @@ export function useComposer({
   handleStopSession,
   handleTriggerHandoff,
   contextBySession,
-  compactContext,
   sendPrompt,
 }: Params) {
   const [staleNotice, setStaleNotice] = useState<StaleNotice | null>(null);
@@ -215,9 +213,7 @@ export function useComposer({
     await sendPrompt(currentSession, promptText, sending);
   };
 
-  // Decision on the held message: send anyway, compact before sending, go back to the previous model
-  // (cache still warm) or go back to editing.
-  const resolveStaleNotice = async (choice: "send" | "compact" | "previous" | "cancel") => {
+  const resolveStaleNotice = async (choice: "send" | "previous" | "cancel") => {
     const notice = staleNotice;
     if (!notice) return;
     setStaleNotice(null);
@@ -231,8 +227,6 @@ export function useComposer({
       await sendPrompt(previous, notice.text, notice.attachments);
       return;
     }
-    // With a model switch, compact on the previous model: the new one only reads the summary.
-    if (choice === "compact") await compactContext(previous);
     await sendPrompt(notice.session, notice.text, notice.attachments);
   };
 

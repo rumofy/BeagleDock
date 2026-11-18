@@ -47,7 +47,6 @@ function useAppStateValue() {
     setAppError,
     setActiveTab,
     setShowWorkspaceModal,
-    autoCompactTokens: settings.settings.autoCompactTokens,
     rememberSessionChoices: settings.settings.rememberSessionChoices,
     lastSessionChoices: settings.settings.lastSessionChoices,
     onSessionChoice: settings.recordSessionChoice,
@@ -60,7 +59,6 @@ function useAppStateValue() {
     handleStopSession: sessions.handleStopSession,
     handleTriggerHandoff: sessions.handleTriggerHandoff,
     contextBySession: sessions.contextBySession,
-    compactContext: sessions.compactContext,
     sendPrompt: sessions.sendPrompt,
   });
   const historyActions = useHistoryActions({

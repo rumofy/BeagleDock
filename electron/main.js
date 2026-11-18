@@ -653,18 +653,14 @@ const approvals = require("./approvals").createApprovalBroker({
     if (channel === "cli-approvals") background?.onApprovalsChanged();
   },
 });
-// Automatic compaction limit (user setting), kept in memory for each turn.
-let savedAutoCompactTokens;
 getAppSettings()
   .then((saved) => {
-    if (saved && savedAutoCompactTokens === undefined) savedAutoCompactTokens = saved.autoCompactTokens;
     i18n.setLocale(saved?.language);
   })
   .catch(() => {});
 const { plainText } = require("./message-segments");
 const cliRunner = createCliRunner({
   approvals,
-  getAutoCompactTokens: () => savedAutoCompactTokens,
   onMcpAuthError: (line) => codexMcpAuth.inspect(line),
   // Background agents update the timeline after the turn: save it to the history.
   onLateEvents: (payload) => sessionService.saveLateEvents(payload),
@@ -1376,7 +1372,6 @@ module.exports.ready = app.whenReady().then(async () => {
         sessionInfo.set(saved.id, { title: saved.title, providerId: saved.providerId });
       background.setRunInBackground(appSettings?.runInBackground !== false);
       background.setPopups(appSettings?.desktopNotifications !== false);
-      savedAutoCompactTokens = appSettings?.autoCompactTokens;
       let workspaces = savedWorkspaces;
       if (!workspaces || workspaces.length === 0) {
         workspaces = discoverLocalWorkspaces();
@@ -1515,8 +1510,6 @@ module.exports.ready = app.whenReady().then(async () => {
         i18n.setLocale(result?.settings?.language);
         background?.refreshMenu?.();
       }
-      if (Object.hasOwn(settingsObj || {}, "autoCompactTokens"))
-        savedAutoCompactTokens = result?.settings?.autoCompactTokens;
       if (Object.hasOwn(settingsObj || {}, "runInBackground"))
         background.setRunInBackground(settingsObj.runInBackground !== false);
       if (Object.hasOwn(settingsObj || {}, "desktopNotifications"))

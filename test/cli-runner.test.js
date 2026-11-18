@@ -1201,11 +1201,9 @@ test("AGY and Claude: a failure without its own output (error event) keeps the t
   }
 });
 
-// Automatic compaction (issue #58): the limit goes to Claude Code through the process environment.
-test("claude: the automatic compaction limit goes in the environment (200 thousand by default) and changes the process when altered", async () => {
+test("Claude uses its native compaction policy", async () => {
   const h = harness();
-  let limit;
-  const runner = h.make({ getAutoCompactTokens: () => limit });
+  const runner = h.make();
   const run = async () => {
     const p = runner.execute(payload("claude"));
     await tick();
@@ -1215,17 +1213,7 @@ test("claude: the automatic compaction limit goes in the environment (200 thousa
   };
   await run();
   assert.equal(h.calls.length, 1);
-  assert.equal(h.calls[0].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "200000");
-  await run();
-  assert.equal(h.calls.length, 1, "same limit: the conversation's process is reused");
-  limit = 300000;
-  await run();
-  assert.equal(h.calls.length, 2, "new limit: a new process with the new variable");
-  assert.equal(h.calls[1].options.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW, "300000");
-  limit = 0;
-  await run();
-  assert.equal(h.calls.length, 3);
-  assert.equal(h.calls[2].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined, "off: the CLI follows its own default");
+  assert.equal(h.calls[0].options.env?.CLAUDE_CODE_AUTO_COMPACT_WINDOW, undefined);
   runner.shutdown();
 });
 

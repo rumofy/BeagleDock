@@ -2,7 +2,6 @@ import { CliSettingsCard } from "./CliSettingsCard";
 import { ApiKeysCard } from "./ApiKeysCard";
 import { AppearanceCard } from "./AppearanceCard";
 import { BackgroundCard } from "./BackgroundCard";
-import { AutoCompactCard } from "./AutoCompactCard";
 import { NewChatDefaultsCard } from "./NewChatDefaultsCard";
 import { ConversationModeCard } from "./ConversationModeCard";
 import { VoiceDictationCard } from "./VoiceDictationCard";
@@ -17,7 +16,6 @@ export function SettingsTab() {
                 <RemoteAccessCard />
                 <ConversationModeCard />
                 <NewChatDefaultsCard />
-                <AutoCompactCard />
                 <VoiceDictationCard />
                 <CliSettingsCard />
                 <ApiKeysCard />
