@@ -82,15 +82,3 @@ test("growth per reply: compares with the end of the previous one and ignores a 
   assert.equal(turnMark({ used: null }), null);
   assert.equal(turnMark(undefined), null);
 });
-
-test("preventive compaction: only with a large context, a reported cache and close to expiring", () => {
-  const { precompactDue } = loadTs("src/lib/staleContext.ts");
-  const base = { used: 300_000, lastCallAt: NOW - 56 * 60_000, cacheTtlMs: 60 * 60_000 };
-  assert.equal(precompactDue(base, NOW), base.lastCallAt, "4 min left: the 5 min window expires");
-  assert.equal(precompactDue({ ...base, lastCallAt: NOW - 30 * 60_000 }, NOW), null, "cache far from expiring");
-  assert.equal(precompactDue({ ...base, lastCallAt: NOW - 61 * 60_000 }, NOW), null, "already expired: compacting now costs full price");
-  assert.equal(precompactDue({ ...base, used: 150_000 }, NOW), null, "a small context isn't worth it");
-  assert.equal(precompactDue({ ...base, cacheTtlMs: undefined }, NOW), null, "without a reported lifetime there's nothing to anticipate");
-  assert.equal(precompactDue({ ...base, compacting: true }, NOW), null);
-  assert.equal(precompactDue(undefined, NOW), null);
-});

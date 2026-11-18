@@ -33,10 +33,6 @@ const {
   pickModelWindow,
   createContextTracker,
 } = require("./context-usage");
-const {
-  DEFAULT_AUTO_COMPACT_TOKENS,
-  resolveAutoCompactForWindow,
-} = require("./auto-compact");
 const { askApproval, approvalKind, claudeApprovalOptions } = require("./approval-options");
 const { t } = require("./i18n");
 const { userQuestions, claudeAnswers } = require("./user-questions");
@@ -150,7 +146,6 @@ function createCliRunner({
   globalFingerprint = () => "",
   getClaudePermissionMode = () => "default",
   // Context limit for compacting on its own (0 = off). Read on every turn: a change applies right away.
-  getAutoCompactTokens = () => DEFAULT_AUTO_COMPACT_TOKENS,
   approvals,
   onMcpAuthError = () => {},
   // Event updates after the end of the turn (background agents).
@@ -161,13 +156,7 @@ function createCliRunner({
   // Folder where each conversation's attachments are saved.
   attachmentsRoot = dataRoot(),
 }) {
-  // Each model's window, learned from the replies: the automatic compaction limit depends on it.
-  const knownWindows = new Map();
-  const windowKey = (providerId, model) => `${providerId}:${model || ""}`;
-  const autoCompactFor = (providerId, model) =>
-    resolveAutoCompactForWindow(getAutoCompactTokens(), knownWindows.get(windowKey(providerId, model)));
   const codex = createCodexStream({
-    onWindow: (model, window) => knownWindows.set(windowKey("codex", model), window),
     spawn,
     store,
     emit,
@@ -298,14 +287,11 @@ function createCliRunner({
           permission,
           nativeId,
           fingerprint: globalFingerprint(providerId),
-          autoCompactTokens: autoCompactFor(providerId, requestedModel),
-          autoCompactKey: getAutoCompactTokens() ?? "auto",
         });
       const agySettings =
         providerId === "antigravity" && permission !== "inherit"
           ? agyPermissionSettings(permission, readAgyPermissions(), !!approvals)
           : undefined;
-      const autoCompactTokens = providerId === "claude" ? autoCompactFor(providerId, model) : 0;
       const fingerprint = globalFingerprint(providerId);
       // The permission is part of the key: changing it restarts the CLI on the next message, except when the
       // change was already applied live (setPermission updates the running process's key).
@@ -319,8 +305,6 @@ function createCliRunner({
           level,
           settings,
           fingerprint,
-          // The chosen value (not the one derived from the window): learning the window doesn't restart the CLI.
-          getAutoCompactTokens() ?? "auto",
         ]);
       const key = keyFor(permission, agySettings);
       let entry = processes.get(sessionId);
@@ -367,16 +351,7 @@ function createCliRunner({
           cwd,
           stdio: ["pipe", "pipe", "pipe"],
           detached: process.platform !== "win32",
-          ...(approvalBridge || autoCompactTokens
-            ? {
-                env: {
-                  ...(approvalBridge?.env || {}),
-                  ...(autoCompactTokens
-                    ? { CLAUDE_CODE_AUTO_COMPACT_WINDOW: String(autoCompactTokens) }
-                    : {}),
-                },
-              }
-            : {}),
+          ...(approvalBridge ? { env: approvalBridge.env } : {}),
         });
         entry = {
           approvalBridge,
@@ -1191,7 +1166,6 @@ function createCliRunner({
               const window = pickModelWindow(ev.modelUsage, current.model);
               if (window) {
                 current.contextWindow = window;
-                knownWindows.set(windowKey("claude", current.model), window);
                 current.context.setWindow(window, true);
               }
             }

@@ -105,22 +105,16 @@ function CacheTimer({ info, busy }: { info?: ContextInfo; busy: boolean }) {
 /** Session context bar: how full the model window is, compaction in progress and the last one done. */
 export const ContextBar = memo(function ContextBar({
   info,
-  providerId,
   selectedModel,
   busy,
-  onCompact,
 }: {
   info?: ContextInfo;
-  providerId?: string;
   /** Model for the next message; if it differs from the last call's, the cache doesn't help. */
   selectedModel?: string;
   busy: boolean;
-  onCompact?: () => void;
 }) {
   const percent = contextPercent(info?.used ?? null, info?.window ?? null);
   const level = contextLevel(percent);
-  const canCompact =
-    providerId === "claude" || providerId === "codex" || providerId === "antigravity";
   const hasData = info?.used !== null && info?.used !== undefined;
   const last = info?.lastCompaction;
   const cache = info?.cache;
@@ -217,35 +211,11 @@ export const ContextBar = memo(function ContextBar({
           {t("context.compacted", { pre: formatTokens(last.pre), post: formatTokens(last.post) })}
         </span>
       )}
-      {level !== "ok" && !info?.compacting && (
+      {level === "danger" && !info?.compacting && (
         <span className={`shrink-0 font-semibold ${TEXT[level]}`}>
-          {level === "danger" ? t("context.almostFull") : t("context.considerCompacting")}
+          {t("context.almostFull")}
         </span>
       )}
-      <span className="ml-auto shrink-0">
-        {canCompact ? (
-          <button
-            type="button"
-            onClick={onCompact}
-            disabled={busy || !!info?.compacting}
-            title={
-              busy
-                ? t("context.waitRun")
-                : t("context.compactHint")
-            }
-            className="px-2.5 py-1 rounded-lg border border-[#d6cfbe] bg-[#f4f1e8] hover:bg-[#ede9de] disabled:opacity-40 font-bold text-[#2c2822]"
-          >
-            {t("context.compact")}
-          </button>
-        ) : (
-          <span
-            className="text-[#938b7a]"
-            title={t("context.noCompactionHint")}
-          >
-            {t("context.noCompaction")}
-          </span>
-        )}
-      </span>
     </div>
   );
 });

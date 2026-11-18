@@ -38,7 +38,6 @@ export function StaleContextNotice() {
               {idleMs === undefined
                 ? ` ${t("stale.switchedBack", { model: modelName(switched.from) })}`
                 : ""}{" "}
-              {t("stale.switchedCompact", { model: modelName(switched.from) })}
             </p>
           ) : (
             <p>
@@ -64,13 +63,6 @@ export function StaleContextNotice() {
             {t("stale.sendWith", { model: modelName(switched.from) })}
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => void resolveStaleNotice("compact")}
-          className={`${button} border-amber-600 bg-amber-600 text-white hover:bg-amber-700`}
-        >
-          {t("stale.compactAndSend")}
-        </button>
         <button
           type="button"
           onClick={() => void resolveStaleNotice("cancel")}

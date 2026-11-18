@@ -114,21 +114,3 @@ export function turnGrowth(before: TurnMark | null | undefined, after: TurnMark 
   if (after.compactedAt !== undefined && after.compactedAt !== before.compactedAt) return null;
   return after.used - before.used;
 }
-
-/** Below this, compacting before the cache expires doesn't pay off: it costs about as much as reprocessing. */
-export const PRECOMPACT_MIN_TOKENS = 200_000;
-/** Window before the cache ends in which the preventive compaction runs. */
-export const PRECOMPACT_WINDOW_MS = 5 * 60_000;
-
-/**
- * Idle conversation with a large context and a cache (whose validity the CLI reports) about to expire:
- * compacting now reads the context from the cache, which is cheap; once it expires, the next message
- * would process everything again at full price. Returns the time of the last call (the "already done" key).
- */
-export function precompactDue(info: ContextInfo | undefined, now: number): number | null {
-  if (!info || info.compacting) return null;
-  if (!finite(info.used) || info.used < PRECOMPACT_MIN_TOKENS) return null;
-  const status = cacheStatus(info, now);
-  if (status?.kind !== "warm" || status.remainingMs > PRECOMPACT_WINDOW_MS) return null;
-  return info.lastCallAt ?? null;
-}

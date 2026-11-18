@@ -4,6 +4,12 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-18
+
+### Removed
+
+- Conversation compaction is now managed by each CLI. The context bar reports usage and native compaction events without prompting you to compact.
+
 ## [0.19.0] - 2026-11-17
 
 ### Added
@@ -473,7 +479,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/rumofy/BeagleDock/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...v0.19.0
 [0.17.4]: https://github.com/rumofy/BeagleDock/compare/v0.17.3...v0.17.4
 [0.17.3]: https://github.com/rumofy/BeagleDock/compare/v0.17.2...v0.17.3

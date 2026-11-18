@@ -721,19 +721,15 @@ test("Codex: if turn/steer is refused (the turn already ended), the message fall
   await pending;
 });
 
-// Automatic compaction (issue #58): the limit goes to Codex's app-server as configuration.
-test("Codex: the automatic compaction limit goes in model_auto_compact_token_limit (200 thousand by default, 0 turns it off)", async () => {
-  for (const [value, expected] of [[undefined, "model_auto_compact_token_limit=200000"], [150000, "model_auto_compact_token_limit=150000"], [0, null]]) {
-    const h = harness(), runner = h.make({ getAutoCompactTokens: () => value });
-    const pending = runner.execute(payload);
-    await tick();
-    const args = h.calls[0].args;
-    if (expected) assert.ok(args.includes(expected), `expected ${expected} in ${args.join(" ")}`);
-    else assert.ok(!args.some((a) => String(a).includes("model_auto_compact_token_limit")));
-    h.notify("turn/completed", { turn: { status: "completed" } });
-    await pending;
-    runner.shutdown();
-  }
+test("Codex uses its native compaction policy", async () => {
+  const h = harness(), runner = h.make();
+  const pending = runner.execute(payload);
+  await tick();
+  const args = h.calls[0].args;
+  assert.ok(!args.some((a) => String(a).includes("model_auto_compact_token_limit")));
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  await pending;
+  runner.shutdown();
 });
 
 test("Codex: each agent message is a separate part (issue #59)", async () => {
