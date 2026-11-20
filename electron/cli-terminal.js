@@ -1,4 +1,5 @@
 const { t } = require("./i18n");
+const { logEvent } = require("./event-log");
 // Terminal mode: the CLI runs with its own interface (TUI) in a pty, without the chat's structured
 // protocol. Whoever picks this mode gets everything from the CLI (typing, attachments, plan, approvals and
 // its history); BeagleDock only opens the process in the right conversation and relays keys and screen.
@@ -167,7 +168,15 @@ function createCliTerminals({
         emit("cli-terminal-data", { sessionId, data, end: entry.total });
         hook("output", sessionId, data);
       });
-      proc.onExit(({ exitCode }) => {
+      proc.onExit(({ exitCode, signal }) => {
+        logEvent("terminal.exit", {
+          sessionId,
+          providerId,
+          childPid: proc.pid,
+          exitCode,
+          signal,
+          reason: entry.closing ? "closed" : "exited",
+        });
         entry.exited = true;
         entry.exitCode = exitCode;
         if (terminals.get(sessionId) !== entry) return;
@@ -175,6 +184,7 @@ function createCliTerminals({
         hook("exited", sessionId);
       });
       terminals.set(sessionId, entry);
+      logEvent("terminal.spawn", { sessionId, providerId, childPid: proc.pid, resume: !!link?.nativeId });
       hook("opened", { sessionId, providerId, cwd: target, nativeId: link?.nativeId, newNativeId });
       emit("cli-terminal-opened", { sessionId, pid: entry.pid });
       return { ok: true, ...info(sessionId, entry), replay: "" };
@@ -206,6 +216,7 @@ function createCliTerminals({
     const entry = terminals.get(sessionId);
     if (!entry) return { ok: true };
     terminals.delete(sessionId);
+    entry.closing = true;
     if (!entry.exited)
       try {
         entry.proc.kill();

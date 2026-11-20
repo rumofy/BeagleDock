@@ -8,6 +8,7 @@ const {
   Notification,
   powerSaveBlocker,
   dialog,
+  powerMonitor,
   shell: electronShell,
 } = require("electron");
 const path = require("path");
@@ -111,6 +112,7 @@ const {
 const globalPermissions =
   require("./global-permissions").createGlobalPermissions();
 const { createEcosystem, newer } = require("./ecosystem");
+const { logEvent, eventLogFile } = require("./event-log");
 const ecosystem = createEcosystem();
 app.setName?.("beagledock");
 // Windows groups notifications and the taskbar by this id; it matches the installer's shortcut
@@ -120,27 +122,43 @@ app.commandLine?.appendSwitch("class", "BeagleDock");
 app.setPath?.("userData", path.join(app.getPath("appData"), "beagledock"));
 let updatingCli = false;
 const pendingUpdates = new Map();
+// CLI -> { version, retryAt } of the last automatic attempt. A failed one is retried after a few
+// hours; one that ran but left an older version (installer on another channel) is not retried.
 const automaticAttempts = new Map();
+const AUTOMATIC_RETRY_MS = 6 * 3600000;
 
-function requestCliUpdate(id) {
-  if (!pendingUpdates.has(id)) pendingUpdates.set(id, Promise.withResolvers());
+// Only the CLI being updated is closed, and only its idle processes. An automatic update waits
+// while that CLI has a run, a turn or background agents/commands still running; a manual one
+// (Settings) waits only for runs of that CLI. Runs started meanwhile wait for the update to end.
+function requestCliUpdate(id, { manual = false } = {}) {
+  if (!pendingUpdates.has(id)) pendingUpdates.set(id, { ...Promise.withResolvers(), manual });
   const request = pendingUpdates.get(id);
+  request.manual ||= manual;
   void runPendingUpdate();
   return request.promise;
 }
 
+function cliInUse(provider) {
+  return cliTerminals.list().some((terminal) => terminal.providerId === provider && !terminal.exited);
+}
+
 async function runPendingUpdate() {
-  if (updatingCli || sessionService.isBusy()) return;
-  const terminals = cliTerminals.list();
-  const id = [...pendingUpdates.keys()].find((provider) =>
-    !terminals.some((terminal) => terminal.providerId === provider && !terminal.exited)
+  if (updatingCli) return;
+  const id = [...pendingUpdates.keys()].find(
+    (provider) =>
+      !cliInUse(provider) &&
+      (pendingUpdates.get(provider).manual
+        ? !cliRunner.isBusyProvider(provider)
+        : !cliRunner.hasRunningWork(provider)),
   );
   if (!id) return;
   updatingCli = true;
   const request = pendingUpdates.get(id);
+  logEvent("cli.update.start", { providerId: id, manual: request.manual });
   try {
-    await cliRunner.prepareUpdate();
+    await cliRunner.prepareUpdate(id);
     const result = await ecosystem.update(id);
+    logEvent("cli.update.end", { providerId: id, ok: result.ok, version: result.version, error: result.error });
     if (result.ok) {
       catalogs.invalidateVersions();
       if (id === "antigravity") await catalogs.refreshAgy(true);
@@ -148,8 +166,10 @@ async function runPendingUpdate() {
     }
     request.resolve(result);
   } catch (error) {
+    logEvent("cli.update.end", { providerId: id, ok: false, error: error.message });
     request.resolve({ ok: false, error: error.message });
   } finally {
+    cliRunner.endUpdate(id);
     pendingUpdates.delete(id);
     updatingCli = false;
     void runPendingUpdate();
@@ -161,9 +181,11 @@ function scheduleCliUpdates(tools, releases) {
     const version = releases[id]?.version;
     if (!tools[id]?.installed || !newer(version, tools[id].version)) continue;
     const previous = automaticAttempts.get(id);
-    if (previous?.version === version && Date.now() - previous.at < 3600000) continue;
-    automaticAttempts.set(id, { version, at: Date.now() });
-    void requestCliUpdate(id);
+    if (previous?.version === version && Date.now() < previous.retryAt) continue;
+    automaticAttempts.set(id, { version, retryAt: Infinity });
+    void requestCliUpdate(id).then((result) => {
+      if (!result.ok) automaticAttempts.set(id, { version, retryAt: Date.now() + AUTOMATIC_RETRY_MS });
+    });
   }
   void runPendingUpdate();
 }
@@ -792,7 +814,7 @@ const cliTerminals = createCliTerminals({
     if (sessionService.activeIds().includes(sessionId))
       throw new Error(i18n.t("errors.waitReplyBeforeTerminal"));
     // The chat process stays alive between turns: stop it so only the terminal uses the conversation.
-    cliRunner.kill(sessionId);
+    cliRunner.kill(sessionId, { reason: "terminal-open" });
   },
   emit: sendToRenderer,
 });
@@ -854,6 +876,7 @@ else if (!smokeRun) {
   // System shutdown (logout/power off) doesn't depend on the tray.
   for (const signal of ["SIGTERM", "SIGINT"])
     process.on(signal, () => {
+      logEvent("app.signal", { signal });
       background.allowQuit();
       app.quit();
     });
@@ -1013,7 +1036,7 @@ module.exports.ready = app.whenReady().then(async () => {
   handle("update-cli", async (_event, id) => {
     if (!["claude", "codex", "antigravity"].includes(id))
       throw new Error(i18n.t("ecosystem.invalidCli"));
-    return requestCliUpdate(id);
+    return requestCliUpdate(id, { manual: true });
   });
   // IPC: real ai-memory status and commands
   handle("ai-memory-status", async () => {
@@ -1725,7 +1748,26 @@ module.exports.ready = app.whenReady().then(async () => {
   });
 });
 
-app.on("before-quit", (event) => background.beforeQuit(event));
+app.on("before-quit", (event) => {
+  logEvent("app.before-quit", { running: sessionService.activeCount() });
+  background.beforeQuit(event);
+});
+app.on("will-quit", () => logEvent("app.will-quit"));
+// Diagnostics: what can take conversations down without the app asking for it.
+app.on("render-process-gone", (_event, _contents, details) =>
+  logEvent("app.renderer-gone", { reason: details?.reason, exitCode: details?.exitCode }),
+);
+app.on("child-process-gone", (_event, details) =>
+  logEvent("app.child-process-gone", { type: details?.type, reason: details?.reason, exitCode: details?.exitCode, name: details?.name }),
+);
+process.on("uncaughtExceptionMonitor", (error, origin) =>
+  logEvent("app.uncaught-exception", { origin, error }),
+);
+app.whenReady().then(() => {
+  logEvent("app.start", { version: app.getVersion?.(), platform: process.platform, log: eventLogFile() });
+  for (const name of ["suspend", "resume", "shutdown", "lock-screen", "unlock-screen"])
+    powerMonitor?.on?.(name, () => logEvent(`system.${name}`));
+});
 app.on("window-all-closed", () => {
   for (const [, entry] of activePtySessions.entries()) {
     try {

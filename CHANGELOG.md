@@ -4,6 +4,16 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.19.3] - 2026-11-20
+
+### Added
+
+- BeagleDock now keeps a diagnostic log in its data folder of CLIs starting, stopping or exiting unexpectedly, CLI updates and app crashes, so a conversation that stops on its own can be traced. It records only metadata, never prompts or replies.
+
+### Fixed
+
+- Automatic CLI updates no longer stop your conversations. Updating one CLI used to stop conversations in all three, including ones still running background agents or commands, and a failed update repeated this every hour. Now only the CLI being updated is touched, the update waits until that CLI has no work running, messages sent meanwhile wait for it, and a failed update is retried only after a few hours.
+
 ## [0.19.2] - 2026-11-18
 
 ### Fixed
@@ -485,7 +495,8 @@ Primeira versão do **BeagleDock — Multi-CLI for Developers**.
 - Dados, identidade do cofre e identificadores internos anteriores preservados por compatibilidade.
 - Pacotes sem assinatura de código nesta versão; execução real das três CLIs em Windows e macOS ainda requer validação nessas plataformas.
 
-[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/rumofy/BeagleDock/compare/v0.19.3...HEAD
+[0.19.3]: https://github.com/rumofy/BeagleDock/compare/v0.19.2...v0.19.3
 [0.19.2]: https://github.com/rumofy/BeagleDock/compare/v0.19.1...v0.19.2
 [0.19.1]: https://github.com/rumofy/BeagleDock/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/rumofy/BeagleDock/compare/v0.17.4...v0.19.0
