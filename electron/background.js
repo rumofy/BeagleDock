@@ -62,7 +62,7 @@ const SESSION_LIMIT = 8;
 function sessionMenuItems(sessions, open) {
   const ordered = [...sessions].sort((a, b) => Number(!!b.waiting) - Number(!!a.waiting));
   const items = ordered.slice(0, SESSION_LIMIT).map((s) => ({
-    label: `${s.waiting ? "⚠ " : "● "}${String(s.title || "Conversa").slice(0, 48)}${s.providerName ? ` · ${s.providerName}` : ""}`,
+    label: `${s.waiting ? "⚠ " : s.background ? "◌ " : "● "}${String(s.title || t("tray.untitled")).slice(0, 48)}${s.providerName ? ` · ${s.providerName}` : ""}${s.background ? ` · ${t("tray.background")}` : ""}`,
     click: () => open(s.id),
   }));
   if (ordered.length > SESSION_LIMIT)

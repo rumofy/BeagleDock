@@ -436,3 +436,15 @@ test("clicking a tray notice brings the window and opens the source conversation
   assert.deepEqual(h.state.opened, ["s7", "s3"]);
   assert.ok(h.state.shown >= 2, "the window shows up again");
 });
+
+test("menu items: background work after the turn is listed apart, and an untitled session gets a label", () => {
+  const items = sessionMenuItems(
+    [
+      { id: "a", title: "Shorts", providerName: "Claude Code", background: true },
+      { id: "b", providerName: "Codex CLI" },
+    ],
+    () => {},
+  );
+  assert.equal(items[0].label, "◌ Shorts · Claude Code · background work");
+  assert.equal(items[1].label, "● Conversation · Codex CLI");
+});

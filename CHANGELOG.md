@@ -13,6 +13,7 @@ All notable changes to BeagleDock are recorded here. The format follows [Keep a 
 ### Fixed
 
 - Automatic CLI updates no longer stop your conversations. Updating one CLI used to stop conversations in all three, including ones still running background agents or commands, and a failed update repeated this every hour. Now only the CLI being updated is touched, the update waits until that CLI has no work running, messages sent meanwhile wait for it, and a failed update is retried only after a few hours.
+- The tray menu now counts and lists sessions that are still working after the turn: replies a CLI starts on its own when a background agent finishes, and background agents or commands, which are marked as background work. Before, it said no session was running, and quitting gave no warning about them.
 
 ## [0.19.2] - 2026-11-18
 
