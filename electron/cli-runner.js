@@ -183,6 +183,20 @@ function createCliRunner({
   // `restart`: the run itself swaps the process (level, model or effort changed). It doesn't mark the
   // message that's starting as cancelled; before, in AGY it ended as "Run stopped".
   // `reason` goes to the event log: it tells an expected stop from a process that died on its own.
+  function workingSessions() {
+    const found = new Map(
+      [...busyProvider].map(([id, providerId]) => [id, { id, providerId, background: false }]),
+    );
+    for (const [id, entry] of processes) {
+      if (found.has(id) || entry.child.exitCode !== null || entry.child.killed) continue;
+      if (entry.turn) found.set(id, { id, providerId: entry.providerId, background: false });
+      else if (entry.events?.find((event) => event.status === "running"))
+        found.set(id, { id, providerId: entry.providerId, background: true });
+    }
+    for (const session of codex.workingSessions())
+      if (!found.has(session.id)) found.set(session.id, session);
+    return [...found.values()];
+  }
   function kill(sessionId, { restart = false, reason = restart ? "restart" : "requested" } = {}) {
     approvals?.cancelSession(sessionId);
     codex.kill(sessionId, { reason });
@@ -1594,18 +1608,13 @@ function createCliRunner({
       [...processes.values()].some(
         (entry) => entry.providerId === providerId && entry.child.exitCode === null && !entry.child.killed,
       ),
+    // Sessions with work running: a run started by the app, a turn the CLI started on its own
+    // (after a background agent finished) or background agents/commands that outlive the turn.
+    // `background`: only background work, no turn in progress.
+    workingSessions,
     // Work an update would cut: a run of this CLI, or a live process with a turn or background
     // agents/commands still running (they go on after the turn ends).
-    hasRunningWork: (providerId) =>
-      [...busyProvider.values()].includes(providerId) ||
-      (providerId === "codex" && codex.hasRunningWork()) ||
-      [...processes.values()].some(
-        (entry) =>
-          entry.providerId === providerId &&
-          entry.child.exitCode === null &&
-          !entry.child.killed &&
-          (!!entry.turn || !!entry.events?.find((event) => event.status === "running")),
-      ),
+    hasRunningWork: (providerId) => workingSessions().some((s) => s.providerId === providerId),
     // Closes only the processes of the CLI being updated; the others keep running. Until
     // `endUpdate`, new runs of that CLI wait instead of starting the binary being replaced.
     isBusyProvider: (providerId) => [...busyProvider.values()].includes(providerId),
