@@ -845,3 +845,19 @@ test("Codex plan starts and resumes the native thread with a read-only sandbox",
   h.notify("turn/completed", { turn: { status: "completed" } });
   await pending;
 });
+
+test("Codex: updating another CLI leaves the idle app-server alive; updating Codex closes it", async (t) => {
+  const h = harness(), runner = h.make();
+  t.after(() => runner.shutdown());
+  const pending = runner.execute(payload);
+  await tick(); await tick();
+  h.notify("turn/completed", { turn: { status: "completed" } });
+  assert.equal((await pending).ok, true);
+  const child = h.calls[0].child;
+  assert.equal(runner.hasLive("codex"), true);
+  await runner.prepareUpdate("claude");
+  assert.equal(child.killed, false, "Codex keeps its process while Claude updates");
+  await runner.prepareUpdate("codex");
+  assert.equal(child.exitCode, 143);
+  assert.equal(runner.hasLive("codex"), false);
+});

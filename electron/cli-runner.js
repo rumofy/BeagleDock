@@ -9,6 +9,8 @@ const {
 const { createLiveFiles, liveDirectories } = require("./live-files");
 const { createAgyChildOutput } = require("./agy-child-output");
 const { createCodexStream } = require("./codex-stream");
+const { logEvent } = require("./event-log");
+const MAX_STDERR_LOG = 400;
 const { saveAttachments, findMentions, buildInput, dataRoot } = require("./attachments");
 const {
   claudeToolActivity,
@@ -168,6 +170,10 @@ function createCliRunner({
   });
   const processes = new Map();
   const busy = new Set();
+  // Session -> CLI of the run in progress (an update only waits for runs of its own CLI).
+  const busyProvider = new Map();
+  // CLI being updated -> promise: runs of that CLI wait for the update before starting a process.
+  const updates = new Map();
   const cancelled = new Set();
   let closed = false;
   // `shellId` is the id of the timeline event of the command or tool that produced the output;
@@ -176,13 +182,23 @@ function createCliRunner({
     emit("pty-data", { sessionId, data, pid, ...(shellId ? { shellId } : {}) });
   // `restart`: the run itself swaps the process (level, model or effort changed). It doesn't mark the
   // message that's starting as cancelled; before, in AGY it ended as "Run stopped".
-  function kill(sessionId, { restart = false } = {}) {
+  // `reason` goes to the event log: it tells an expected stop from a process that died on its own.
+  function kill(sessionId, { restart = false, reason = restart ? "restart" : "requested" } = {}) {
     approvals?.cancelSession(sessionId);
-    codex.kill(sessionId);
+    codex.kill(sessionId, { reason });
     if (busy.has(sessionId) && !restart) cancelled.add(sessionId);
     const entry = processes.get(sessionId);
     if (!entry) return;
     processes.delete(sessionId);
+    entry.killReason = reason;
+    logEvent("cli.kill", {
+      sessionId,
+      providerId: entry.providerId,
+      childPid: entry.child?.pid,
+      reason,
+      busy: busy.has(sessionId),
+      turn: !!entry.turn,
+    });
     for (const waiting of entry.controls?.values() || [])
       waiting.reject(new Error(t("errors.cliClosed")));
     entry.controls?.clear();
@@ -233,8 +249,10 @@ function createCliRunner({
         error: t("errors.runAlreadyActive"),
       };
     busy.add(sessionId);
+    busyProvider.set(sessionId, providerId);
     cancelled.delete(sessionId);
     try {
+      await updates.get(providerId)?.promise;
       const { model, effort } = resolveSelection({
         providerId,
         model: requestedModel,
@@ -376,6 +394,7 @@ function createCliRunner({
           persistenceError: null,
         };
         processes.set(sessionId, entry);
+        logEvent("cli.spawn", { sessionId, providerId, childPid: child.pid, resume: !!nativeId, permission });
         const current = entry;
         const activity = (text, detail) =>
           emit("cli-stream-chunk", {
@@ -512,6 +531,7 @@ function createCliRunner({
           if (current.nativeId) {
             current.persistenceError =
               t("errors.cliOtherThread");
+            current.killReason = "other-thread";
             child.kill();
             return;
           }
@@ -521,6 +541,7 @@ function createCliRunner({
             .setNativeSession(sessionId, providerId, id, cwd)
             .catch((err) => {
               current.persistenceError = t("errors.persistFailed", { error: err.message });
+              current.killReason = "persist-failed";
               child.kill();
             });
         };
@@ -850,7 +871,7 @@ function createCliRunner({
                 emit("cli-permission-changed", { sessionId, permission: exitPlan.permission, reason: "plan-approved" });
               }
             };
-            void response().catch(() => kill(sessionId));
+            void response().catch(() => kill(sessionId, { reason: "plan-approval-failed" }));
           } else if (ev.type === "control_response") {
             // Answer to a command sent by the app (e.g. switching the permission mode live).
             const res = ev.response || {};
@@ -1190,6 +1211,7 @@ function createCliRunner({
           current.buffer += text;
           if (current.buffer.length > 16 * 1024 * 1024) {
             current.persistenceError = t("errors.cliReplyLimit");
+            current.killReason = "reply-limit";
             child.kill();
             return;
           }
@@ -1213,10 +1235,23 @@ function createCliRunner({
         child.stdin.on("error", (error) => {
           current.turn?.finish({ ok: false, error: error.message });
         });
-        child.on("error", (error) =>
-          current.turn?.finish({ ok: false, error: error.message }),
-        );
-        child.on("close", (code) => {
+        child.on("error", (error) => {
+          logEvent("cli.error", { sessionId, providerId, childPid: child.pid, error: error.message });
+          current.turn?.finish({ ok: false, error: error.message });
+        });
+        child.on("close", (code, signal) => {
+          // A close without `killReason` is a CLI that ended on its own (crash, external kill).
+          logEvent("cli.exit", {
+            sessionId,
+            providerId,
+            childPid: child.pid,
+            code,
+            signal,
+            reason: current.killReason || "unexpected",
+            turn: !!current.turn,
+            nativeId: current.nativeId,
+            stderr: current.killReason ? undefined : current.stderr.slice(-MAX_STDERR_LOG) || undefined,
+          });
           consume(decoder.end() + "\n");
           current.approvalBridge?.close();
           approvals?.cancelSession(sessionId);
@@ -1253,7 +1288,7 @@ function createCliRunner({
                   error:
                     t("errors.runTimeout"),
                 });
-                kill(sessionId);
+                kill(sessionId, { reason: "turn-timeout" });
               }, turnTimeout)
             : undefined;
         current.events.start(payload.responseMessageId);
@@ -1275,6 +1310,8 @@ function createCliRunner({
             await current.idWrite;
             if (current.persistenceError)
               result = { ok: false, error: current.persistenceError };
+            // A turn that failed before the CLI reported its id is logged as that failure.
+            const killReason = result.ok ? "no-thread-id" : "turn-failed-without-id";
             if (result.ok && !current.nativeId) {
               result = {
                 ok: false,
@@ -1282,9 +1319,9 @@ function createCliRunner({
                   t("errors.cliNoThreadId"),
                 output: result.output || turn?.text,
               };
-              kill(sessionId);
             }
-            if (!current.nativeId) kill(sessionId);
+            if (!current.nativeId)
+              kill(sessionId, { reason: killReason });
             current.events.finishRunning(result.ok ? "done" : "error");
             // With messages delivered midway, each reply carries its own steps.
             const rotated = turn?.rotations?.length;
@@ -1325,13 +1362,14 @@ function createCliRunner({
             );
         } catch (error) {
           current.turn?.finish({ ok: false, error: error.message });
-          kill(sessionId);
+          kill(sessionId, { reason: "send-failed" });
         }
       });
     } catch (error) {
       return { ok: false, error: error.message };
     } finally {
       busy.delete(sessionId);
+      busyProvider.delete(sessionId);
       cancelled.delete(sessionId);
       Promise.resolve(onComplete()).catch(() => {});
     }
@@ -1550,40 +1588,65 @@ function createCliRunner({
             ok: false,
             error: t("errors.compactIsMessage"),
           }),
-    async prepareUpdate() {
-      await codex.prepareUpdate();
-      if (busy.size)
+    // A live process of this CLI (idle between turns or with background agents/commands still running).
+    hasLive: (providerId) =>
+      (providerId === "codex" && codex.hasLive()) ||
+      [...processes.values()].some(
+        (entry) => entry.providerId === providerId && entry.child.exitCode === null && !entry.child.killed,
+      ),
+    // Work an update would cut: a run of this CLI, or a live process with a turn or background
+    // agents/commands still running (they go on after the turn ends).
+    hasRunningWork: (providerId) =>
+      [...busyProvider.values()].includes(providerId) ||
+      (providerId === "codex" && codex.hasRunningWork()) ||
+      [...processes.values()].some(
+        (entry) =>
+          entry.providerId === providerId &&
+          entry.child.exitCode === null &&
+          !entry.child.killed &&
+          (!!entry.turn || !!entry.events?.find((event) => event.status === "running")),
+      ),
+    // Closes only the processes of the CLI being updated; the others keep running. Until
+    // `endUpdate`, new runs of that CLI wait instead of starting the binary being replaced.
+    isBusyProvider: (providerId) => [...busyProvider.values()].includes(providerId),
+    async prepareUpdate(providerId) {
+      if ([...busyProvider.values()].includes(providerId))
         throw new Error(t("errors.waitRepliesBeforeUpdate"));
+      if (!updates.has(providerId)) updates.set(providerId, Promise.withResolvers());
+      if (providerId === "codex") await codex.prepareUpdate();
       await Promise.all(
-        [...processes.entries()].map(
-          ([id, entry]) =>
-            new Promise((resolve, reject) => {
-              if (entry.child.exitCode !== null) {
-                kill(id);
-                resolve();
-                return;
-              }
-              const timer = setTimeout(
-                () =>
-                  reject(
-                    new Error(t("errors.cliStillClosing")),
-                  ),
-                3000,
-              );
-              entry.child.once("close", () => {
-                clearTimeout(timer);
-                resolve();
-              });
-              kill(id);
-            }),
-        ),
+        [...processes.entries()]
+          .filter(([, entry]) => entry.providerId === providerId)
+          .map(
+            ([id, entry]) =>
+              new Promise((resolve, reject) => {
+                if (entry.child.exitCode !== null) {
+                  kill(id, { reason: "cli-update" });
+                  resolve();
+                  return;
+                }
+                const timer = setTimeout(
+                  () => reject(new Error(t("errors.cliStillClosing"))),
+                  3000,
+                );
+                entry.child.once("close", () => {
+                  clearTimeout(timer);
+                  resolve();
+                });
+                kill(id, { reason: "cli-update" });
+              }),
+          ),
       );
+    },
+    endUpdate(providerId) {
+      updates.get(providerId)?.resolve();
+      updates.delete(providerId);
     },
     shutdown: () => {
       closed = true;
       approvals?.shutdown();
       codex.shutdown();
-      for (const id of processes.keys()) kill(id);
+      for (const id of processes.keys()) kill(id, { reason: "app-shutdown" });
     },
   };
 }

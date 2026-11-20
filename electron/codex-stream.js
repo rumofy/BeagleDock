@@ -1,6 +1,7 @@
 const { StringDecoder } = require("string_decoder");
 const { randomUUID } = require("crypto");
 const { terminateCli } = require("./platform");
+const { logEvent } = require("./event-log");
 const { createStderrFilter } = require("./codex-mcp-auth");
 const { codexItemActivity, reasoningTail } = require("./activity-labels");
 const { LIVE_OUTPUT_GUIDANCE } = require("./guidance");
@@ -42,11 +43,13 @@ function createCodexStream({
 }) {
   const entries = new Map();
   let sequence = 0;
-  function close(id) {
+  function close(id, { reason = "requested" } = {}) {
     approvals?.cancelSession(id);
     const e = entries.get(id);
     if (!e) return;
     entries.delete(id);
+    e.killReason = reason;
+    logEvent("cli.kill", { sessionId: id, providerId: "codex", childPid: e.child?.pid, reason, turn: !!e.finish });
     e.finish?.({
       ok: false,
       cancelled: true,
@@ -81,7 +84,7 @@ function createCodexStream({
     ]);
     let e = entries.get(sessionId);
     if (e && (e.key !== key || e.child.killed || e.child.exitCode !== null)) {
-      close(sessionId);
+      close(sessionId, { reason: "restart" });
       e = null;
     }
     if (!e) {
@@ -133,6 +136,7 @@ function createCodexStream({
         model: typeof p.requestedModel === "string" ? p.requestedModel : model,
       });
       entries.set(sessionId, e);
+      logEvent("cli.spawn", { sessionId, providerId: "codex", childPid: child.pid, resume: !!nativeId, permission });
       const current = e;
       // `shellId` is the id of the timeline event of the command that produced the output.
       const output = (data, shellId) =>
@@ -389,7 +393,7 @@ function createCodexStream({
                 send({ id: ev.id, result });
               }
             };
-            void decide().catch(() => close(sessionId));
+            void decide().catch(() => close(sessionId, { reason: "approval-failed" }));
           } else if (ev.method === "item/tool/requestUserInput") {
             const request = ev.params || {};
             if (request.threadId && request.threadId !== current.nativeId && !current.subThreads?.has(request.threadId)) {
@@ -405,7 +409,7 @@ function createCodexStream({
                   Object.entries(decision.answers || {}).map(([id, answers]) => [id, { answers }]),
                 ) } });
             };
-            void answer().catch(() => close(sessionId));
+            void answer().catch(() => close(sessionId, { reason: "question-failed" }));
           }
           else
             send({
@@ -634,7 +638,7 @@ function createCodexStream({
             ok: false,
             error: t("errors.codexOutputLimit"),
           });
-          close(sessionId);
+          close(sessionId, { reason: "reply-limit" });
           return;
         }
         const lines = current.buffer.split("\n");
@@ -659,7 +663,18 @@ function createCodexStream({
       child.on("error", (error) =>
         current.finish?.({ ok: false, error: error.message }),
       );
-      child.on("close", (code) => {
+      child.on("close", (code, signal) => {
+        logEvent("cli.exit", {
+          sessionId,
+          providerId: "codex",
+          childPid: child.pid,
+          code,
+          signal,
+          reason: current.killReason || "unexpected",
+          turn: !!current.finish,
+          nativeId: current.nativeId,
+          stderr: current.killReason ? undefined : current.stderr.slice(-400) || undefined,
+        });
         // Pending permission requests don't outlive the app-server that made them.
         approvals?.cancelSession(sessionId);
         if (entries.get(sessionId) === current) entries.delete(sessionId);
@@ -719,7 +734,7 @@ function createCodexStream({
     try {
       await current.ready;
     } catch (error) {
-      close(sessionId);
+      close(sessionId, { reason: "init-failed" });
       return { ok: false, error: error.message };
     }
     if (entries.get(sessionId) !== current)
@@ -751,7 +766,7 @@ function createCodexStream({
                 ok: false,
                 error: t("errors.runTimeout"),
               });
-              close(sessionId);
+              close(sessionId, { reason: "turn-timeout" });
             }, turnTimeout)
           : undefined;
       current.finish = (result) => {
@@ -901,12 +916,22 @@ function createCodexStream({
     canInject,
     compact,
     kill: close,
+    hasLive: () =>
+      [...entries.values()].some((e) => e.child.exitCode === null && !e.child.killed),
+    // A turn in progress or background work (sub-agents, background commands) still running.
+    hasRunningWork: () =>
+      [...entries.values()].some(
+        (e) =>
+          e.child.exitCode === null &&
+          !e.child.killed &&
+          (!!e.finish || !!e.events?.find((event) => event.status === "running")),
+      ),
     shutdown() {
-      for (const id of entries.keys()) close(id);
+      for (const id of entries.keys()) close(id, { reason: "app-shutdown" });
     },
     async prepareUpdate() {
       const children = [...entries.values()].map((e) => e.child);
-      for (const id of entries.keys()) close(id);
+      for (const id of entries.keys()) close(id, { reason: "cli-update" });
       await Promise.all(
         children
           .filter((c) => c.exitCode === null)

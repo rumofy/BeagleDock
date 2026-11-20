@@ -133,7 +133,7 @@ function createSessionService({ store, runner }) {
     if (stopping.has(id)) return stopping.get(id);
     generations.set(id, (generations.get(id) || 0) + 1);
     const tail = turns.get(id);
-    runner.kill(id);
+    runner.kill(id, { reason: "user-stop" });
     const pending = (async () => {
       await tail?.catch(() => {});
       await writes.get(id)?.catch(() => {});
@@ -197,7 +197,7 @@ function createSessionService({ store, runner }) {
     if (!validIds(request)) return { ok: false, error: t("errors.invalidMessage") };
     if (!isWaiting(request) || waiting(request.sessionId)[0] !== request.responseMessageId)
       return { ok: false, error: t("errors.onlyNextQueued") };
-    runner.kill(request.sessionId);
+    runner.kill(request.sessionId, { reason: "send-now" });
     return { ok: true };
   }
   // "Answer now" for a message already delivered to the CLI (Claude Code and Codex read it on the next
@@ -376,7 +376,7 @@ function createSessionService({ store, runner }) {
     });
     removing.set(id, pending);
     (async () => {
-      runner.kill(id);
+      runner.kill(id, { reason: "session-removed" });
       await turns.get(id)?.catch(() => {});
       await writes.get(id)?.catch(() => {});
       return store.deleteSessionFromDb(id);
@@ -436,7 +436,7 @@ function createSessionService({ store, runner }) {
         return Promise.reject(
           new Error(t("session.stopBeforeClose")),
         );
-      if (archived) runner.kill(id);
+      if (archived) runner.kill(id, { reason: "session-archived" });
       return write(id, () => store.setSessionArchived(id, archived));
     },
     saveSession: (session) =>
