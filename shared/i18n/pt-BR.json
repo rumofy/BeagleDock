@@ -1088,5 +1088,7 @@
   "terminal.notStarted": "Não iniciada",
   "terminal.waitingInput": "Aguardando interação",
   "tray.inputWaiting_one": "1 CLI aguardando interação",
-  "tray.inputWaiting_other": "{count} CLIs aguardando interação"
+  "tray.inputWaiting_other": "{count} CLIs aguardando interação",
+  "tray.background": "trabalho em segundo plano",
+  "tray.untitled": "Conversa"
 }

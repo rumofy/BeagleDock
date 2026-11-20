@@ -114,9 +114,11 @@ test("a Claude conversation with a background agent counts as running work until
   assert.equal(h.runner.isBusyProvider("claude"), false, "the turn is over");
   assert.equal(h.runner.hasRunningWork("claude"), true, "but its background agent is still working");
   assert.equal(h.runner.hasRunningWork("antigravity"), false);
+  assert.deepEqual(h.runner.workingSessions(), [{ id: "s-claude", providerId: "claude", background: true }], "the tray shows it as background work");
   child.event({ type: "system", subtype: "task_notification", task_id: "tk", tool_use_id: AGENT, status: "completed", summary: "ok" });
   await tick();
   assert.equal(h.runner.hasRunningWork("claude"), false);
+  assert.deepEqual(h.runner.workingSessions(), []);
   h.runner.shutdown();
 });
 

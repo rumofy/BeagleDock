@@ -918,14 +918,17 @@ function createCodexStream({
     kill: close,
     hasLive: () =>
       [...entries.values()].some((e) => e.child.exitCode === null && !e.child.killed),
-    // A turn in progress or background work (sub-agents, background commands) still running.
-    hasRunningWork: () =>
-      [...entries.values()].some(
-        (e) =>
-          e.child.exitCode === null &&
-          !e.child.killed &&
-          (!!e.finish || !!e.events?.find((event) => event.status === "running")),
-      ),
+    // Sessions with a turn in progress (including one the CLI started on its own) or background
+    // work (sub-agents, background commands) still running: [{ id, background }].
+    workingSessions: () =>
+      [...entries]
+        .filter(
+          ([, e]) =>
+            e.child.exitCode === null &&
+            !e.child.killed &&
+            (!!e.finish || !!e.events?.find((event) => event.status === "running")),
+        )
+        .map(([id, e]) => ({ id, providerId: "codex", background: !e.finish })),
     shutdown() {
       for (const id of entries.keys()) close(id, { reason: "app-shutdown" });
     },

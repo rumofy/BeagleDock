@@ -818,6 +818,21 @@ const cliTerminals = createCliTerminals({
   },
   emit: sendToRenderer,
 });
+function trayRunningSessions() {
+  const working = new Map(cliRunner.workingSessions().map((s) => [s.id, s]));
+  const ids = new Set([
+    ...sessionService.activeIds(),
+    ...working.keys(),
+    ...[...terminalWatchers].filter(([, w]) => w.getState().status !== "idle").map(([id]) => id),
+  ]);
+  return [...ids].map((id) => ({
+    id,
+    title: sessionInfo.get(id)?.title,
+    providerName: providerNames[sessionInfo.get(id)?.providerId || working.get(id)?.providerId],
+    waiting: terminalWatchers.get(id)?.getState().status === "waiting_input",
+    background: working.get(id)?.background === true && !sessionService.activeIds().includes(id),
+  }));
+}
 function shutdown() {
   void remoteAccess?.stop();
   clearInterval(refreshTimer);
@@ -849,16 +864,11 @@ background = createBackgroundController({
   getWindow: () => mainWindow,
   iconPath: path.join(__dirname, "../dist/brand/beagledock-logo.png"),
   // Turns running or queued in any session.
-  runningCount: () => Math.max(cliRunner.busyCount(), sessionService.activeCount()) +
-    [...terminalWatchers.values()].filter((w) => w.getState().status === "running").length,
+  // Turns running or queued, turns a CLI started on its own and background work that outlives
+  // the turn (agents, commands): all keep the session "running" in the tray and on quit.
+  runningCount: () => trayRunningSessions().filter((s) => !s.waiting).length,
   approvalsList: () => approvals.list(),
-  runningSessions: () =>
-    [...new Set([...sessionService.activeIds(), ...[...terminalWatchers].filter(([, w]) => w.getState().status !== "idle").map(([id]) => id)])].map((id) => ({
-      id,
-      title: sessionInfo.get(id)?.title,
-      providerName: providerNames[sessionInfo.get(id)?.providerId],
-      waiting: terminalWatchers.get(id)?.getState().status === "waiting_input",
-    })),
+  runningSessions: () => trayRunningSessions(),
   // The interface takes the chat to the conversation (click on the tray menu or the notification).
   openSession: (sessionId) => sendToRenderer("open-session", { sessionId }),
   bypass: smokeRun,
